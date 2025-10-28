@@ -40,6 +40,7 @@ interface AtBat {
 export default function TraditionalScorebook({ game, onClose }: { game: Game, onClose: () => void }) {
   const [players, setPlayers] = useState<Player[]>([])
   const [atBats, setAtBats] = useState<AtBat[]>([])
+  const [currentGame, setCurrentGame] = useState<Game>(game)
   const [gameInfo, setGameInfo] = useState({
     opponent: game.opponent,
     date: game.game_date,
@@ -299,6 +300,34 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return result
   }
 
+  async function updateGameScore(runsToAdd: number) {
+    try {
+      const newScore = currentGame.our_score + runsToAdd
+      
+      const { data, error } = await supabase
+        .from('games')
+        .update({ 
+          our_score: newScore,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', game.id)
+        .select()
+      
+      if (error) {
+        console.error('Error updating game score:', error)
+        return
+      }
+      
+      // Update the local game state
+      if (data && data[0]) {
+        setCurrentGame(data[0])
+        console.log('Game score updated to:', data[0].our_score)
+      }
+    } catch (err) {
+      console.error('Failed to update game score:', err)
+    }
+  }
+
   async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }) {
     if (!selectedCell) return
 
@@ -407,6 +436,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         console.log('At-bat successfully created:', data[0])
       }
 
+      // Update game score if run was scored
+      if (runsScored > 0) {
+        await updateGameScore(runsScored)
+      }
+
       // Close the modal after successful save
       setShowCanvasModal(false)
       setSelectedCell(null)
@@ -428,11 +462,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     <div className="bg-white p-6 max-w-7xl mx-auto">
       {/* Game Information Header */}
       <div className="mb-6">
-        <div className="text-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">vs {gameInfo.opponent}</h2>
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-900">vs {game.opponent}</h2>
+            <div className="text-right">
+            <div className="text-3xl font-bold text-gray-900">
+              {currentGame.our_score} - {currentGame.opponent_score}
+            </div>
+            <div className="text-sm text-gray-600">Score</div>
+          </div>
         </div>
         
-        <div className="grid grid-cols-6 gap-4 text-sm">
+        <div style={{display: 'none'}} className="grid grid-cols-6 gap-4 text-sm">
           <div>
             <label className="block text-gray-600 mb-1">Date:</label>
             <input
@@ -495,7 +535,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           <thead>
             <tr className="bg-gray-100">
               <th className="border border-gray-400 px-2 py-1 w-8">#</th>
-              <th className="border border-gray-400 px-2 py-1 w-32">Batter</th>
+              <th className="border border-gray-400 px-2 py-1 whitespace-nowrap">Batter</th>
               <th className="border border-gray-400 px-1 py-1 w-6"></th>
               {Array.from({ length: 10 }, (_, i) => (
                 <th key={i} className="border border-gray-400 px-1 py-1 w-16 text-center">
@@ -522,7 +562,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   </td>
                   
                   {/* Player Name */}
-                  <td className="border border-gray-400 px-2 py-1">
+                  <td className="border border-gray-400 px-2 py-1 whitespace-nowrap">
                     {player ? `${player.first_name} ${player.last_name}` : ''}
                   </td>
                   

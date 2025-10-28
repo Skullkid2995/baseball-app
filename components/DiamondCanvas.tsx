@@ -556,34 +556,35 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-4xl h-[700px] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
+      <div className="bg-white rounded-lg w-full max-w-4xl h-[95vh] max-h-[700px] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-2 sm:p-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h3 className="text-xl font-bold text-gray-800">
+            <h3 className="text-base sm:text-xl font-bold text-gray-800">
               Score At-Bat - {playerName} (Inning {inning})
             </h3>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 text-2xl"
+              className="text-gray-500 hover:text-gray-700 text-xl sm:text-2xl"
             >
               ×
             </button>
           </div>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-xs sm:text-sm text-gray-600 mt-1 hidden sm:block">
             Draw on the diamond: K for strikeout, 6-3 for groundout, arrows for base paths, etc.
           </p>
         </div>
 
         {/* Canvas Area */}
-        <div className="flex-1 p-6 flex items-center justify-center bg-gray-50">
+        <div className="flex-1 p-2 sm:p-6 flex items-center justify-center bg-gray-50 overflow-auto">
           <div className="relative">
             <canvas
               ref={canvasRef}
               width={600}
               height={600}
-              className="border border-gray-300 rounded-lg bg-white cursor-crosshair"
+              className="border border-gray-300 rounded-lg bg-white cursor-crosshair max-w-full max-h-full w-auto h-auto"
+              style={{ width: 'min(100vw - 2rem, 400px)', height: 'min(100vw - 2rem, 400px)' }}
               onMouseDown={handleCanvasClick}
               onMouseMove={draw}
               onMouseUp={stopDrawing}
@@ -595,13 +596,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             
     {/* Hit/Out Buttons - Top Center (only show for new at-bats and not out and not locked) */}
     {!existingAtBat && !isOut && !isLocked && (
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
+      <div className="absolute top-1 sm:top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 sm:space-x-4">
         <button
           onClick={() => {
             setShowFieldSelection(true)
             setSelectedFieldArea('HIT')
           }}
-          className="bg-green-600 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
+          className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
         >
           Hit
         </button>
@@ -611,7 +612,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             setSelectedFieldArea('OUT')
             setIsOut(true) // Mark as out when Out button is clicked
           }}
-          className="bg-red-600 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
+          className="bg-red-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
         >
           Out
         </button>
@@ -629,22 +630,22 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
 
             {/* Count Buttons - Top Left (only show for new at-bats, not scored, and not out and not locked) */}
             {!existingAtBat && !runScored && !isOut && !isLocked && (
-              <div className="absolute top-20 left-4 flex flex-col space-y-4">
+              <div className="absolute top-20 left-1 sm:left-4 flex flex-col space-y-2 sm:space-y-4">
                 <button
                   onClick={addStrike}
-                  className="bg-red-500 text-white px-4 py-3 rounded-lg text-sm font-bold hover:bg-red-600 active:bg-red-700 shadow-lg"
+                  className="bg-red-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-600 active:bg-red-700 shadow-lg"
                 >
                   Strike
                 </button>
                 <button
                   onClick={addBall}
-                  className="bg-blue-500 text-white px-4 py-3 rounded-lg text-sm font-bold hover:bg-blue-600 active:bg-blue-700 shadow-lg"
+                  className="bg-blue-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-blue-600 active:bg-blue-700 shadow-lg"
                 >
                   Ball
                 </button>
                 <button
                   onClick={addFoul}
-                  className="bg-yellow-500 text-white px-4 py-3 rounded-lg text-sm font-bold hover:bg-yellow-600 active:bg-yellow-700 shadow-lg"
+                  className="bg-yellow-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-yellow-600 active:bg-yellow-700 shadow-lg"
                 >
                   Foul
                 </button>
@@ -662,10 +663,10 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             
             {/* Reset Button - Bottom Left (only show for new at-bats and not out and not locked) */}
             {!existingAtBat && !isOut && !isLocked && (
-              <div className="absolute bottom-4 left-4">
+              <div className="absolute bottom-1 sm:bottom-4 left-1 sm:left-4">
                 <button
                   onClick={resetCount}
-                  className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-600 active:bg-gray-700 shadow-lg"
+                  className="bg-gray-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-gray-600 active:bg-gray-700 shadow-lg"
                 >
                   Reset Count
                 </button>
@@ -696,7 +697,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
 
             {/* Carrera Button - Bottom Right (available for all at-bats except outs and not locked) */}
             {!isOut && !isLocked && (
-              <div className="absolute bottom-4 right-4">
+              <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
               <button
                 onClick={() => {
                   console.log('=== CARRERA CLICKED ===')
@@ -706,7 +707,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   setBaseRunners({ first: false, second: false, third: false, home: false })
                   setRunScored(true) // Set run scored to fill diamond with blue
                 }}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
+                className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
               >
                 Carrera
               </button>
@@ -1218,58 +1219,28 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           </div>
         )}
 
-        {/* Notation Input */}
-        <div className="p-4 bg-gray-100 border-t border-gray-200">
-          <div className="text-sm text-gray-700 mb-2 font-semibold">
-            Play Notation: {existingAtBat ? '(Locked - Cannot Edit)' : ''}
-          </div>
-          <input
-            type="text"
-            value={handwritingInput}
-            onChange={(e) => setHandwritingInput(e.target.value)}
-            placeholder={existingAtBat || isLocked ? "Notation is locked for existing at-bats" : "Enter notation: K, BB, 1B, 2B, 3B, HR, 6-3, etc."}
-            disabled={!!existingAtBat || isLocked}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm ${
-              existingAtBat || isLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : ''
-            }`}
-          />
-        </div>
-
-        {/* Drawing Guide */}
-        <div className="p-4 bg-gray-100 border-t border-gray-200">
-          <div className="text-sm text-gray-700 mb-2 font-semibold">Base Runner Guide:</div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div>• Click 1st base to select (yellow)</div>
-            <div>• Click 2nd base to select (yellow)</div>
-            <div>• Click 3rd base to select (yellow)</div>
-            <div>• Click home plate to select (yellow)</div>
-            <div>• Only one base selected at a time</div>
-            <div>• Click same base again to deselect</div>
-          </div>
-        </div>
-
         {/* Action Buttons */}
         <div className="p-4 border-t border-gray-200 flex justify-between">
           <button
             onClick={clearCanvas}
             disabled={isLocked}
-            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Clear
           </button>
           <div className="flex justify-end space-x-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Close
-            </button>
-            <button
-              onClick={saveDrawing}
-              disabled={isLocked}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLocked ? 'View Only' : 'Save At-Bat'}
+            className="px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Close
+          </button>
+          <button
+            onClick={saveDrawing}
+            disabled={isLocked}
+            className="px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLocked ? 'View' : 'Save'}
             </button>
           </div>
         </div>
