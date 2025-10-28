@@ -795,17 +795,40 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
 
         {/* Field Selection Modal */}
         {showFieldSelection && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
-            <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4">
-              <h3 className="text-xl font-bold mb-4 text-center">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60 p-2">
+            <div className="bg-white rounded-lg p-3 sm:p-6 max-w-4xl w-full mx-2 sm:mx-4 max-h-[95vh] overflow-auto">
+              <h3 className="text-base sm:text-xl font-bold mb-2 sm:mb-4 text-center">
                 Click where the ball landed on the field
               </h3>
               
               {/* Simple Field Selection */}
-              <div className="relative w-full h-[600px] bg-gradient-to-b from-green-200 to-green-300 border-4 border-green-800 rounded-lg overflow-hidden">
+              <div className="relative w-full h-[350px] sm:h-[450px] bg-gradient-to-b from-green-200 to-green-300 border-2 sm:border-4 border-green-800 rounded-lg overflow-hidden">
+                
+                {/* Foul Lines */}
+                <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 5 }}>
+                  {/* Left foul line - continues line from home through third base */}
+                  <line
+                    x1="50%"
+                    y1="100%"
+                    x2="-50%"
+                    y2="0%"
+                    stroke="#000000"
+                    strokeWidth="2"
+                  />
+                  {/* Right foul line - continues line from home through first base */}
+                  <line
+                    x1="50%"
+                    y1="100%"
+                    x2="150%"
+                    y2="0%"
+                    stroke="#000000"
+                    strokeWidth="2"
+                  />
+                </svg>
+                
                 {/* Infield Diamond */}
                 <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2" style={{ zIndex: 10 }}>
-                  <div className="relative w-80 h-80">
+                  <div className="relative w-40 h-40 sm:w-52 sm:h-52 md:w-64 md:h-64">
                     {/* Infield Dirt Area - Diamond shape */}
                     <div 
                       className="absolute inset-0 bg-orange-200 cursor-pointer hover:bg-orange-300 hover:bg-opacity-80 transition-colors"
@@ -1018,10 +1041,10 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 ></div>
               </div>
               
-              <div className="mt-4 flex justify-center">
+              <div className="mt-2 sm:mt-4 flex justify-center">
                 <button
                   onClick={() => setShowFieldSelection(false)}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600"
                 >
                   Cancel
                 </button>
