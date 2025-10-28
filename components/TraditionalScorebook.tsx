@@ -381,7 +381,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
-  async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }) {
+  async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) {
     if (!selectedCell) return
 
     const result = interpretHandwriting(notation)
@@ -415,7 +415,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             field_area: fieldLocationData?.fieldArea || '',
             field_zone: fieldLocationData?.fieldZone || '',
             hit_distance: fieldLocationData?.hitDistance || '',
-            hit_angle: fieldLocationData?.hitAngle || ''
+            hit_angle: fieldLocationData?.hitAngle || '',
+            rbi: rbi || 0
           }
         
         const { data, error } = await supabase
@@ -454,7 +455,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             at_bat_number: 1, // We'll calculate this properly later
             notation: notation, // Save original notation
             result: result,
-            rbi: 0,
+            rbi: rbi || 0,
             runs_scored: runsScored,
             stolen_bases: 0,
             base_runners: baseRunners || { first: false, second: false, third: false, home: false },
@@ -782,8 +783,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       {/* Canvas Drawing Modal */}
       {showCanvasModal && selectedCell && (
         <DiamondCanvas
-          onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes) => {
-            saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes)
+          onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi) => {
+            saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi)
           }}
           onClose={() => {
             setShowCanvasModal(false)

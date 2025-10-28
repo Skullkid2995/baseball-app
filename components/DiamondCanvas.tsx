@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from 'react'
 
 interface DiamondCanvasProps {
-  onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }) => void
+  onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) => void
   onClose: () => void
   playerName: string
   inning: number
@@ -25,6 +25,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     home: false
   })
   const [runScored, setRunScored] = useState(false)
+  const [runSaved, setRunSaved] = useState(false)
   const [handwritingInput, setHandwritingInput] = useState('')
   const [showFieldSelection, setShowFieldSelection] = useState(false)
   const [selectedFieldArea, setSelectedFieldArea] = useState<string | null>(null)
@@ -57,6 +58,10 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   const [outSaved, setOutSaved] = useState(false)
   const [showStrikeoutConfirm, setShowStrikeoutConfirm] = useState(false)
   const [showWalkConfirm, setShowWalkConfirm] = useState(false)
+  const [showRBISelection, setShowRBISelection] = useState(false)
+  const [selectedRBI, setSelectedRBI] = useState<number>(0)
+  const [preHitRunnersCount, setPreHitRunnersCount] = useState<number>(0)
+  const [rbiEligibleCount, setRbiEligibleCount] = useState<number>(0)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -104,6 +109,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       // Set run scored if home is true
       if ((existingAtBat.base_runners as { first: boolean, second: boolean, third: boolean, home: boolean })?.home) {
         setRunScored(true)
+        setRunSaved(true) // Mark run as already saved for existing at-bats
         console.log('Run was scored in this at-bat')
       }
       
@@ -146,17 +152,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           setIsOut(true)
         }
       }
-    } else {
-      console.log('No existing at-bat, resetting state')
-      // Reset state for new at-bat
-      setBaseRunners({ first: false, second: false, third: false, home: false })
-      setHandwritingInput('')
-      setRunScored(false)
-      setSelectedBase(null)
-      setIsOut(false)
-      setBaseRunnerOuts({ first: false, second: false, third: false, home: false })
-      setBaseRunnerOutTypes({ first: '', second: '', third: '', home: '' })
     }
+    // Don't reset state when existingAtBat is undefined - let user set base runners manually
   }, [existingAtBat])
 
   useEffect(() => {
@@ -538,6 +535,20 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setCount(prev => ({ ...prev, balls: prev.balls - 1 }))
   }
 
+  const confirmRBI = () => {
+    console.log('confirmRBI called - selectedRBI:', selectedRBI)
+    setShowRBISelection(false)
+    setShowOutcomeSelection(false)
+    // RBI is stored in selectedRBI state, will be passed to saveDrawing
+  }
+
+  const cancelRBI = () => {
+    console.log('cancelRBI called')
+    setShowRBISelection(false)
+    setShowOutcomeSelection(false)
+    setSelectedRBI(0)
+  }
+
   const addFoul = () => {
     setCount(prev => {
       const newFouls = prev.fouls + 1
@@ -657,11 +668,24 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       setRunScored(true)
     }
     
+    // Check if there are active runners on base BEFORE the hit
+    const activeRunnersCount = (baseRunners.first ? 1 : 0) + (baseRunners.second ? 1 : 0) + (baseRunners.third ? 1 : 0)
+    console.log('=== RBI CHECK === | (1, 2, 3) runners on base BEFORE hit:', activeRunnersCount)
+    console.log('Runners on base before hit:', baseRunners)
+    console.log('Active runners count:', activeRunnersCount)
+    console.log('Hit type:', hitType)
+    console.log('================')
+    
+    // Store the pre-hit runners count for RBI selection
+    setPreHitRunnersCount(activeRunnersCount)
+    
     // Update base runners
     setBaseRunners(newBaseRunners)
     
-    // Close the outcome selection modal
-    setShowOutcomeSelection(false)
+    // Always show RBI selection for statistics tracking (0-4 options)
+    console.log('Always showing RBI selection for statistics')
+    setRbiEligibleCount(4) // Always show 0-4 RBI options
+    setShowRBISelection(true)
   }
 
   const saveDrawing = () => {
@@ -675,11 +699,16 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     console.log('fieldLocationData:', fieldLocationData)
     console.log('===================')
     
-    onSave(handwritingInput || 'DRAWING_SAVED', finalBaseRunners, fieldLocationData || undefined, baseRunnerOuts, baseRunnerOutTypes)
+    onSave(handwritingInput || 'DRAWING_SAVED', finalBaseRunners, fieldLocationData || undefined, baseRunnerOuts, baseRunnerOutTypes, selectedRBI)
     
     // Mark out as saved so button can't be clicked again
     if (isOut) {
       setOutSaved(true)
+    }
+    
+    // Mark run as saved so button can't be clicked again
+    if (runScored) {
+      setRunSaved(true)
     }
   }
 
@@ -878,8 +907,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, and not already scored, or when walk occurs) */}
-            {!isOut && !isLocked && !runScored && (!atBatLocked || handwritingInput === 'BB') && (
+            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, or when walk occurs) */}
+            {!isOut && !isLocked && (!atBatLocked || handwritingInput === 'BB') && (
               <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
               <button
                 onClick={() => {
@@ -890,7 +919,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   setBaseRunners({ first: false, second: false, third: false, home: false })
                   setRunScored(true) // Set run scored to fill diamond with blue
                 }}
-                className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
+                disabled={runScored}
+                className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Carrera
               </button>
@@ -1483,14 +1513,14 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           >
             Close
           </button>
-          {/* Show Save button if no run scored, and either no out OR out not saved yet, or when walk occurs */}
-          {!runScored && (!isOut || !outSaved || (atBatLocked && handwritingInput === 'BB')) && (
+          {/* Show Save button - disabled after run saved or out saved */}
+          {(!isOut || !outSaved || (atBatLocked && handwritingInput === 'BB')) && (
             <button
               onClick={saveDrawing}
-              disabled={isLocked}
+              disabled={isLocked || (runScored && runSaved)}
               className="px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLocked ? 'View' : 'Save'}
+              {isLocked ? 'View' : runScored && runSaved ? 'Run Saved' : 'Save'}
             </button>
           )}
           </div>
@@ -1544,6 +1574,54 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           </div>
         </div>
       )}
+
+      {/* RBI Selection Modal */}
+      {showRBISelection && (() => {
+        console.log('RBI Modal rendering - showRBISelection:', showRBISelection)
+        console.log('RBI Modal rendering - eligibleCount:', rbiEligibleCount)
+        const activeRunnersCount = rbiEligibleCount
+        const rbiOptions = Array.from({ length: activeRunnersCount + 1 }, (_, i) => i)
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+              <h3 className="text-xl font-bold mb-4 text-center">Select RBIs</h3>
+              <p className="text-center mb-6 text-gray-600">
+                How many runs batted in? (0 to 4)
+              </p>
+              <div className="flex gap-3 justify-center flex-wrap">
+                {rbiOptions.map(rbi => (
+                  <button
+                    key={rbi}
+                    onClick={() => setSelectedRBI(rbi)}
+                    className={`px-4 py-2 rounded-lg font-bold ${
+                      selectedRBI === rbi
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    {rbi}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-4 justify-center mt-6">
+                <button
+                  onClick={confirmRBI}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold"
+                >
+                  Confirm ({selectedRBI} RBI{selectedRBI !== 1 ? 's' : ''})
+                </button>
+                <button
+                  onClick={cancelRBI}
+                  className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
