@@ -51,6 +51,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [loading, setLoading] = useState(true)
   const [selectedCell, setSelectedCell] = useState<{playerId: string, inning: number, playerName: string} | null>(null)
   const [showCanvasModal, setShowCanvasModal] = useState(false)
+  const [isLocked, setIsLocked] = useState(game.game_status === 'completed')
 
   useEffect(() => {
     fetchPlayers()
@@ -117,8 +118,34 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
+    // Allow viewing (but not editing) when locked
     setSelectedCell({ playerId, inning, playerName })
     setShowCanvasModal(true)
+  }
+
+  async function saveScorebook() {
+    if (!confirm('Are you sure you want to save and lock the scorebook? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('games')
+        .update({ game_status: 'completed' })
+        .eq('id', game.id)
+      
+      if (error) {
+        console.error('Error updating game status:', error)
+        alert('Error saving scorebook')
+        return
+      }
+      
+      setIsLocked(true)
+      alert('Scorebook saved and locked! All data is now read-only.')
+    } catch (err) {
+      console.error('Failed to save scorebook:', err)
+      alert('Error saving scorebook')
+    }
   }
 
   function interpretHandwriting(input: string) {
@@ -606,16 +633,30 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       </div>
 
       {/* Action Buttons */}
-      <div className="mt-6 flex justify-between">
-        <div className="text-sm text-gray-600">
-          <p>• Tap diamond cells to draw on the diamond</p>
-          <p>• Draw notation with finger or stylus (K, 6-3, arrows, etc.)</p>
-          <p>• Summary columns auto-calculate totals</p>
+      <div className="mt-6">
+        <div className="text-sm text-gray-600 mb-4">
+          {isLocked ? (
+            <p className="text-orange-600 font-bold">🔒 Scorebook LOCKED - View only mode</p>
+          ) : (
+            <>
+              <p>• Tap diamond cells to draw on the diamond</p>
+              <p>• Draw notation with finger or stylus (K, 6-3, arrows, etc.)</p>
+              <p>• Summary columns auto-calculate totals</p>
+            </>
+          )}
         </div>
-        <div className="space-x-3">
+        <div className="flex flex-col gap-3 items-stretch sm:flex-row sm:justify-end sm:gap-3">
+          {!isLocked && (
+            <button
+              onClick={saveScorebook}
+              className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-green-700 w-full sm:w-auto"
+            >
+              💾 Save Scorebook
+            </button>
+          )}
           <button
             onClick={onClose}
-            className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
+            className="bg-gray-600 text-white px-6 py-2.5 rounded-lg hover:bg-gray-700 w-full sm:w-auto"
           >
             Close Scorebook
           </button>
@@ -635,6 +676,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           playerName={selectedCell.playerName}
           inning={selectedCell.inning}
           existingAtBat={getAtBatForPlayer(selectedCell.playerId, selectedCell.inning) as unknown as Record<string, unknown>}
+          isLocked={isLocked}
         />
       )}
     </div>

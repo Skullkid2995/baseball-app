@@ -8,9 +8,10 @@ interface DiamondCanvasProps {
   playerName: string
   inning: number
   existingAtBat?: Record<string, unknown> // For editing existing at-bats
+  isLocked?: boolean // Game is locked and view-only
 }
 
-export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat }: DiamondCanvasProps) {
+export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false }: DiamondCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 })
@@ -315,6 +316,9 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     const canvas = canvasRef.current
     if (!canvas) return
     
+    // Don't allow interaction if locked (view only)
+    if (isLocked) return
+    
     // Don't allow base selection if it's an out
     if (isOut) return
 
@@ -589,8 +593,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               onTouchEnd={stopDrawing}
             />
             
-    {/* Hit/Out Buttons - Top Center (only show for new at-bats and not out) */}
-    {!existingAtBat && !isOut && (
+    {/* Hit/Out Buttons - Top Center (only show for new at-bats and not out and not locked) */}
+    {!existingAtBat && !isOut && !isLocked && (
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
         <button
           onClick={() => {
@@ -623,8 +627,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       </div>
     )}
 
-            {/* Count Buttons - Top Left (only show for new at-bats, not scored, and not out) */}
-            {!existingAtBat && !runScored && !isOut && (
+            {/* Count Buttons - Top Left (only show for new at-bats, not scored, and not out and not locked) */}
+            {!existingAtBat && !runScored && !isOut && !isLocked && (
               <div className="absolute top-20 left-4 flex flex-col space-y-4">
                 <button
                   onClick={addStrike}
@@ -656,8 +660,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
             
-            {/* Reset Button - Bottom Left (only show for new at-bats and not out) */}
-            {!existingAtBat && !isOut && (
+            {/* Reset Button - Bottom Left (only show for new at-bats and not out and not locked) */}
+            {!existingAtBat && !isOut && !isLocked && (
               <div className="absolute bottom-4 left-4">
                 <button
                   onClick={resetCount}
@@ -668,8 +672,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Base Runner Out Button - Bottom Center (only show if there are base runners and not out) */}
-            {!isOut && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
+            {/* Base Runner Out Button - Bottom Center (only show if there are base runners and not out and not locked) */}
+            {!isOut && !isLocked && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
                 <button
                   onClick={() => {
@@ -690,8 +694,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Carrera Button - Bottom Right (available for all at-bats except outs) */}
-            {!isOut && (
+            {/* Carrera Button - Bottom Right (available for all at-bats except outs and not locked) */}
+            {!isOut && !isLocked && (
               <div className="absolute bottom-4 right-4">
               <button
                 onClick={() => {
@@ -1223,10 +1227,10 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             type="text"
             value={handwritingInput}
             onChange={(e) => setHandwritingInput(e.target.value)}
-            placeholder={existingAtBat ? "Notation is locked for existing at-bats" : "Enter notation: K, BB, 1B, 2B, 3B, HR, 6-3, etc."}
-            disabled={!!existingAtBat}
+            placeholder={existingAtBat || isLocked ? "Notation is locked for existing at-bats" : "Enter notation: K, BB, 1B, 2B, 3B, HR, 6-3, etc."}
+            disabled={!!existingAtBat || isLocked}
             className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm ${
-              existingAtBat ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : ''
+              existingAtBat || isLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : ''
             }`}
           />
         </div>
@@ -1248,7 +1252,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         <div className="p-4 border-t border-gray-200 flex justify-between">
           <button
             onClick={clearCanvas}
-            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+            disabled={isLocked}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Clear
           </button>
@@ -1257,13 +1262,14 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               onClick={onClose}
               className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
-              Cancel
+              Close
             </button>
             <button
               onClick={saveDrawing}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={isLocked}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save At-Bat
+              {isLocked ? 'View Only' : 'Save At-Bat'}
             </button>
           </div>
         </div>
