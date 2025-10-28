@@ -611,8 +611,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                               </>
                             )}
                             
-                            {/* Red dot indicator for outs */}
-                            {atBat?.base_runner_outs && (atBat.base_runner_outs.first || atBat.base_runner_outs.second || atBat.base_runner_outs.third || atBat.base_runner_outs.home) && (
+                            {/* Red dot indicator for outs - show if base runner out OR result is an out */}
+                            {atBat && (
+                              (atBat?.base_runner_outs && (atBat.base_runner_outs.first || atBat.base_runner_outs.second || atBat.base_runner_outs.third || atBat.base_runner_outs.home)) ||
+                              (atBat.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(atBat.result))
+                            ) && (
                               <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white"></div>
                             )}
                             

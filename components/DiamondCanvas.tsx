@@ -54,6 +54,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   })
   const [ballLandingPosition, setBallLandingPosition] = useState<{x: number, y: number} | null>(null)
   const [atBatLocked, setAtBatLocked] = useState(false)
+  const [outSaved, setOutSaved] = useState(false)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -326,7 +327,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     // Don't allow base selection if it's an out
     if (isOut) return
     
-    // Allow base selection even if at-bat is locked (to move runners and score runs)
+    // Lock everything if a run has been scored
+    if (runScored) return
 
     const rect = canvas.getBoundingClientRect()
     const clientX = e.clientX
@@ -615,6 +617,11 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     console.log('===================')
     
     onSave(handwritingInput || 'DRAWING_SAVED', finalBaseRunners, fieldLocationData || undefined, baseRunnerOuts, baseRunnerOutTypes)
+    
+    // Mark out as saved so button can't be clicked again
+    if (isOut) {
+      setOutSaved(true)
+    }
   }
 
   return (
@@ -744,8 +751,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Base Runner Out Button - Bottom Center (only show if there are base runners and not out and not locked) */}
-            {!isOut && !isLocked && !atBatLocked && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
+            {/* Base Runner Out Button - Bottom Center (only show if there are base runners and not out, not locked, and not already scored) */}
+            {!isOut && !isLocked && !atBatLocked && !runScored && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
                 <button
                   onClick={() => {
@@ -766,8 +773,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Carrera Button - Bottom Right (available for all at-bats except outs and not locked) */}
-            {!isOut && !isLocked && (
+            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, and not already scored) */}
+            {!isOut && !isLocked && !runScored && (
               <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
               <button
                 onClick={() => {
@@ -1339,19 +1346,22 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             Clear
           </button>
           <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
+          <button
+            onClick={onClose}
             className="px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             Close
           </button>
-          <button
-            onClick={saveDrawing}
-            disabled={isLocked}
-            className="px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLocked ? 'View' : 'Save'}
+          {/* Show Save button if no run scored, and either no out OR out not saved yet */}
+          {!runScored && (!isOut || !outSaved) && (
+            <button
+              onClick={saveDrawing}
+              disabled={isLocked}
+              className="px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLocked ? 'View' : 'Save'}
             </button>
+          )}
           </div>
         </div>
       </div>
