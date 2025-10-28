@@ -55,6 +55,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   const [ballLandingPosition, setBallLandingPosition] = useState<{x: number, y: number} | null>(null)
   const [atBatLocked, setAtBatLocked] = useState(false)
   const [outSaved, setOutSaved] = useState(false)
+  const [showStrikeoutConfirm, setShowStrikeoutConfirm] = useState(false)
+  const [showWalkConfirm, setShowWalkConfirm] = useState(false)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -129,6 +131,20 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       if (existingAtBat.base_runner_outs) {
         setBaseRunnerOuts(existingAtBat.base_runner_outs as { first: boolean, second: boolean, third: boolean, home: boolean })
         console.log('Loaded base runner outs:', existingAtBat.base_runner_outs)
+        
+        // Check if any base runner was out (tagged, caught stealing, or force out)
+        const baseRunnerOuts = existingAtBat.base_runner_outs as { first: boolean, second: boolean, third: boolean, home: boolean }
+        if (baseRunnerOuts.first || baseRunnerOuts.second || baseRunnerOuts.third || baseRunnerOuts.home) {
+          // Remove yellow highlight from bases where runners were out
+          setBaseRunners(prev => ({
+            first: prev.first && !baseRunnerOuts.first,
+            second: prev.second && !baseRunnerOuts.second,
+            third: prev.third && !baseRunnerOuts.third,
+            home: prev.home && !baseRunnerOuts.home
+          }))
+          // Mark as out (but don't lock - allow editing base runner outs)
+          setIsOut(true)
+        }
       }
     } else {
       console.log('No existing at-bat, resetting state')
@@ -470,13 +486,56 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   }
 
   const addStrike = () => {
-    setCount(prev => ({ ...prev, strikes: Math.min(prev.strikes + 1, 3) }))
+    setCount(prev => {
+      const newStrikes = Math.min(prev.strikes + 1, 3)
+      return { ...prev, strikes: newStrikes }
+    })
     setPitchCount(prev => prev + 1)
   }
 
   const addBall = () => {
-    setCount(prev => ({ ...prev, balls: Math.min(prev.balls + 1, 4) }))
+    setCount(prev => {
+      const newBalls = Math.min(prev.balls + 1, 4)
+      return { ...prev, balls: newBalls }
+    })
     setPitchCount(prev => prev + 1)
+  }
+
+  // Auto-detect 3 strikes or 4 balls
+  useEffect(() => {
+    if (count.strikes === 3 && !atBatLocked && !showStrikeoutConfirm && !isOut) {
+      // Show confirmation modal for strikeout
+      setShowStrikeoutConfirm(true)
+    }
+    
+    if (count.balls === 4 && !atBatLocked && !showWalkConfirm && !isOut) {
+      // Show confirmation modal for walk
+      setShowWalkConfirm(true)
+    }
+  }, [count.strikes, count.balls, atBatLocked, showStrikeoutConfirm, showWalkConfirm, isOut])
+
+  const confirmStrikeout = () => {
+    setShowStrikeoutConfirm(false)
+    setHandwritingInput('K')
+    setIsOut(true)
+    setAtBatLocked(true)
+  }
+
+  const cancelStrikeout = () => {
+    setShowStrikeoutConfirm(false)
+    setCount(prev => ({ ...prev, strikes: prev.strikes - 1 }))
+  }
+
+  const confirmWalk = () => {
+    setShowWalkConfirm(false)
+    setBaseRunners(prev => ({ ...prev, first: true }))
+    setHandwritingInput('BB')
+    setAtBatLocked(true)
+  }
+
+  const cancelWalk = () => {
+    setShowWalkConfirm(false)
+    setCount(prev => ({ ...prev, balls: prev.balls - 1 }))
   }
 
   const addFoul = () => {
@@ -685,7 +744,6 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           onClick={() => {
             setShowFieldSelection(true)
             setSelectedFieldArea('OUT')
-            setIsOut(true) // Mark as out when Out button is clicked
           }}
           className="bg-red-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
         >
@@ -700,6 +758,53 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         <div className="bg-gray-100 text-gray-700 px-6 py-3 rounded-lg text-sm font-bold border-2 border-gray-300">
           Play: {handwritingInput} (Locked)
         </div>
+        {/* Show base runner outs if any */}
+        {baseRunnerOuts.first && (
+          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
+            Runner Out: {baseRunnerOutTypes.first || 'OUT'} (1st)
+          </div>
+        )}
+        {baseRunnerOuts.second && (
+          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
+            Runner Out: {baseRunnerOutTypes.second || 'OUT'} (2nd)
+          </div>
+        )}
+        {baseRunnerOuts.third && (
+          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
+            Runner Out: {baseRunnerOutTypes.third || 'OUT'} (3rd)
+          </div>
+        )}
+        {baseRunnerOuts.home && (
+          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
+            Runner Out: {baseRunnerOutTypes.home || 'OUT'} (Home)
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* Show base runner outs for current at-bats */}
+    {!existingAtBat && (baseRunnerOuts.first || baseRunnerOuts.second || baseRunnerOuts.third || baseRunnerOuts.home) && (
+      <div className="absolute top-16 left-1/2 transform -translate-x-1/2">
+        {baseRunnerOuts.first && (
+          <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300 mb-1">
+            Runner Out: {baseRunnerOutTypes.first || 'OUT'} (1st)
+          </div>
+        )}
+        {baseRunnerOuts.second && (
+          <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300 mb-1">
+            Runner Out: {baseRunnerOutTypes.second || 'OUT'} (2nd)
+          </div>
+        )}
+        {baseRunnerOuts.third && (
+          <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300 mb-1">
+            Runner Out: {baseRunnerOutTypes.third || 'OUT'} (3rd)
+          </div>
+        )}
+        {baseRunnerOuts.home && (
+          <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300 mb-1">
+            Runner Out: {baseRunnerOutTypes.home || 'OUT'} (Home)
+          </div>
+        )}
       </div>
     )}
 
@@ -773,8 +878,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, and not already scored) */}
-            {!isOut && !isLocked && !runScored && (
+            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, and not already scored, or when walk occurs) */}
+            {!isOut && !isLocked && !runScored && (!atBatLocked || handwritingInput === 'BB') && (
               <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
               <button
                 onClick={() => {
@@ -817,6 +922,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       ...prev,
                       [selectedBase!]: 'TAGGED_OUT'
                     }))
+                    // Remove the yellow highlight from the base
+                    setBaseRunners(prev => ({
+                      ...prev,
+                      [selectedBase!]: false
+                    }))
+                    // Mark as out (but don't lock the at-bat - allow multiple base runner outs)
+                    setIsOut(true)
                     setShowOutTypeModal(false)
                   }}
                   className="w-full bg-red-600 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
@@ -835,6 +947,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       ...prev,
                       [selectedBase!]: 'CAUGHT_STEALING'
                     }))
+                    // Remove the yellow highlight from the base
+                    setBaseRunners(prev => ({
+                      ...prev,
+                      [selectedBase!]: false
+                    }))
+                    // Mark as out (but don't lock the at-bat - allow multiple base runner outs)
+                    setIsOut(true)
                     setShowOutTypeModal(false)
                   }}
                   className="w-full bg-red-600 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
@@ -853,6 +972,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       ...prev,
                       [selectedBase!]: 'FORCE_OUT'
                     }))
+                    // Remove the yellow highlight from the base
+                    setBaseRunners(prev => ({
+                      ...prev,
+                      [selectedBase!]: false
+                    }))
+                    // Mark as out (but don't lock the at-bat - allow multiple base runner outs)
+                    setIsOut(true)
                     setShowOutTypeModal(false)
                   }}
                   className="w-full bg-red-600 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
@@ -1248,6 +1374,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       <button
                         onClick={() => {
                           setHandwritingInput('BUNT_OUT')
+                          setIsOut(true)
                           setShowOutcomeSelection(false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
@@ -1257,6 +1384,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       <button
                         onClick={() => {
                           setHandwritingInput('GO')
+                          setIsOut(true)
                           setShowOutcomeSelection(false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
@@ -1281,6 +1409,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       <button
                         onClick={() => {
                           setHandwritingInput('FO')
+                          setIsOut(true)
                           setShowOutcomeSelection(false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
@@ -1290,6 +1419,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       <button
                         onClick={() => {
                           setHandwritingInput('LO')
+                          setIsOut(true)
                           setShowOutcomeSelection(false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
@@ -1315,6 +1445,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   <button
                     onClick={() => {
                       setHandwritingInput('K')
+                      setIsOut(true)
                       setShowOutcomeSelection(false)
                     }}
                     className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
@@ -1352,8 +1483,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           >
             Close
           </button>
-          {/* Show Save button if no run scored, and either no out OR out not saved yet */}
-          {!runScored && (!isOut || !outSaved) && (
+          {/* Show Save button if no run scored, and either no out OR out not saved yet, or when walk occurs */}
+          {!runScored && (!isOut || !outSaved || (atBatLocked && handwritingInput === 'BB')) && (
             <button
               onClick={saveDrawing}
               disabled={isLocked}
@@ -1365,6 +1496,54 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           </div>
         </div>
       </div>
+
+      {/* Strikeout Confirmation Modal */}
+      {showStrikeoutConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-center">Strikeout?</h3>
+            <p className="text-center mb-6 text-gray-600">Third strike was called. Confirm strikeout?</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={confirmStrikeout}
+                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold"
+              >
+                Yes, Strikeout
+              </button>
+              <button
+                onClick={cancelStrikeout}
+                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Walk Confirmation Modal */}
+      {showWalkConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4 text-center">Base por Bola?</h3>
+            <p className="text-center mb-6 text-gray-600">Fourth ball was called. Confirm walk?</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={confirmWalk}
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold"
+              >
+                Yes, Walk
+              </button>
+              <button
+                onClick={cancelWalk}
+                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

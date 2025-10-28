@@ -158,6 +158,19 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
+  function hasThreeOutsInInning(inning: number) {
+    const inningAtBats = atBats.filter(ab => ab.inning === inning)
+    const outsInInning = inningAtBats.filter(ab => 
+      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
+      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
+    ).length
+    return outsInInning >= 3
+  }
+
+  function hasPlayerBattedInInning(playerId: string, inning: number) {
+    return atBats.some(ab => ab.player_id === playerId && ab.inning === inning)
+  }
+
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
     // Allow viewing (but not editing) when locked
     setSelectedCell({ playerId, inning, playerName })
@@ -619,11 +632,25 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     const currentBatter = getCurrentBatter()
                     const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === inningIndex + 1
                     
+                    // Check if this cell should be locked
+                    const inningNumber = inningIndex + 1
+                    const threeOuts = hasThreeOutsInInning(inningNumber)
+                    const playerBatted = player ? hasPlayerBattedInInning(player.id, inningNumber) : false
+                    const isLockedCell = threeOuts && !playerBatted
+                    
                     return (
                       <td key={inningIndex} className="border border-gray-400 px-1 py-1 relative">
                         <div 
-                          className="w-full h-full flex items-center justify-center cursor-pointer hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                          onClick={() => player && handleCellClick(player.id, inningIndex + 1, `${player.first_name} ${player.last_name}`, atBat as unknown as Record<string, unknown> || undefined)}
+                          className={`w-full h-full flex items-center justify-center transition-colors ${
+                            isLockedCell 
+                              ? 'cursor-not-allowed bg-gray-200' 
+                              : 'cursor-pointer hover:bg-blue-50 active:bg-blue-100'
+                          }`}
+                          onClick={() => {
+                            if (!isLockedCell && player) {
+                              handleCellClick(player.id, inningIndex + 1, `${player.first_name} ${player.last_name}`, atBat as unknown as Record<string, unknown> || undefined)
+                            }
+                          }}
                         >
                           {/* Diamond Shape */}
                           <div className="relative w-8 h-8">
