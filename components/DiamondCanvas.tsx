@@ -34,6 +34,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     fieldZone: string
     hitDistance: string
     hitAngle: string
+    xCoordinate: number
+    yCoordinate: number
   } | null>(null)
   const [isOut, setIsOut] = useState(false)
   const [baseRunnerOuts, setBaseRunnerOuts] = useState<{first: boolean, second: boolean, third: boolean, home: boolean}>({
@@ -50,6 +52,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     third: '',
     home: ''
   })
+  const [ballLandingPosition, setBallLandingPosition] = useState<{x: number, y: number} | null>(null)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -506,8 +509,25 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   }
 
 
-  const handleFieldClick = (fieldArea: string) => {
+  const handleFieldClick = (fieldArea: string, event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement> | null = null) => {
     console.log('Field area clicked:', fieldArea)
+    
+    // Capture pixel-perfect coordinates
+    let xCoordinate = 0
+    let yCoordinate = 0
+    
+    if (event) {
+      const fieldContainer = document.getElementById('field-container')
+      if (fieldContainer) {
+        const rect = fieldContainer.getBoundingClientRect()
+        const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
+        const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY
+        
+        // Calculate relative coordinates within the field container
+        xCoordinate = Math.round(((clientX - rect.left) / rect.width) * 10000) / 100 // Percentage with 2 decimals
+        yCoordinate = Math.round(((clientY - rect.top) / rect.height) * 10000) / 100 // Percentage with 2 decimals
+      }
+    }
     
     // Determine field zone and hit characteristics
     const fieldZone = fieldArea
@@ -528,13 +548,18 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       hitAngle = 'OPPO'
     }
     
-    // Set field location data
+    // Set field location data with pixel coordinates
     setFieldLocationData({
       fieldArea: selectedFieldArea || '',
       fieldZone: fieldZone,
       hitDistance: hitDistance,
-      hitAngle: hitAngle
+      hitAngle: hitAngle,
+      xCoordinate: xCoordinate,
+      yCoordinate: yCoordinate
     })
+    
+    // Set visual ball landing position
+    setBallLandingPosition({ x: xCoordinate, y: yCoordinate })
     
     setSelectedFieldArea(selectedFieldArea + '_' + fieldArea)
     setShowFieldSelection(false)
@@ -802,7 +827,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </h3>
               
               {/* Simple Field Selection */}
-              <div className="relative w-full h-[350px] sm:h-[450px] bg-gradient-to-b from-green-200 to-green-300 border-2 sm:border-4 border-green-800 rounded-lg overflow-hidden">
+              <div id="field-container" className="relative w-full h-[350px] sm:h-[450px] bg-gradient-to-b from-green-200 to-green-300 border-2 sm:border-4 border-green-800 rounded-lg overflow-hidden">
                 
                 {/* Foul Lines */}
                 <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 5 }}>
@@ -826,6 +851,24 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   />
                 </svg>
                 
+                {/* Visual Ball Marker - shows where ball landed */}
+                {ballLandingPosition && (
+                  <div
+                    className="absolute"
+                    style={{
+                      left: `${ballLandingPosition.x}%`,
+                      top: `${ballLandingPosition.y}%`,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 100,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div className="w-6 h-6 bg-white border-3 border-black rounded-full shadow-lg flex items-center justify-center">
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Infield Diamond */}
                 <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2" style={{ zIndex: 10 }}>
                   <div className="relative w-40 h-40 sm:w-52 sm:h-52 md:w-64 md:h-64">
@@ -835,7 +878,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       style={{
                         clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'
                       }}
-                      onClick={() => handleFieldClick('INFIELD')}
+                      onClick={(e) => handleFieldClick('INFIELD', e)}
                       title="Infield"
                     >
                       {/* Diamond outline */}
@@ -948,12 +991,12 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 
                 {/* Ultra-Precise Outfield Mapping */}
                 <div className="absolute inset-0">
-                  {/* Left Field - 1000 precise clickable areas */}
-                  <div className="absolute top-0 left-0 w-1/3 h-1/2">
-                    {Array.from({ length: 50 }, (_, row) => 
+                  {/* Left Field - precise clickable areas covering entire outfield */}
+                  <div className="absolute top-0 left-0 w-1/3" style={{ height: '70%', zIndex: 6 }}>
+                    {Array.from({ length: 70 }, (_, row) => 
                       Array.from({ length: 20 }, (_, col) => {
                         const x = (col / 20) * 100
-                        const y = (row / 50) * 100
+                        const y = (row / 70) * 100
                         const area = getLeftFieldArea(x, y)
                         
                         return (
@@ -966,7 +1009,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                               width: '5%',
                               height: '2%'
                             }}
-                            onClick={() => handleFieldClick(area)}
+                            onClick={(e) => handleFieldClick(area, e)}
                             title={area}
                           />
                         )
@@ -974,12 +1017,12 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                     )}
                   </div>
                   
-                  {/* Center Field - 1000 precise clickable areas */}
-                  <div className="absolute top-0 left-1/3 w-1/3 h-1/2">
-                    {Array.from({ length: 50 }, (_, row) => 
+                  {/* Center Field - precise clickable areas covering entire outfield */}
+                  <div className="absolute top-0 left-1/3 w-1/3" style={{ height: '70%', zIndex: 6 }}>
+                    {Array.from({ length: 70 }, (_, row) => 
                       Array.from({ length: 20 }, (_, col) => {
                         const x = (col / 20) * 100
-                        const y = (row / 50) * 100
+                        const y = (row / 70) * 100
                         const area = getCenterFieldArea(x, y)
                         
                         return (
@@ -992,7 +1035,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                               width: '5%',
                               height: '2%'
                             }}
-                            onClick={() => handleFieldClick(area)}
+                            onClick={(e) => handleFieldClick(area, e)}
                             title={area}
                           />
                         )
@@ -1000,12 +1043,12 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                     )}
                   </div>
                   
-                  {/* Right Field - 1000 precise clickable areas */}
-                  <div className="absolute top-0 right-0 w-1/3 h-1/2">
-                    {Array.from({ length: 50 }, (_, row) => 
+                  {/* Right Field - precise clickable areas covering entire outfield */}
+                  <div className="absolute top-0 right-0 w-1/3" style={{ height: '70%', zIndex: 6 }}>
+                    {Array.from({ length: 70 }, (_, row) => 
                       Array.from({ length: 20 }, (_, col) => {
                         const x = (col / 20) * 100
-                        const y = (row / 50) * 100
+                        const y = (row / 70) * 100
                         const area = getRightFieldArea(x, y)
                         
                         return (
@@ -1018,7 +1061,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                               width: '5%',
                               height: '2%'
                             }}
-                            onClick={() => handleFieldClick(area)}
+                            onClick={(e) => handleFieldClick(area, e)}
                             title={area}
                           />
                         )
@@ -1030,20 +1073,25 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 {/* Foul Territory */}
                 <div 
                   className="absolute bottom-0 left-0 w-1/2 h-1/2 cursor-pointer hover:bg-gray-300 hover:bg-opacity-30 transition-colors"
-                  onClick={() => handleFieldClick('FOUL_LEFT')}
+                  style={{ zIndex: 6 }}
+                  onClick={(e) => handleFieldClick('FOUL_LEFT', e)}
                   title="Foul Territory (Left)"
                 ></div>
                 
                 <div 
                   className="absolute bottom-0 right-0 w-1/2 h-1/2 cursor-pointer hover:bg-gray-300 hover:bg-opacity-30 transition-colors"
-                  onClick={() => handleFieldClick('FOUL_RIGHT')}
+                  style={{ zIndex: 6 }}
+                  onClick={(e) => handleFieldClick('FOUL_RIGHT', e)}
                   title="Foul Territory (Right)"
                 ></div>
               </div>
               
               <div className="mt-2 sm:mt-4 flex justify-center">
                 <button
-                  onClick={() => setShowFieldSelection(false)}
+                  onClick={() => {
+                    setShowFieldSelection(false)
+                    setBallLandingPosition(null)
+                  }}
                   className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600"
                 >
                   Cancel
@@ -1064,85 +1112,90 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 Field area: {selectedFieldArea?.replace('HIT_', '').replace('OUT_', '')}
               </p>
               
+              {/* Visual confirmation of ball landing spot */}
+              <div className="mb-4 p-2 bg-gray-50 rounded border border-gray-200">
+                <div className="text-xs text-gray-500 mb-1">Ball landing position:</div>
+                <div className="text-sm font-mono">X: {fieldLocationData?.xCoordinate.toFixed(2)}% | Y: {fieldLocationData?.yCoordinate.toFixed(2)}%</div>
+              </div>
+              
               {selectedFieldArea?.includes('HIT') ? (
                 <div className="space-y-3">
-                  <h4 className="font-semibold text-green-600">Hit Options:</h4>
+                  <h4 className="font-semibold text-green-600">Hit Types:</h4>
                   
-                  {/* Infield hits */}
-                  {selectedFieldArea && selectedFieldArea.includes('INFIELD') && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('BUNT')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-blue-100 border-2 border-blue-600 rounded-lg hover:bg-blue-200 font-semibold"
-                      >
-                        BUNT - Bunt Single
-                      </button>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('H1')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
-                      >
-                        INFIELD HIT - Infield Single
-                      </button>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('E')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-yellow-100 border-2 border-yellow-600 rounded-lg hover:bg-yellow-200 font-semibold"
-                      >
-                        ERROR - Fielding Error
-                      </button>
-                    </>
-                  )}
+                  {/* Hit buttons */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('H1')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
+                    >
+                      Single
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('H2')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
+                    >
+                      Double
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('H3')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
+                    >
+                      Triple
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('HR')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
+                    >
+                      Home Run
+                    </button>
+                  </div>
                   
-                  {/* Outfield hits */}
-                  {selectedFieldArea && (selectedFieldArea.includes('LEFT_FIELD') || selectedFieldArea.includes('CENTER_FIELD') || selectedFieldArea.includes('RIGHT_FIELD') || selectedFieldArea.includes('DEEP_')) && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('H1')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
-                      >
-                        H1 - Single
-                      </button>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('H2')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
-                      >
-                        H2 - Double
-                      </button>
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('H3')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
-                      >
-                        H3 - Triple
-                      </button>
-                    </>
-                  )}
+                  {/* Separator */}
+                  <div className="border-t-2 border-gray-300 my-4"></div>
                   
-                      <button
-                        onClick={() => {
-                          setHandwritingInput('HR')
-                          setShowOutcomeSelection(false)
-                        }}
-                        className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
-                      >
-                        HR - Home Run
-                      </button>
+                  {/* Other options */}
+                  <h4 className="font-semibold text-blue-600">Other Outcomes:</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('E')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-yellow-100 border-2 border-yellow-600 rounded-lg hover:bg-yellow-200 font-semibold"
+                    >
+                      Error
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('FC')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
+                    >
+                      Fielder's Choice
+                    </button>
+                    <button
+                      onClick={() => {
+                        setHandwritingInput('BUNT')
+                        setShowOutcomeSelection(false)
+                      }}
+                      className="w-full p-3 bg-purple-100 border-2 border-purple-600 rounded-lg hover:bg-purple-200 font-semibold"
+                    >
+                      Bunt
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
