@@ -32,6 +32,7 @@ interface HitStats {
   battingAverage: number
   sluggingPercentage: number
   totalRBIs: number
+  totalStrikeouts: number
   fieldDistribution: { [key: string]: number }
   distanceDistribution: { [key: string]: number }
   angleDistribution: { [key: string]: number }
@@ -98,6 +99,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
     const homeRuns = hits.filter(ab => ab.result === 'home_run').length
     const totalHits = hits.length
     const totalRBIs = filteredAtBats.reduce((sum, ab) => sum + (typeof ab.rbi === 'number' ? ab.rbi : 0), 0)
+    const totalStrikeouts = filteredAtBats.filter(ab => ab.result === 'strikeout' || ab.notation === 'K').length
 
     const battingAverage = totalAtBats > 0 ? (totalHits / totalAtBats) : 0
     const sluggingPercentage = totalAtBats > 0 
@@ -142,6 +144,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
       battingAverage,
       sluggingPercentage,
       totalRBIs,
+      totalStrikeouts,
       fieldDistribution,
       distanceDistribution,
       angleDistribution,
@@ -217,7 +220,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
       </div>
 
       {/* Basic Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
         <div className="bg-blue-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-blue-600">{stats.totalAtBats}</div>
           <div className="text-sm text-blue-800">Total At-Bats</div>
@@ -229,6 +232,10 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
         <div className="bg-pink-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-pink-600">{stats.totalRBIs}</div>
           <div className="text-sm text-pink-800">RBIs</div>
+        </div>
+        <div className="bg-red-50 p-4 rounded-lg">
+          <div className="text-2xl font-bold text-red-600">{stats.totalStrikeouts}</div>
+          <div className="text-sm text-red-800">Strikeouts</div>
         </div>
         <div className="bg-yellow-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-yellow-600">
