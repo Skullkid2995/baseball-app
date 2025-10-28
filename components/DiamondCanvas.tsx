@@ -106,6 +106,14 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         console.log('Loaded result as notation:', existingAtBat.result)
       }
       
+      // Set atBatLocked for hit-like outcomes to allow base runner movement
+      const hitLikeOutcomes = ['E', 'FC', 'BUNT', 'H1', 'H2', 'H3', 'HR']
+      const currentNotation = existingAtBat.notation || existingAtBat.result
+      if (hitLikeOutcomes.includes(currentNotation as string)) {
+        setAtBatLocked(true)
+        console.log('Set atBatLocked=true for hit-like outcome:', currentNotation)
+      }
+      
       // Set run scored if home is true
       if ((existingAtBat.base_runners as { first: boolean, second: boolean, third: boolean, home: boolean })?.home) {
         setRunScored(true)
@@ -129,9 +137,19 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         })
       }
       
-      // Check if result is an out
-      const outResults = ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'error']
-      setIsOut(outResults.includes(existingAtBat.result as string))
+      // Check if result is an out (Errors and Fielder's Choice are NOT outs for batter)
+      const outResults = ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out']
+      const resultStr = ((existingAtBat.result as string) || '').toLowerCase()
+      const notationStr = ((existingAtBat.notation as string) || '').toUpperCase()
+      const isError = notationStr === 'E' || resultStr === 'error'
+      const isFieldersChoice = notationStr === 'FC' || resultStr === 'fielders_choice' || resultStr === 'fielder_choice'
+      const isBuntHit = notationStr === 'BUNT' || resultStr === 'bunt'
+      // If any of the above hit-like outcomes, ensure not marked as out
+      if (isError || isFieldersChoice || isBuntHit) {
+        setIsOut(false)
+      } else {
+        setIsOut(outResults.includes(resultStr))
+      }
       
       // Load base runner outs if available
       if (existingAtBat.base_runner_outs) {
@@ -342,6 +360,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     
     // Lock everything if a run has been scored
     if (runScored) return
+    
+    // Allow base selection for hit-like outcomes even when at-bat is locked
+    const hitLikeOutcomes = ['E', 'FC', 'BUNT', 'H1', 'H2', 'H3', 'HR']
+    const isHitLikeOutcome = hitLikeOutcomes.includes(handwritingInput)
+    
+    // Don't allow base selection if at-bat is locked AND it's not a hit-like outcome
+    if (atBatLocked && !isHitLikeOutcome) return
 
     const rect = canvas.getBoundingClientRect()
     const clientX = e.clientX
@@ -643,6 +668,22 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setShowOutcomeSelection(true)
   }
 
+  const handleHitLikeOutcome = (notation: string) => {
+    // Set the notation
+    setHandwritingInput(notation)
+    
+    // Lock the at-bat (count and buttons will be disabled)
+    setAtBatLocked(true)
+    
+    // Set base runners - batter reaches first base for hit-like outcomes
+    setBaseRunners({ first: true, second: false, third: false, home: false })
+    
+    // Always show RBI selection for statistics tracking (0-4 options)
+    console.log('Always showing RBI selection for hit-like outcome:', notation)
+    setRbiEligibleCount(4) // Always show 0-4 RBI options
+    setShowRBISelection(true)
+  }
+
   const handleHitTypeSelection = (hitType: string) => {
     // Set the notation
     setHandwritingInput(hitType)
@@ -907,24 +948,35 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </div>
             )}
 
-            {/* Carrera Button - Bottom Right (available for all at-bats except outs, not locked, or when walk occurs) */}
-            {!isOut && !isLocked && (!atBatLocked || handwritingInput === 'BB') && (
-              <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
-              <button
-                onClick={() => {
-                  console.log('=== CARRERA CLICKED ===')
-                  console.log('Clearing all base runners - Run scored!')
-                  console.log('=======================')
-                  setSelectedBase(null)
-                  setBaseRunners({ first: false, second: false, third: false, home: false })
-                  setRunScored(true) // Set run scored to fill diamond with blue
-                }}
-                disabled={runScored}
-                className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Carrera
-              </button>
-              </div>
+            {/* Carrera Button - Bottom Right (available for hit-like outcomes, walks, or when not locked) */}
+            {!isOut && !isLocked && (
+              (() => {
+                const hitLikeOutcomes = ['E', 'FC', 'BUNT', 'H1', 'H2', 'H3', 'HR']
+                const isHitLikeOutcome = hitLikeOutcomes.includes(handwritingInput)
+                const isWalk = handwritingInput === 'BB'
+                const shouldShow = !atBatLocked || isHitLikeOutcome || isWalk
+                
+                if (!shouldShow) return null
+                
+                return (
+                  <div className="absolute bottom-1 sm:bottom-4 right-1 sm:right-4">
+                    <button
+                      onClick={() => {
+                        console.log('=== CARRERA CLICKED ===')
+                        console.log('Clearing all base runners - Run scored!')
+                        console.log('=======================')
+                        setSelectedBase(null)
+                        setBaseRunners({ first: false, second: false, third: false, home: false })
+                        setRunScored(true) // Set run scored to fill diamond with blue
+                      }}
+                      disabled={runScored && runSaved}
+                      className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Carrera
+                    </button>
+                  </div>
+                )
+              })()
             )}
           </div>
         </div>
@@ -1366,28 +1418,19 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   <h4 className="font-semibold text-blue-600">Other Outcomes:</h4>
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => {
-                        setHandwritingInput('E')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitLikeOutcome('E')}
                       className="w-full p-3 bg-yellow-100 border-2 border-yellow-600 rounded-lg hover:bg-yellow-200 font-semibold"
                     >
                       Error
                     </button>
                     <button
-                      onClick={() => {
-                        setHandwritingInput('FC')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitLikeOutcome('FC')}
                       className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
                     >
                       Fielder's Choice
                     </button>
                     <button
-                      onClick={() => {
-                        setHandwritingInput('BUNT')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitLikeOutcome('BUNT')}
                       className="w-full p-3 bg-purple-100 border-2 border-purple-600 rounded-lg hover:bg-purple-200 font-semibold"
                     >
                       Bunt
@@ -1422,10 +1465,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                         INFIELD OUT - Ground Out
                       </button>
                       <button
-                        onClick={() => {
-                          setHandwritingInput('E')
-                          setShowOutcomeSelection(false)
-                        }}
+                        onClick={() => handleHitLikeOutcome('E')}
                         className="w-full p-3 bg-yellow-100 border-2 border-yellow-600 rounded-lg hover:bg-yellow-200 font-semibold"
                       >
                         ERROR - Fielding Error

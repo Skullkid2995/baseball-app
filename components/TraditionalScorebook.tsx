@@ -35,6 +35,7 @@ interface AtBat {
   base_runner_outs?: { first: boolean, second: boolean, third: boolean, home: boolean }
   notation?: string
   players?: Player
+  created_at?: string
 }
 
 export default function TraditionalScorebook({ game, onClose }: { game: Game, onClose: () => void }) {
@@ -107,6 +108,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return atBats.find(ab => ab.player_id === playerId && ab.inning === inning)
   }
 
+  function getAtBatForPlayerNth(playerId: string, inning: number, n: number) {
+    const matches = atBats
+      .filter(ab => ab.player_id === playerId && ab.inning === inning)
+      .sort((a, b) => (a.at_bat_number || 1) - (b.at_bat_number || 1))
+    return matches[n - 1] || null
+  }
+
   function getCurrentBatter() {
     if (players.length === 0) return null
 
@@ -145,6 +153,24 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     
     // Fallback: first player
     return { playerId: players[0].id, inning: currentInning }
+  }
+
+  // Determine if we should add a duplicate column for the active inning
+  function getInningColumns(): { inning: number, isDuplicate: boolean }[] {
+    const baseCols = Array.from({ length: 10 }, (_, i) => ({ inning: i + 1, isDuplicate: false }))
+    if (players.length === 0 || atBats.length === 0) return baseCols
+    const current = getCurrentBatter()
+    if (!current) return baseCols
+    const inningNumber = current.inning
+    // Only consider duplicate if this inning has fewer than 3 outs and the next batter is the first batter
+    const threeOuts = hasThreeOutsInInning(inningNumber)
+    const isFirstBatterUp = players[0] && current.playerId === players[0].id
+    if (!threeOuts && isFirstBatterUp) {
+      const idx = inningNumber - 1
+      // Insert a duplicate column immediately after the active inning
+      baseCols.splice(idx + 1, 0, { inning: inningNumber, isDuplicate: true })
+    }
+    return baseCols
   }
 
   function getPlayerStats(playerId: string) {
@@ -591,9 +617,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               <th className="border border-gray-400 px-2 py-1 w-8">#</th>
               <th className="border border-gray-400 px-2 py-1 whitespace-nowrap">Batter</th>
               <th className="border border-gray-400 px-1 py-1 w-6"></th>
-              {Array.from({ length: 10 }, (_, i) => (
-                <th key={i} className="border border-gray-400 px-1 py-1 w-16 text-center">
-                  {i + 1}
+              {getInningColumns().map((col, i) => (
+                <th key={`inning-${i}`} className="border border-gray-400 px-1 py-1 w-16 text-center">
+                  {col.inning}
                 </th>
               ))}
               <th className="border border-gray-400 px-1 py-1 w-8 text-center">H</th>
@@ -628,13 +654,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   </td>
                   
                   {/* Inning Columns with Diamond Grids */}
-                  {Array.from({ length: 10 }, (_, inningIndex) => {
-                    const atBat = player ? getAtBatForPlayer(player.id, inningIndex + 1) : null
+                  {getInningColumns().map((col, inningIndex) => {
+                    const atBat = player ? getAtBatForPlayerNth(player.id, col.inning, col.isDuplicate ? 2 : 1) : null
                     const currentBatter = getCurrentBatter()
-                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === inningIndex + 1
+                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === col.inning && !col.isDuplicate
                     
                     // Check if this cell should be locked
-                    const inningNumber = inningIndex + 1
+                    const inningNumber = col.inning
                     const threeOuts = hasThreeOutsInInning(inningNumber)
                     const playerBatted = player ? hasPlayerBattedInInning(player.id, inningNumber) : false
                     const isLockedCell = threeOuts && !playerBatted
@@ -649,7 +675,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                           }`}
                           onClick={() => {
                             if (!isLockedCell && player) {
-                              handleCellClick(player.id, inningIndex + 1, `${player.first_name} ${player.last_name}`, atBat as unknown as Record<string, unknown> || undefined)
+                              // For duplicate columns, force creation of a new at-bat (pass undefined)
+                              handleCellClick(
+                                player.id,
+                                inningNumber,
+                                `${player.first_name} ${player.last_name}`,
+                                col.isDuplicate ? undefined : (atBat as unknown as Record<string, unknown> || undefined)
+                              )
                             }
                           }}
                         >

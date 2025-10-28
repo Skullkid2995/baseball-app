@@ -13,6 +13,7 @@ interface AtBat {
   hit_distance: string
   hit_angle: string
   runs_scored: number
+  rbi?: number
   base_runners: Record<string, unknown>
   players: {
     first_name: string
@@ -30,6 +31,7 @@ interface HitStats {
   singles: number
   battingAverage: number
   sluggingPercentage: number
+  totalRBIs: number
   fieldDistribution: { [key: string]: number }
   distanceDistribution: { [key: string]: number }
   angleDistribution: { [key: string]: number }
@@ -95,6 +97,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
     const triples = hits.filter(ab => ab.result === 'triple').length
     const homeRuns = hits.filter(ab => ab.result === 'home_run').length
     const totalHits = hits.length
+    const totalRBIs = filteredAtBats.reduce((sum, ab) => sum + (typeof ab.rbi === 'number' ? ab.rbi : 0), 0)
 
     const battingAverage = totalAtBats > 0 ? (totalHits / totalAtBats) : 0
     const sluggingPercentage = totalAtBats > 0 
@@ -138,6 +141,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
       singles,
       battingAverage,
       sluggingPercentage,
+      totalRBIs,
       fieldDistribution,
       distanceDistribution,
       angleDistribution,
@@ -213,7 +217,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
       </div>
 
       {/* Basic Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="bg-blue-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-blue-600">{stats.totalAtBats}</div>
           <div className="text-sm text-blue-800">Total At-Bats</div>
@@ -221,6 +225,10 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
         <div className="bg-green-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-green-600">{stats.hits}</div>
           <div className="text-sm text-green-800">Hits</div>
+        </div>
+        <div className="bg-pink-50 p-4 rounded-lg">
+          <div className="text-2xl font-bold text-pink-600">{stats.totalRBIs}</div>
+          <div className="text-sm text-pink-800">RBIs</div>
         </div>
         <div className="bg-yellow-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-yellow-600">
@@ -378,6 +386,9 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Angle
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    RBIs
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -403,6 +414,9 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       {atBat.hit_angle || '-'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                      {typeof atBat.rbi === 'number' ? atBat.rbi : 0}
                     </td>
                   </tr>
                 ))}
