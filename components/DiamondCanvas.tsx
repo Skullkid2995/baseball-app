@@ -53,6 +53,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     home: ''
   })
   const [ballLandingPosition, setBallLandingPosition] = useState<{x: number, y: number} | null>(null)
+  const [atBatLocked, setAtBatLocked] = useState(false)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -315,7 +316,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     // No field border - just the diamond
   }
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
     
@@ -324,13 +325,19 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     
     // Don't allow base selection if it's an out
     if (isOut) return
+    
+    // Allow base selection even if at-bat is locked (to move runners and score runs)
 
     const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const clientX = e.clientX
+    const clientY = e.clientY
     
-    const x = clientX - rect.left
-    const y = clientY - rect.top
+    // Scale click coordinates to match internal canvas size (600x600)
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
+    const x = (clientX - rect.left) * scaleX
+    const y = (clientY - rect.top) * scaleY
     
     console.log('Click coordinates:', x, y)
     
@@ -391,9 +398,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       return
     }
     
-    // If not clicking on a base, start drawing
-    setIsDrawing(true)
-    setLastPoint({ x, y })
+    // Base selection only - no drawing
   }
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -566,6 +571,38 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setShowOutcomeSelection(true)
   }
 
+  const handleHitTypeSelection = (hitType: string) => {
+    // Set the notation
+    setHandwritingInput(hitType)
+    
+    // Lock the at-bat (count and buttons will be disabled)
+    setAtBatLocked(true)
+    
+    // Set base runners based on hit type
+    let newBaseRunners = { first: false, second: false, third: false, home: false }
+    
+    if (hitType === 'H1') {
+      // Single - runner on first base
+      newBaseRunners = { first: true, second: false, third: false, home: false }
+    } else if (hitType === 'H2') {
+      // Double - runner on second base
+      newBaseRunners = { first: false, second: true, third: false, home: false }
+    } else if (hitType === 'H3') {
+      // Triple - runner on third base
+      newBaseRunners = { first: false, second: false, third: true, home: false }
+    } else if (hitType === 'HR') {
+      // Home run - mark as scored (home run)
+      newBaseRunners = { first: false, second: false, third: false, home: true }
+      setRunScored(true)
+    }
+    
+    // Update base runners
+    setBaseRunners(newBaseRunners)
+    
+    // Close the outcome selection modal
+    setShowOutcomeSelection(false)
+  }
+
   const saveDrawing = () => {
     // If run was scored, set home to true in baseRunners
     const finalBaseRunners = runScored ? { first: false, second: false, third: false, home: true } : baseRunners
@@ -608,26 +645,32 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               ref={canvasRef}
               width={600}
               height={600}
-              className="border border-gray-300 rounded-lg bg-white cursor-crosshair max-w-full max-h-full w-auto h-auto"
+              className="border border-gray-300 rounded-lg bg-white cursor-pointer max-w-full max-h-full w-auto h-auto"
               style={{ width: 'min(100vw - 2rem, 400px)', height: 'min(100vw - 2rem, 400px)' }}
-              onMouseDown={handleCanvasClick}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={handleCanvasClick}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
+              onClick={handleCanvasClick}
+              onTouchEnd={(e) => {
+                e.preventDefault()
+                const touch = e.changedTouches[0]
+                const mouseEvent = new MouseEvent('click', {
+                  clientX: touch.clientX,
+                  clientY: touch.clientY,
+                  bubbles: true,
+                  cancelable: true
+                })
+                canvasRef.current?.dispatchEvent(mouseEvent)
+              }}
             />
             
     {/* Hit/Out Buttons - Top Center (only show for new at-bats and not out and not locked) */}
-    {!existingAtBat && !isOut && !isLocked && (
+    {!existingAtBat && !isOut && !isLocked && !atBatLocked && (
       <div className="absolute top-1 sm:top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 sm:space-x-4">
         <button
           onClick={() => {
             setShowFieldSelection(true)
             setSelectedFieldArea('HIT')
           }}
-          className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg"
+          disabled={atBatLocked}
+          className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           Hit
         </button>
@@ -654,40 +697,43 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     )}
 
             {/* Count Buttons - Top Left (only show for new at-bats, not scored, and not out and not locked) */}
-            {!existingAtBat && !runScored && !isOut && !isLocked && (
+            {!existingAtBat && !runScored && !isOut && !isLocked && !atBatLocked && (
               <div className="absolute top-20 left-1 sm:left-4 flex flex-col space-y-2 sm:space-y-4">
                 <button
                   onClick={addStrike}
-                  className="bg-red-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-600 active:bg-red-700 shadow-lg"
+                  disabled={atBatLocked}
+                  className="bg-red-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-600 active:bg-red-700 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   Strike
                 </button>
                 <button
                   onClick={addBall}
-                  className="bg-blue-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-blue-600 active:bg-blue-700 shadow-lg"
+                  disabled={atBatLocked}
+                  className="bg-blue-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-blue-600 active:bg-blue-700 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   Ball
                 </button>
                 <button
                   onClick={addFoul}
-                  className="bg-yellow-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-yellow-600 active:bg-yellow-700 shadow-lg"
+                  disabled={atBatLocked}
+                  className="bg-yellow-500 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-yellow-600 active:bg-yellow-700 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   Foul
                 </button>
               </div>
             )}
             
-            {/* Show locked count for existing at-bats, scored runs, or outs */}
-            {(existingAtBat || runScored || isOut) && (
-              <div className="absolute top-20 left-4">
-                <div className="bg-gray-100 text-gray-700 px-4 py-3 rounded-lg text-sm font-bold border-2 border-gray-300">
-                  Count: {count.strikes}S-{count.balls}B-{count.fouls}F (Locked)
+            {/* Show locked count for existing at-bats, scored runs, or outs or locked at-bat */}
+            {(existingAtBat || runScored || isOut || atBatLocked) && (
+              <div className="absolute top-2 left-2 sm:top-4 sm:left-4">
+                <div className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold border border-gray-300">
+                  {count.strikes}S-{count.balls}B-{count.fouls}F
                 </div>
               </div>
             )}
             
             {/* Reset Button - Bottom Left (only show for new at-bats and not out and not locked) */}
-            {!existingAtBat && !isOut && !isLocked && (
+            {!existingAtBat && !isOut && !isLocked && !atBatLocked && (
               <div className="absolute bottom-1 sm:bottom-4 left-1 sm:left-4">
                 <button
                   onClick={resetCount}
@@ -699,7 +745,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             )}
 
             {/* Base Runner Out Button - Bottom Center (only show if there are base runners and not out and not locked) */}
-            {!isOut && !isLocked && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
+            {!isOut && !isLocked && !atBatLocked && (baseRunners.first || baseRunners.second || baseRunners.third || baseRunners.home) && (
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
                 <button
                   onClick={() => {
@@ -1125,37 +1171,25 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                   {/* Hit buttons */}
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => {
-                        setHandwritingInput('H1')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitTypeSelection('H1')}
                       className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
                     >
                       Single
                     </button>
                     <button
-                      onClick={() => {
-                        setHandwritingInput('H2')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitTypeSelection('H2')}
                       className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
                     >
                       Double
                     </button>
                     <button
-                      onClick={() => {
-                        setHandwritingInput('H3')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitTypeSelection('H3')}
                       className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
                     >
                       Triple
                     </button>
                     <button
-                      onClick={() => {
-                        setHandwritingInput('HR')
-                        setShowOutcomeSelection(false)
-                      }}
+                      onClick={() => handleHitTypeSelection('HR')}
                       className="w-full p-3 bg-green-100 border-2 border-green-600 rounded-lg hover:bg-green-200 font-semibold"
                     >
                       Home Run
