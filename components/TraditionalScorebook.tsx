@@ -107,6 +107,46 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return atBats.find(ab => ab.player_id === playerId && ab.inning === inning)
   }
 
+  function getCurrentBatter() {
+    if (players.length === 0) return null
+
+    // If no at-bats yet, first player is up
+    if (atBats.length === 0) {
+      return { playerId: players[0].id, inning: 1 }
+    }
+
+    // Find the highest inning with at-bats
+    const maxInning = Math.max(...atBats.map(ab => ab.inning))
+    
+    // Count outs in the current inning (assuming 3 outs per inning)
+    const currentInningAtBats = atBats.filter(ab => ab.inning === maxInning)
+    const outsInCurrentInning = currentInningAtBats.filter(ab => 
+      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
+      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
+    ).length
+
+    // If 3 outs, move to next inning
+    const currentInning = outsInCurrentInning >= 3 ? maxInning + 1 : maxInning
+    
+    // Find the last at-bat in the max inning by batting order position
+    // Sort by player's position in the batting order (0-8), highest index = last batter
+    const lastAtBatInMaxInning = currentInningAtBats.sort((a, b) => {
+      const aIndex = players.findIndex(p => p.id === a.player_id)
+      const bIndex = players.findIndex(p => p.id === b.player_id)
+      return bIndex - aIndex
+    })[0]
+    
+    if (lastAtBatInMaxInning) {
+      const lastPlayerIndex = players.findIndex(p => p.id === lastAtBatInMaxInning.player_id)
+      // Next player in batting order (1-9, wraps to 1 after 9)
+      const nextPlayerIndex = (lastPlayerIndex + 1) % players.length
+      return { playerId: players[nextPlayerIndex].id, inning: currentInning }
+    }
+    
+    // Fallback: first player
+    return { playerId: players[0].id, inning: currentInning }
+  }
+
   function getPlayerStats(playerId: string) {
     const playerAtBats = atBats.filter(ab => ab.player_id === playerId)
     return {
@@ -576,6 +616,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   {/* Inning Columns with Diamond Grids */}
                   {Array.from({ length: 10 }, (_, inningIndex) => {
                     const atBat = player ? getAtBatForPlayer(player.id, inningIndex + 1) : null
+                    const currentBatter = getCurrentBatter()
+                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === inningIndex + 1
                     
                     return (
                       <td key={inningIndex} className="border border-gray-400 px-1 py-1 relative">
@@ -619,6 +661,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                               <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white"></div>
                             )}
                             
+                            {/* Green circle indicator for current batter - only show if no out recorded */}
+                            {isCurrentBatter && !atBat && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                            )}
                             
                             {/* At-bat result notation - only show if not run scored (blue diamond) */}
                             {atBat && !atBat.base_runners?.home && (
