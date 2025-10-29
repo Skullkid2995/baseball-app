@@ -1456,6 +1456,16 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       </button>
                       <button
                         onClick={() => {
+                          setHandwritingInput('SAC')
+                          setIsOut(true)
+                          setShowOutcomeSelection(false)
+                        }}
+                        className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
+                      >
+                        SAC - Sacrifice Bunt
+                      </button>
+                      <button
+                        onClick={() => {
                           setHandwritingInput('GO')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
@@ -1485,6 +1495,16 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                       >
                         Fly Out
+                      </button>
+                      <button
+                        onClick={() => {
+                          setHandwritingInput('SF')
+                          setIsOut(true)
+                          setShowOutcomeSelection(false)
+                        }}
+                        className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
+                      >
+                        Sacrifice Fly
                       </button>
                       <button
                         onClick={() => {
