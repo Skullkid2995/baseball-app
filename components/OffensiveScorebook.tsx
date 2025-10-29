@@ -105,8 +105,8 @@ export default function OffensiveScorebook({ game, onClose }: { game: Game, onCl
         if (error) {
           console.error('Error fetching lineup template players:', error)
         } else {
-          // Convert to player array with batting order
-          const orderedPlayers = (data || []).map(item => ({
+          // Convert to player array with batting order - limit to first 9 batters
+          const orderedPlayers = (data || []).slice(0, 9).map(item => ({
             ...item.players,
             batting_order: item.batting_order,
             position: item.position
@@ -116,7 +116,7 @@ export default function OffensiveScorebook({ game, onClose }: { game: Game, onCl
         }
       }
 
-      // Fallback: fetch all players ordered by jersey number if no template
+      // Fallback: fetch all players ordered by jersey number if no template - limit to first 9 batters
       const { data, error } = await supabase
         .from('players')
         .select('id, first_name, last_name, jersey_number, positions')
@@ -125,7 +125,7 @@ export default function OffensiveScorebook({ game, onClose }: { game: Game, onCl
       if (error) {
         console.error('Error fetching players:', error)
       } else {
-        setPlayers(data || [])
+        setPlayers((data || []).slice(0, 9))
       }
     } catch (err) {
       console.error('Failed to fetch players:', err)

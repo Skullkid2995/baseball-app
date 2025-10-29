@@ -70,7 +70,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       if (error) {
         console.error('Error fetching players:', error)
       } else {
-        setPlayers(data || [])
+        // Always limit to first 9 batters for the scorebook
+        setPlayers((data || []).slice(0, 9))
       }
     } catch (err) {
       console.error('Failed to fetch players:', err)
@@ -630,7 +631,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: 10 }, (_, rowIndex) => {
+            {Array.from({ length: 9 }, (_, rowIndex) => {
               const player = players[rowIndex]
               const stats = player ? getPlayerStats(player.id) : { hits: 0, walks: 0, runs: 0, rbi: 0, errors: 0 }
               
