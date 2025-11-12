@@ -127,7 +127,9 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           fieldArea: (existingAtBat.field_area as string) || '',
           fieldZone: (existingAtBat.field_zone as string) || '',
           hitDistance: (existingAtBat.hit_distance as string) || '',
-          hitAngle: (existingAtBat.hit_angle as string) || ''
+          hitAngle: (existingAtBat.hit_angle as string) || '',
+          xCoordinate: (existingAtBat.x_coordinate as number) || 0,
+          yCoordinate: (existingAtBat.y_coordinate as number) || 0
         })
         console.log('Loaded field location data:', {
           fieldArea: existingAtBat.field_area,
@@ -365,8 +367,16 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     const hitLikeOutcomes = ['E', 'FC', 'BUNT', 'H1', 'H2', 'H3', 'HR']
     const isHitLikeOutcome = hitLikeOutcomes.includes(handwritingInput)
     
-    // Don't allow base selection if at-bat is locked AND it's not a hit-like outcome
-    if (atBatLocked && !isHitLikeOutcome) return
+    // Check if there are active runners (for marking outs on existing at-bats)
+    const hasActiveRunners = (baseRunners.first && !baseRunnerOuts.first && !runScored) ||
+                             (baseRunners.second && !baseRunnerOuts.second && !runScored) ||
+                             (baseRunners.third && !baseRunnerOuts.third && !runScored) ||
+                             (baseRunners.home && !baseRunnerOuts.home && !runScored)
+    
+    // Allow base selection if:
+    // 1. It's a hit-like outcome (even when locked), OR
+    // 2. There are active runners (to allow marking outs on existing at-bats)
+    if (atBatLocked && !isHitLikeOutcome && !hasActiveRunners) return
 
     const rect = canvas.getBoundingClientRect()
     const clientX = e.clientX
@@ -797,56 +807,97 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               }}
             />
             
-    {/* Hit/Out Buttons - Top Center (only show for new at-bats and not out and not locked) */}
-    {!existingAtBat && !isOut && !isLocked && !atBatLocked && (
-      <div className="absolute top-1 sm:top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 sm:space-x-4">
-        <button
-          onClick={() => {
-            setShowFieldSelection(true)
-            setSelectedFieldArea('HIT')
-          }}
-          disabled={atBatLocked}
-          className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          Hit
-        </button>
-        <button
-          onClick={() => {
-            setShowFieldSelection(true)
-            setSelectedFieldArea('OUT')
-          }}
-          className="bg-red-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
-        >
-          Out
-        </button>
-      </div>
-    )}
+    {/* Hit/Out Buttons - Top Center */}
+    {(() => {
+      // Check if there are active runners (runners on base who are not already out and haven't scored)
+      const hasActiveRunners = (baseRunners.first && !baseRunnerOuts.first && !runScored) ||
+                               (baseRunners.second && !baseRunnerOuts.second && !runScored) ||
+                               (baseRunners.third && !baseRunnerOuts.third && !runScored) ||
+                               (baseRunners.home && !baseRunnerOuts.home && !runScored)
+      
+      // Show Hit/Out buttons for new at-bats when not locked
+      const shouldShowHitOutButtons = !existingAtBat && !isOut && !isLocked && !atBatLocked
+      // Show Out button when there are active runners (works for both new and existing at-bats)
+      // Only hide if game is locked or all runners have scored
+      const shouldShowOutButtonForRunners = !isLocked && hasActiveRunners && !runScored
+      
+      if (!shouldShowHitOutButtons && !shouldShowOutButtonForRunners) return null
+      
+      return (
+        <div className="absolute top-1 sm:top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 sm:space-x-4">
+          {shouldShowHitOutButtons && (
+            <button
+              onClick={() => {
+                setShowFieldSelection(true)
+                setSelectedFieldArea('HIT')
+              }}
+              disabled={atBatLocked}
+              className="bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-green-700 active:bg-green-800 shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              Hit
+            </button>
+          )}
+          {(shouldShowHitOutButtons || shouldShowOutButtonForRunners) && (
+            <button
+              onClick={() => {
+                // If there are active runners, show base selection prompt first, then out type modal
+                if (hasActiveRunners) {
+                  // Check if a base is already selected
+                  if (selectedBase && 
+                      baseRunners[selectedBase] && 
+                      !baseRunnerOuts[selectedBase] && 
+                      !(selectedBase === 'home' && runScored)) {
+                    // Base is selected and has active runner, show out type modal directly
+                    setShowOutTypeModal(true)
+                  } else {
+                    // No base selected or selected base doesn't have active runner, prompt user
+                    alert('Please select a base with a runner first by clicking on it')
+                  }
+                } else {
+                  // No active runners, show field selection as before
+                  setShowFieldSelection(true)
+                  setSelectedFieldArea('OUT')
+                }
+              }}
+              className="bg-red-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-lg text-xs sm:text-sm font-bold hover:bg-red-700 active:bg-red-800 shadow-lg"
+            >
+              Out
+            </button>
+          )}
+        </div>
+      )
+    })()}
     
-    {/* Show locked notation for existing at-bats */}
+    {/* Show locked notation for existing at-bats - positioned in upper right corner (where pitch count normally is) */}
     {existingAtBat && (
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
-        <div className="bg-gray-100 text-gray-700 px-6 py-3 rounded-lg text-sm font-bold border-2 border-gray-300">
-          Play: {handwritingInput} (Locked)
+      <div className="absolute top-1 sm:top-2 right-1 sm:right-2 z-10">
+        <div className="bg-gray-100 text-gray-700 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-bold border-2 border-gray-300 shadow-lg max-w-[120px] sm:max-w-[150px]">
+          <div className="text-center">Play: {handwritingInput}</div>
+          <div className="text-center text-[10px] sm:text-xs text-gray-500 mt-0.5">(Locked)</div>
         </div>
         {/* Show base runner outs if any */}
-        {baseRunnerOuts.first && (
-          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
-            Runner Out: {baseRunnerOutTypes.first || 'OUT'} (1st)
-          </div>
-        )}
-        {baseRunnerOuts.second && (
-          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
-            Runner Out: {baseRunnerOutTypes.second || 'OUT'} (2nd)
-          </div>
-        )}
-        {baseRunnerOuts.third && (
-          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
-            Runner Out: {baseRunnerOutTypes.third || 'OUT'} (3rd)
-          </div>
-        )}
-        {baseRunnerOuts.home && (
-          <div className="mt-2 bg-red-100 text-red-700 px-4 py-2 rounded-lg text-xs font-bold border border-red-300">
-            Runner Out: {baseRunnerOutTypes.home || 'OUT'} (Home)
+        {(baseRunnerOuts.first || baseRunnerOuts.second || baseRunnerOuts.third || baseRunnerOuts.home) && (
+          <div className="mt-1.5 space-y-0.5">
+            {baseRunnerOuts.first && (
+              <div className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-red-300 text-center">
+                Out: {baseRunnerOutTypes.first || 'OUT'} (1st)
+              </div>
+            )}
+            {baseRunnerOuts.second && (
+              <div className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-red-300 text-center">
+                Out: {baseRunnerOutTypes.second || 'OUT'} (2nd)
+              </div>
+            )}
+            {baseRunnerOuts.third && (
+              <div className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-red-300 text-center">
+                Out: {baseRunnerOutTypes.third || 'OUT'} (3rd)
+              </div>
+            )}
+            {baseRunnerOuts.home && (
+              <div className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-red-300 text-center">
+                Out: {baseRunnerOutTypes.home || 'OUT'} (Home)
+              </div>
+            )}
           </div>
         )}
       </div>
