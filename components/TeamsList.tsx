@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import LineupSelection from './LineupSelection'
 
 interface Team {
   id: string
@@ -31,6 +30,7 @@ interface Player {
   jersey_number: number
   height_inches: number
   weight_lbs: number
+  photo_url?: string
   is_active: boolean
 }
 
@@ -41,7 +41,6 @@ export default function TeamsList() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [showEditForm, setShowEditForm] = useState<string | null>(null)
   const [showAddPlayerForm, setShowAddPlayerForm] = useState<string | null>(null)
-  const [showLineupForm, setShowLineupForm] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     city: '',
@@ -62,10 +61,13 @@ export default function TeamsList() {
     emergency_contact_name: '',
     jersey_number: 0,
     height_inches: 0,
-    weight_lbs: 0
+    weight_lbs: 0,
+    photo_url: ''
   })
   const [submitting, setSubmitting] = useState(false)
   const [submittingPlayer, setSubmittingPlayer] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   const BASEBALL_POSITIONS = [
     'Pitcher (P)', 'Catcher (C)', 'First Base (1B)', 'Second Base (2B)', 
@@ -97,6 +99,7 @@ export default function TeamsList() {
             jersey_number,
             height_inches,
             weight_lbs,
+            photo_url,
             is_active
           )
         `)
@@ -187,7 +190,7 @@ export default function TeamsList() {
       const { data, error } = await supabase
         .from('players')
         .insert([playerFormData])
-        .select(`
+          .select(`
           id,
           first_name,
           last_name,
@@ -201,6 +204,7 @@ export default function TeamsList() {
           jersey_number,
           height_inches,
           weight_lbs,
+          photo_url,
           is_active
         `)
 
@@ -221,8 +225,10 @@ export default function TeamsList() {
           emergency_contact_name: '',
           jersey_number: 0,
           height_inches: 0,
-          weight_lbs: 0
+          weight_lbs: 0,
+          photo_url: ''
         })
+        setPhotoPreview(null)
         setShowAddPlayerForm(null)
       }
     } catch (err) {
@@ -245,12 +251,66 @@ export default function TeamsList() {
       ...playerFormData,
       team_id: teamId
     })
+    setPhotoPreview(null)
     setShowAddPlayerForm(teamId)
   }
 
-  function openLineupForm(teamId: string) {
-    setShowLineupForm(teamId)
+  async function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size must be less than 5MB')
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      // Create a unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `player-photos/${fileName}`
+
+      // Upload to Supabase Storage
+      const { error: uploadError, data } = await supabase.storage
+        .from('player-photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        // If bucket doesn't exist, create it first (this will fail but we'll handle it)
+        console.error('Upload error:', uploadError)
+        setError('Failed to upload photo. Please make sure the "player-photos" storage bucket exists in Supabase.')
+        setUploadingPhoto(false)
+        return
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('player-photos')
+        .getPublicUrl(filePath)
+
+      if (urlData?.publicUrl) {
+        setPlayerFormData({ ...playerFormData, photo_url: urlData.publicUrl })
+        setPhotoPreview(urlData.publicUrl)
+      }
+    } catch (err) {
+      console.error('Error uploading photo:', err)
+      setError('Failed to upload photo')
+    } finally {
+      setUploadingPhoto(false)
+    }
   }
+
 
   if (loading) {
     return (
@@ -419,12 +479,6 @@ export default function TeamsList() {
                   </h5>
                   <div className="flex space-x-1">
                     <button
-                      onClick={() => openLineupForm(team.id)}
-                      className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
-                    >
-                      Elegir Alineación
-                    </button>
-                    <button
                       onClick={() => openAddPlayerForm(team.id)}
                       className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
                     >
@@ -437,16 +491,35 @@ export default function TeamsList() {
                   <div className="space-y-1">
                     {team.players.map((player) => (
                       <div key={player.id} className="text-xs bg-gray-50 p-2 rounded">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">
-                            {player.first_name} {player.last_name}
-                          </span>
-                          {player.jersey_number && (
-                            <span className="text-gray-500">#{player.jersey_number}</span>
+                        <div className="flex items-center space-x-2">
+                          {player.photo_url ? (
+                            <img
+                              src={player.photo_url}
+                              alt={`${player.first_name} ${player.last_name}`}
+                              className="w-10 h-10 object-cover rounded-full border border-gray-300"
+                              onError={(e) => {
+                                // Hide image if it fails to load
+                                e.currentTarget.style.display = 'none'
+                              }}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-xs font-semibold">
+                              {player.first_name.charAt(0)}{player.last_name.charAt(0)}
+                            </div>
                           )}
-                        </div>
-                        <div className="text-gray-500">
-                          {player.positions?.join(', ')} • {player.handedness}
+                          <div className="flex-1">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium">
+                                {player.first_name} {player.last_name}
+                              </span>
+                              {player.jersey_number && (
+                                <span className="text-gray-500">#{player.jersey_number}</span>
+                              )}
+                            </div>
+                            <div className="text-gray-500">
+                              {player.positions?.join(', ')} • {player.handedness}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -461,6 +534,46 @@ export default function TeamsList() {
                 <div className="mt-4 p-4 bg-gray-50 rounded border">
                   <h6 className="text-lg font-medium text-gray-700 mb-4">Add Player to {team.name}</h6>
                   <form onSubmit={handlePlayerSubmit} className="space-y-4">
+                    {/* Photo Upload Section */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Player Photo</label>
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-1">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handlePhotoUpload}
+                            disabled={uploadingPhoto}
+                            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 disabled:opacity-50"
+                            style={{ display: 'block' }}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {uploadingPhoto ? 'Uploading...' : 'Take a photo or upload from gallery (max 5MB)'}
+                          </p>
+                        </div>
+                        {photoPreview && (
+                          <div className="relative">
+                            <img
+                              src={photoPreview}
+                              alt="Player preview"
+                              className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPhotoPreview(null)
+                                setPlayerFormData({ ...playerFormData, photo_url: '' })
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
@@ -617,28 +730,6 @@ export default function TeamsList() {
         </div>
       )}
 
-      {/* Lineup Modal */}
-      {showLineupForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
-          <div className="bg-white rounded-lg w-full max-w-6xl h-[90vh] overflow-y-auto">
-            <div className="p-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">Elegir Alineación</h3>
-                <button
-                  onClick={() => setShowLineupForm(null)}
-                  className="text-gray-500 hover:text-gray-700 text-xl"
-                >
-                  ×
-                </button>
-              </div>
-              <LineupSelection 
-                teamId={showLineupForm}
-                onClose={() => setShowLineupForm(null)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

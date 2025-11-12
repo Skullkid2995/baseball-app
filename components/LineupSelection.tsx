@@ -39,6 +39,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'select' | 'create'>('select') // New mode for template selection
+  const [savedTemplates, setSavedTemplates] = useState<any[]>([]) // Store saved templates from database
 
   const fieldPositions = [
     'Lanzador (P)',
@@ -55,7 +56,10 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
 
   useEffect(() => {
     fetchTeams()
-  }, [])
+    if (selectedTeam) {
+      fetchSavedTemplates()
+    }
+  }, [selectedTeam])
 
   useEffect(() => {
     if (teamId && teams.length > 0) {
@@ -205,6 +209,70 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
     return fieldPositions.filter(position => !usedPositions.includes(position))
   }
 
+  async function fetchSavedTemplates() {
+    if (!selectedTeam) return
+    
+    try {
+      // Fetch lineup templates from database for this team
+      const { data: templates, error: templateError } = await supabase
+        .from('lineup_templates')
+        .select(`
+          id,
+          name,
+          team_id,
+          lineup_template_players (
+            player_id,
+            batting_order,
+            position,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number
+            )
+          )
+        `)
+        .eq('team_id', selectedTeam)
+        .order('updated_at', { ascending: false })
+
+      if (templateError) {
+        console.error('Error fetching templates:', templateError)
+        // Fallback to localStorage
+        const savedLineup = localStorage.getItem(`lineup_${selectedTeam}`)
+        if (savedLineup) {
+          try {
+            const lineupData = JSON.parse(savedLineup)
+            if (lineupData.lineup && Array.isArray(lineupData.lineup)) {
+              setSavedTemplates([{ id: 'local', lineup: lineupData.lineup }])
+            }
+          } catch (error) {
+            console.log('Error parsing saved lineup:', error)
+          }
+        }
+      } else {
+        setSavedTemplates(templates || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch saved templates:', err)
+    }
+  }
+
+  function getPositionFromDb(dbPosition: string): string {
+    const positionMap: { [key: string]: string } = {
+      'P': 'Lanzador (P)',
+      'C': 'Receptor (C)',
+      '1B': 'Primera Base (1B)',
+      '2B': 'Segunda Base (2B)',
+      '3B': 'Tercera Base (3B)',
+      'SS': 'Campo Corto (SS)',
+      'LF': 'Jardinero Izquierdo (LF)',
+      'CF': 'Jardinero Central (CF)',
+      'RF': 'Jardinero Derecho (RF)',
+      'DH': 'Bateador Designado (DH)'
+    }
+    return positionMap[dbPosition] || dbPosition
+  }
+
   function getSavedLineupTemplates(teamId: string) {
     const savedLineup = localStorage.getItem(`lineup_${teamId}`)
     if (savedLineup) {
@@ -322,85 +390,86 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
 
     setSaving(true)
     try {
-      // Extract player IDs in batting order
-      const playerIds = lineupEntries.slice(0, requiredEntries).map(entry => entry.playerId)
-      
-      // Try to update team lineup - if lineup field doesn't exist, save locally
-      let lineupSaved = false
-      try {
-        const { error: teamError } = await supabase
-          .from('teams')
-          .update({ lineup: playerIds })
-          .eq('id', selectedTeam)
-
-        if (teamError) {
-          console.log('Lineup field not found in database, saving locally...')
-          console.log('Team error details:', teamError)
-          // Save lineup data locally as fallback
-          const lineupData = {
-            teamId: selectedTeam,
-            lineup: lineupEntries.slice(0, requiredEntries),
-            timestamp: new Date().toISOString()
-          }
-          localStorage.setItem(`lineup_${selectedTeam}`, JSON.stringify(lineupData))
-          lineupSaved = true
-        } else {
-          console.log('Lineup saved successfully to database')
-          lineupSaved = true
-        }
-      } catch (lineupError) {
-        console.log('Lineup field not available, saving locally...')
-        console.log('Lineup error details:', lineupError)
-        // Save lineup data locally as fallback
-        const lineupData = {
-          teamId: selectedTeam,
-          lineup: lineupEntries.slice(0, requiredEntries),
-          timestamp: new Date().toISOString()
-        }
-        localStorage.setItem(`lineup_${selectedTeam}`, JSON.stringify(lineupData))
-        lineupSaved = true
+      // Position mapping from Spanish to database format
+      const positionMap: { [key: string]: string } = {
+        'Lanzador (P)': 'P',
+        'Receptor (C)': 'C',
+        'Primera Base (1B)': '1B',
+        'Segunda Base (2B)': '2B',
+        'Tercera Base (3B)': '3B',
+        'Campo Corto (SS)': 'SS',
+        'Jardinero Izquierdo (LF)': 'LF',
+        'Jardinero Central (CF)': 'CF',
+        'Jardinero Derecho (RF)': 'RF',
+        'Bateador Designado (DH)': 'DH'
       }
 
-      // Update game to link to this team (only if gameId is provided)
-      if (gameId) {
-        try {
-          const { error: gameError } = await supabase
-            .from('games')
-            .update({ team_id: selectedTeam })
-            .eq('id', gameId)
+      // Create or update lineup template for this team
+      const { data: existingTemplate } = await supabase
+        .from('lineup_templates')
+        .select('id')
+        .eq('team_id', selectedTeam)
+        .single()
 
-          if (gameError) {
-            console.log('Team_id field not found in games table, saving locally...')
-            console.log('Game error details:', gameError)
-            // Save game-team link locally as fallback
-            const gameTeamLink = {
-              gameId: gameId,
-              teamId: selectedTeam,
-              timestamp: new Date().toISOString()
-            }
-            localStorage.setItem(`game_team_${gameId}`, JSON.stringify(gameTeamLink))
-          } else {
-            console.log('Game linked to team successfully')
-          }
-        } catch (gameLinkError) {
-          console.log('Team_id field not available, saving locally...')
-          console.log('Game link error details:', gameLinkError)
-          // Save game-team link locally as fallback
-          const gameTeamLink = {
-            gameId: gameId,
-            teamId: selectedTeam,
-            timestamp: new Date().toISOString()
-          }
-          localStorage.setItem(`game_team_${gameId}`, JSON.stringify(gameTeamLink))
-        }
-      }
-
-      if (lineupSaved) {
-        alert('Alineación guardada exitosamente')
-    onClose()
+      let templateId: string
+      if (existingTemplate) {
+        templateId = existingTemplate.id
+        // Delete existing lineup template players
+        await supabase
+          .from('lineup_template_players')
+          .delete()
+          .eq('template_id', templateId)
       } else {
-        alert('Error al guardar la alineación')
+        // Create new template
+        const { data: newTemplate, error: templateError } = await supabase
+          .from('lineup_templates')
+          .insert([{
+            team_id: selectedTeam,
+            name: 'Default Lineup'
+          }])
+          .select('id')
+          .single()
+
+        if (templateError || !newTemplate) {
+          throw new Error('Failed to create lineup template')
+        }
+        templateId = newTemplate.id
       }
+
+      // Create lineup template players
+      const templatePlayers = filledEntries.map((entry, index) => ({
+        template_id: templateId,
+        player_id: entry.playerId,
+        batting_order: index + 1,
+        position: positionMap[entry.position] || 'DH'
+      }))
+
+      const { error: templatePlayersError } = await supabase
+        .from('lineup_template_players')
+        .insert(templatePlayers)
+
+      if (templatePlayersError) {
+        throw new Error('Failed to save lineup template players')
+      }
+
+      // Link game to our team's lineup template (only if gameId is provided)
+      if (gameId) {
+        const { error: gameError } = await supabase
+          .from('games')
+          .update({ lineup_template_id: templateId })
+          .eq('id', gameId)
+
+        if (gameError) {
+          console.error('Error linking game to lineup template:', gameError)
+          // Continue anyway - the template is saved
+        }
+      }
+
+      // Refresh saved templates
+      await fetchSavedTemplates()
+
+      alert('Alineación guardada exitosamente')
+      onClose()
     } catch (err) {
       console.error('Error saving lineup:', err)
       alert('Error al guardar la alineación')
@@ -501,48 +570,69 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
             </div>
           </div>
 
-          {/* Saved Template */}
-          {getSavedLineupTemplates(selectedTeam!) ? (
+          {/* Saved Templates */}
+          {savedTemplates.length > 0 ? (
             <div className="space-y-4">
-              <h5 className="text-md font-medium text-gray-700">Plantilla Guardada:</h5>
-              <div className="bg-white border-2 border-blue-200 rounded-lg p-6 shadow-sm">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                  {getSavedLineupTemplates(selectedTeam!)!.map((entry: { playerId: string, position: string }, index: number) => {
-                    if (entry.playerId && entry.position) {
-                      const player = currentTeam.players?.find(p => p.id === entry.playerId)
-                      return (
-                        <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-sm font-bold text-blue-800 bg-blue-200 px-2 py-1 rounded-full">
-                              {index + 1}
-                            </span>
-                            <span className="text-sm font-medium text-gray-800">
-                              {player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : 'Jugador no encontrado'}
-                            </span>
-                          </div>
-                          <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                            {entry.position}
-                          </span>
-                        </div>
-                      )
-                    }
-                    return null
-                  })}
-                </div>
-                <div className="flex justify-center space-x-3">
-                  <button
-                    onClick={() => selectLineupTemplate(getSavedLineupTemplates(selectedTeam!)!)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md"
-                  >
-                    Usar Esta Plantilla
-                  </button>
-                  <button
-                    onClick={() => setMode('create')}
-                    className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
-                  >
-                    Editar Plantilla
-                  </button>
-                </div>
+              <h5 className="text-md font-medium text-gray-700">Plantillas Guardadas:</h5>
+              {savedTemplates.map((template) => {
+                const lineupEntries = template.lineup_template_players
+                  ?.sort((a: any, b: any) => a.batting_order - b.batting_order)
+                  .map((ltp: any) => ({
+                    playerId: ltp.player_id,
+                    position: getPositionFromDb(ltp.position),
+                    player: ltp.players
+                  })) || []
+
+                return (
+                  <div key={template.id} className="bg-white border-2 border-blue-200 rounded-lg p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h6 className="text-sm font-semibold text-gray-800">{template.name || 'Default Lineup'}</h6>
+                      <button
+                        onClick={() => {
+                          const entries = lineupEntries.map((e: any) => ({
+                            playerId: e.playerId,
+                            position: e.position
+                          }))
+                          selectLineupTemplate(entries)
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+                      >
+                        Usar Esta Plantilla
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {lineupEntries.map((entry: any, index: number) => {
+                        if (entry.playerId && entry.position) {
+                          const player = entry.player || currentTeam.players?.find((p: any) => p.id === entry.playerId)
+                          return (
+                            <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
+                              <div className="flex items-center space-x-3">
+                                <span className="text-sm font-bold text-blue-800 bg-blue-200 px-2 py-1 rounded-full">
+                                  {index + 1}
+                                </span>
+                                <span className="text-sm font-medium text-gray-800">
+                                  {player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : 'Jugador no encontrado'}
+                                </span>
+                              </div>
+                              <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                                {entry.position}
+                              </span>
+                            </div>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setMode('create')}
+                  className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
+                >
+                  Crear Nueva Plantilla
+                </button>
               </div>
             </div>
           ) : (

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import TraditionalScorebook from './TraditionalScorebook'
 import HitStatistics from './HitStatistics'
 import LineupSelection from './LineupSelection'
+import OpponentLineupEntry from './OpponentLineupEntry'
 
 interface Game {
   id: string
@@ -36,6 +37,9 @@ export default function GamesList() {
   const [showScorebook, setShowScorebook] = useState<string | null>(null)
   const [showStatistics, setShowStatistics] = useState<string | null>(null)
   const [showLineupSelection, setShowLineupSelection] = useState<string | null>(null)
+  const [showOpponentLineup, setShowOpponentLineup] = useState<string | null>(null)
+  const [gameCreationStep, setGameCreationStep] = useState<'info' | 'ourLineup' | 'opponentLineup'>('info')
+  const [newGameId, setNewGameId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     opponent: '',
     game_date: '',
@@ -105,21 +109,41 @@ export default function GamesList() {
 
       if (error) {
         setError(error.message)
+        setSubmitting(false)
       } else {
-        setGames([data[0], ...games])
-        setFormData({
-          opponent: '',
-          game_date: '',
-          game_time: '',
-          stadium: '',
-          weather_conditions: ''
-        })
-        setShowNewGameForm(false)
+        // Store the new game ID and move to lineup selection step
+        setNewGameId(data[0].id)
+        setGameCreationStep('ourLineup')
+        setShowLineupSelection(data[0].id)
+        // Don't close the form yet - wait for lineups to be selected
       }
     } catch (err) {
       setError('Failed to create game')
-    } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleLineupSelected(gameId: string, isOpponent: boolean = false) {
+    if (isOpponent) {
+      // Opponent lineup selected, finish game creation
+      await fetchGames()
+      setFormData({
+        opponent: '',
+        game_date: '',
+        game_time: '',
+        stadium: '',
+        weather_conditions: ''
+      })
+      setShowNewGameForm(false)
+      setShowLineupSelection(null)
+      setShowOpponentLineup(null)
+      setGameCreationStep('info')
+      setNewGameId(null)
+    } else {
+      // Our lineup selected, now show opponent lineup
+      setGameCreationStep('opponentLineup')
+      setShowLineupSelection(null)
+      setShowOpponentLineup(gameId)
     }
   }
 
@@ -237,9 +261,9 @@ export default function GamesList() {
         </button>
       </div>
 
-      {showNewGameForm && (
+      {showNewGameForm && gameCreationStep === 'info' && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-6">
-          <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Crear Nuevo Juego</h4>
+          <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Crear Nuevo Juego - Información del Juego</h4>
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
@@ -296,7 +320,11 @@ export default function GamesList() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setShowNewGameForm(false)}
+                onClick={() => {
+                  setShowNewGameForm(false)
+                  setGameCreationStep('info')
+                  setNewGameId(null)
+                }}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Cancel
@@ -306,10 +334,37 @@ export default function GamesList() {
                 disabled={submitting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {submitting ? 'Creating...' : 'Create Game'}
+                {submitting ? 'Creating...' : 'Next: Select Our Lineup'}
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Step indicator when in lineup selection */}
+      {(gameCreationStep === 'ourLineup' || gameCreationStep === 'opponentLineup') && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-base sm:text-lg font-semibold text-gray-800">
+              {gameCreationStep === 'ourLineup' ? 'Step 2: Select Our Team Lineup' : 'Step 3: Enter Opponent Lineup'}
+            </h4>
+            <button
+              onClick={() => {
+                setShowNewGameForm(false)
+                setShowLineupSelection(null)
+                setShowOpponentLineup(null)
+                setGameCreationStep('info')
+                setNewGameId(null)
+              }}
+              className="text-gray-500 hover:text-gray-700 text-xl"
+            >
+              ×
+            </button>
+          </div>
+          <div className="flex space-x-2 mb-2">
+            <div className={`flex-1 h-2 rounded ${gameCreationStep === 'ourLineup' ? 'bg-blue-600' : 'bg-green-600'}`}></div>
+            <div className={`flex-1 h-2 rounded ${gameCreationStep === 'opponentLineup' ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
+          </div>
         </div>
       )}
 
@@ -442,15 +497,21 @@ export default function GamesList() {
         </div>
       )}
 
-      {/* Lineup Selection Modal */}
+      {/* Our Team Lineup Selection Modal */}
       {showLineupSelection && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
           <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] overflow-y-auto">
             <div className="p-4">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">Elegir Alineación</h3>
+                <h3 className="text-lg font-semibold text-gray-800">Select Our Team Lineup</h3>
                 <button
-                  onClick={() => setShowLineupSelection(null)}
+                  onClick={() => {
+                    setShowLineupSelection(null)
+                    if (newGameId) {
+                      setGameCreationStep('info')
+                      setNewGameId(null)
+                    }
+                  }}
                   className="text-gray-500 hover:text-gray-700 text-xl"
                 >
                   ×
@@ -458,11 +519,33 @@ export default function GamesList() {
               </div>
               <LineupSelection 
                 gameId={showLineupSelection}
-                onClose={() => setShowLineupSelection(null)}
+                onClose={() => {
+                  // When lineup is saved, move to opponent lineup
+                  if (newGameId === showLineupSelection) {
+                    handleLineupSelected(showLineupSelection, false)
+                  } else {
+                    setShowLineupSelection(null)
+                  }
+                }}
               />
             </div>
           </div>
         </div>
+      )}
+
+      {/* Opponent Lineup Entry Modal */}
+      {showOpponentLineup && (
+        <OpponentLineupEntry
+          gameId={showOpponentLineup}
+          opponentName={games.find(g => g.id === showOpponentLineup)?.opponent || formData.opponent}
+          onClose={() => {
+            if (newGameId === showOpponentLineup) {
+              handleLineupSelected(showOpponentLineup, true)
+            } else {
+              setShowOpponentLineup(null)
+            }
+          }}
+        />
       )}
     </div>
   )

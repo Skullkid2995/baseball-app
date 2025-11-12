@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import DiamondCanvas from './DiamondCanvas'
+import OpponentLineupEntry from './OpponentLineupEntry'
 
 interface Player {
   id: string
@@ -31,6 +32,7 @@ interface AtBat {
   rbi: number
   runs_scored: number
   stolen_bases: number
+  team_side?: 'home' | 'opponent'
   base_runners?: { first: boolean, second: boolean, third: boolean, home: boolean }
   base_runner_outs?: { first: boolean, second: boolean, third: boolean, home: boolean }
   notation?: string
@@ -40,8 +42,11 @@ interface AtBat {
 
 export default function TraditionalScorebook({ game, onClose }: { game: Game, onClose: () => void }) {
   const [players, setPlayers] = useState<Player[]>([])
+  const [opponentPlayers, setOpponentPlayers] = useState<Player[]>([])
   const [atBats, setAtBats] = useState<AtBat[]>([])
   const [currentGame, setCurrentGame] = useState<Game>(game)
+  const [currentTeamSide, setCurrentTeamSide] = useState<'home' | 'opponent'>('home') // Track which team is batting
+  const [homeTeamName, setHomeTeamName] = useState<string>('Dodgers') // Default to "Dodgers" until we fetch it
   const [gameInfo, setGameInfo] = useState({
     opponent: game.opponent,
     date: game.game_date,
@@ -51,27 +56,247 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     umpire: ''
   })
   const [loading, setLoading] = useState(true)
-  const [selectedCell, setSelectedCell] = useState<{playerId: string, inning: number, playerName: string} | null>(null)
+  const [selectedCell, setSelectedCell] = useState<{playerId: string, inning: number, playerName: string, teamSide?: 'home' | 'opponent'} | null>(null)
   const [showCanvasModal, setShowCanvasModal] = useState(false)
   const [isLocked, setIsLocked] = useState(game.game_status === 'completed')
+  const [showOpponentLineupModal, setShowOpponentLineupModal] = useState(false)
+  const [showHomeAwayModal, setShowHomeAwayModal] = useState(false)
+  const [opponentLineupChecked, setOpponentLineupChecked] = useState(false)
+  const [homeAwayChecked, setHomeAwayChecked] = useState(false)
 
   useEffect(() => {
     fetchPlayers()
     fetchAtBats()
   }, [game.id])
 
+  // Refetch game data when currentGame changes to ensure score is up to date
+  useEffect(() => {
+    const refreshGame = async () => {
+      const { data, error } = await supabase
+        .from('games')
+        .select()
+        .eq('id', game.id)
+        .single()
+      
+      if (!error && data) {
+        setCurrentGame(data)
+      }
+    }
+    
+    // Refresh game data after a short delay to allow database updates to propagate
+    const timeoutId = setTimeout(() => {
+      refreshGame()
+    }, 500)
+    
+    return () => clearTimeout(timeoutId)
+  }, [atBats.length]) // Refresh when at-bats change
+
+  // Check if we need to show home/away modal when scorebook first opens
+  useEffect(() => {
+    // Only check once, and only if game is not completed
+    if (homeAwayChecked || game.game_status === 'completed' || loading) return
+    
+    // If there are no at-bats and opponent lineup exists, show home/away modal
+    // This determines who bats first
+    if (atBats.length === 0 && opponentPlayers.length > 0 && !showOpponentLineupModal) {
+      setHomeAwayChecked(true)
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        setShowHomeAwayModal(true)
+      }, 300)
+    }
+  }, [atBats.length, opponentPlayers.length, showOpponentLineupModal, homeAwayChecked, game.game_status, loading])
+
   async function fetchPlayers() {
     try {
-      const { data, error } = await supabase
-        .from('players')
-        .select('id, first_name, last_name, jersey_number, positions')
-        .order('jersey_number')
+      // Fetch our team's lineup from lineup template
+      const { data: gameData } = await supabase
+        .from('games')
+        .select('lineup_template_id, opponent_lineup_template_id')
+        .eq('id', game.id)
+        .single()
 
-      if (error) {
-        console.error('Error fetching players:', error)
+      // Check if opponent lineup exists, if not show modal to create it
+      // Only check once to prevent loops
+      if (!opponentLineupChecked && game.game_status !== 'completed') {
+        setOpponentLineupChecked(true)
+        
+        // Also check if there's an opponent team with a lineup template (in case linking failed)
+        let hasOpponentLineup = !!gameData?.opponent_lineup_template_id
+        
+        if (!hasOpponentLineup) {
+          // Check if opponent team exists and has a lineup template
+          const { data: opponentTeam } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('name', game.opponent)
+            .limit(1)
+            .maybeSingle()
+          
+          if (opponentTeam?.id) {
+            const { data: opponentTemplate } = await supabase
+              .from('lineup_templates')
+              .select('id')
+              .eq('team_id', opponentTeam.id)
+              .limit(1)
+            hasOpponentLineup = !!opponentTemplate && opponentTemplate.length > 0
+          }
+          
+          if (!hasOpponentLineup) {
+            setShowOpponentLineupModal(true)
+            // Don't check for home/away yet - wait for opponent lineup to be created
+            return
+          }
+        }
+      }
+
+      if (gameData?.lineup_template_id) {
+        // Fetch our team's players from lineup template and get team name
+        const { data: ourLineupTemplate, error: templateError } = await supabase
+          .from('lineup_templates')
+          .select(`
+            id,
+            team_id,
+            teams (
+              id,
+              name
+            )
+          `)
+          .eq('id', gameData.lineup_template_id)
+          .single()
+
+        console.log('Lineup template data:', ourLineupTemplate)
+        console.log('Template error:', templateError)
+
+        if (ourLineupTemplate?.teams) {
+          const team = Array.isArray(ourLineupTemplate.teams) 
+            ? ourLineupTemplate.teams[0] 
+            : ourLineupTemplate.teams
+          if (team && typeof team === 'object' && 'name' in team) {
+            const teamName = (team as { name: string }).name
+            console.log('Setting home team name to:', teamName)
+            setHomeTeamName(teamName || 'Dodgers')
+          }
+        } else {
+          console.log('No teams data found in lineup template')
+          // Try to get team name directly from team_id if available
+          if (ourLineupTemplate?.team_id) {
+            const { data: teamData } = await supabase
+              .from('teams')
+              .select('name')
+              .eq('id', ourLineupTemplate.team_id)
+              .single()
+            
+            if (teamData?.name) {
+              console.log('Found team name from team_id:', teamData.name)
+              setHomeTeamName(teamData.name)
+            }
+          }
+        }
+
+        const { data: ourLineupPlayers } = await supabase
+          .from('lineup_template_players')
+          .select(`
+            player_id,
+            batting_order,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number,
+              positions
+            )
+          `)
+          .eq('template_id', gameData.lineup_template_id)
+          .order('batting_order')
+
+        if (ourLineupPlayers) {
+          const ourPlayers: Player[] = ourLineupPlayers
+            .map(lp => {
+              const player = lp.players
+              if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
+                return player as Player
+              }
+              return null
+            })
+            .filter((p): p is Player => p !== null)
+          setPlayers(ourPlayers)
+        }
       } else {
-        // Always limit to first 9 batters for the scorebook
-        setPlayers((data || []).slice(0, 9))
+        // Fallback: fetch all players (limit to 9)
+        const { data, error } = await supabase
+          .from('players')
+          .select('id, first_name, last_name, jersey_number, positions')
+          .order('jersey_number')
+          .limit(9)
+
+        if (!error && data) {
+          setPlayers(data)
+        }
+      }
+
+      // Fetch opponent's lineup from lineup template
+      // First try using opponent_lineup_template_id from game
+      let opponentTemplateId = gameData?.opponent_lineup_template_id
+      
+      // If not linked to game, try to find it by opponent team name
+      if (!opponentTemplateId) {
+        const { data: opponentTeam } = await supabase
+          .from('teams')
+          .select('id')
+          .eq('name', game.opponent)
+          .limit(1)
+          .maybeSingle()
+        
+        if (opponentTeam?.id) {
+          const { data: opponentTemplate } = await supabase
+            .from('lineup_templates')
+            .select('id')
+            .eq('team_id', opponentTeam.id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          
+          if (opponentTemplate?.id) {
+            opponentTemplateId = opponentTemplate.id
+          }
+        }
+      }
+      
+      if (opponentTemplateId) {
+        const { data: opponentLineupPlayers } = await supabase
+          .from('lineup_template_players')
+          .select(`
+            player_id,
+            batting_order,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number,
+              positions
+            )
+          `)
+          .eq('template_id', opponentTemplateId)
+          .order('batting_order')
+
+        if (opponentLineupPlayers) {
+          const oppPlayers: Player[] = opponentLineupPlayers
+            .map(lp => {
+              const player = lp.players
+              if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
+                return player as Player
+              }
+              return null
+            })
+            .filter((p): p is Player => p !== null)
+          setOpponentPlayers(oppPlayers)
+          console.log('Opponent players loaded:', oppPlayers.length, 'players')
+        } else {
+          console.log('No opponent lineup players found for template:', opponentTemplateId)
+        }
+      } else {
+        console.log('No opponent lineup template found')
       }
     } catch (err) {
       console.error('Failed to fetch players:', err)
@@ -91,12 +316,49 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           )
         `)
         .eq('game_id', game.id)
-        .order('inning, at_bat_number')
+        .order('inning', { ascending: true })
+        .order('at_bat_number', { ascending: true })
 
       if (error) {
         console.error('Error fetching at-bats:', error)
+        console.error('Error details:', JSON.stringify(error, null, 2))
+        setLoading(false)
+        return
       } else {
         setAtBats(data || [])
+        
+        // Always recalculate total score from all saved at-bats to ensure accuracy
+        const totalRunsScored = (data || []).reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        
+        // Debug: Log which at-bats have runs_scored
+        const atBatsWithRuns = (data || []).filter(ab => (ab.runs_scored || 0) > 0)
+        console.log(`=== SCORE RECALCULATION ===`)
+        console.log(`Total at-bats: ${data?.length || 0}`)
+        console.log(`At-bats with runs: ${atBatsWithRuns.length}`)
+        atBatsWithRuns.forEach(ab => {
+          console.log(`  - Player: ${ab.players?.first_name} ${ab.players?.last_name}, Inning: ${ab.inning}, Runs: ${ab.runs_scored}`)
+        })
+        console.log(`Calculated total runs: ${totalRunsScored}`)
+        console.log(`Current game score: ${currentGame.our_score}`)
+        console.log(`===========================`)
+        
+        // Always update the game score to match the sum of all at-bats (ensures accuracy)
+        const { data: updatedGame, error: scoreError } = await supabase
+          .from('games')
+          .update({ 
+            our_score: totalRunsScored,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', game.id)
+          .select()
+        
+        if (scoreError) {
+          console.error('Error updating game score:', scoreError)
+        } else if (updatedGame && updatedGame[0]) {
+          setCurrentGame(updatedGame[0])
+          console.log('Game score recalculated and updated to:', totalRunsScored)
+        }
+        
         setLoading(false)
       }
     } catch (err) {
@@ -106,7 +368,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function getAtBatForPlayer(playerId: string, inning: number) {
-    return atBats.find(ab => ab.player_id === playerId && ab.inning === inning)
+    return atBats.find(ab => 
+      ab.player_id === playerId && 
+      ab.inning === inning &&
+      (ab.team_side === currentTeamSide || (!ab.team_side && currentTeamSide === 'home'))
+    )
   }
 
   function getAtBatForPlayerNth(playerId: string, inning: number, n: number) {
@@ -186,7 +452,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function hasThreeOutsInInning(inning: number) {
-    const inningAtBats = atBats.filter(ab => ab.inning === inning)
+    // Filter at-bats for current team side in this inning
+    const inningAtBats = atBats.filter(ab => 
+      ab.inning === inning &&
+      (ab.team_side === currentTeamSide || (!ab.team_side && currentTeamSide === 'home'))
+    )
     const outsInInning = inningAtBats.filter(ab => 
       (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
       (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
@@ -194,8 +464,41 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return outsInInning >= 3
   }
 
+  // Check if a specific team (home or opponent) has 3 outs in an inning
+  function hasThreeOutsForTeam(inning: number, teamSide: 'home' | 'opponent') {
+    // Filter at-bats for the specific team in this inning
+    // Only count at-bats that explicitly belong to this team
+    const inningAtBats = atBats.filter(ab => {
+      if (ab.inning !== inning) return false
+      
+      // If team_side is explicitly set, use it
+      if (ab.team_side) {
+        return ab.team_side === teamSide
+      }
+      
+      // If team_side is not set (legacy data), only count as 'home' if checking for 'home'
+      // Don't count legacy data as 'opponent' - be strict about opponent team
+      if (teamSide === 'home') {
+        return true // Legacy at-bats default to home
+      } else {
+        return false // Don't count legacy at-bats as opponent
+      }
+    })
+    
+    const outsInInning = inningAtBats.filter(ab => 
+      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
+      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
+    ).length
+    
+    return outsInInning >= 3
+  }
+
   function hasPlayerBattedInInning(playerId: string, inning: number) {
-    return atBats.some(ab => ab.player_id === playerId && ab.inning === inning)
+    return atBats.some(ab => 
+      ab.player_id === playerId && 
+      ab.inning === inning &&
+      (ab.team_side === currentTeamSide || (!ab.team_side && currentTeamSide === 'home'))
+    )
   }
 
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
@@ -413,11 +716,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
     const result = interpretHandwriting(notation)
     const runsScored = baseRunners?.home ? 1 : 0
+    const teamSide = selectedCell.teamSide || currentTeamSide || 'home'
     
     // Log the at-bat data when Save is clicked
     console.log('=== AT-BAT SAVED ===')
     console.log('Player:', selectedCell.playerName)
     console.log('Inning:', selectedCell.inning)
+    console.log('Team Side:', teamSide)
     console.log('Notation:', notation)
     console.log('Result:', result)
     console.log('Base Runners:', baseRunners)
@@ -425,17 +730,26 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     console.log('==================')
     
     try {
-      // Check if this is an existing at-bat
-      const existingAtBat = getAtBatForPlayer(selectedCell.playerId, selectedCell.inning)
+      // Check if this is an existing at-bat (for this team and inning)
+      const existingAtBat = atBats.find(ab => 
+        ab.player_id === selectedCell.playerId && 
+        ab.inning === selectedCell.inning &&
+        (ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))
+      )
       
       if (existingAtBat) {
         // Update existing at-bat
         console.log('Updating existing at-bat:', existingAtBat.id)
         
+        // Calculate the difference in runs scored
+        const oldRunsScored = existingAtBat.runs_scored || 0
+        const runsDifference = runsScored - oldRunsScored
+        
           const updateData = {
             notation: notation, // Save original notation
             result: result,
             runs_scored: runsScored,
+            team_side: teamSide,
             base_runners: baseRunners || { first: false, second: false, third: false, home: false },
             base_runner_outs: baseRunnerOuts || { first: false, second: false, third: false, home: false },
             out_type: baseRunnerOutTypes ? Object.values(baseRunnerOutTypes).find(type => type !== '') || '' : '',
@@ -471,11 +785,16 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         ))
         
         console.log('At-bat successfully updated:', data[0])
+        
+        // Update game score only by the difference (if there is a change)
+        if (runsDifference !== 0) {
+          await updateGameScore(runsDifference)
+        }
       } else {
         // Create new at-bat
         console.log('Creating new at-bat')
         
-          const insertData = {
+          const insertData: any = {
             game_id: game.id,
             player_id: selectedCell.playerId,
             inning: selectedCell.inning,
@@ -494,9 +813,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             hit_angle: fieldLocationData?.hitAngle || ''
           }
         
-        const { data, error } = await supabase
+        // Try inserting without team_side first (in case column doesn't exist)
+        // We'll add team_side in a separate update if the column exists
+        const { team_side, ...insertDataWithoutTeamSide } = insertData
+        
+        let finalData = null
+        let insertError = null
+        
+        // First attempt: try without team_side
+        const { data: dataWithoutTeamSide, error: errorWithoutTeamSide } = await supabase
           .from('at_bats')
-          .insert([insertData])
+          .insert([insertDataWithoutTeamSide])
           .select(`
             *,
             players (
@@ -506,20 +833,85 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             )
           `)
         
-        if (error) {
-          console.error('Error creating at-bat:', error)
-          console.error('Full error details:', JSON.stringify(error, null, 2))
+        if (errorWithoutTeamSide) {
+          console.error('Error creating at-bat (without team_side):', errorWithoutTeamSide)
+          console.error('Error details:', JSON.stringify(errorWithoutTeamSide, null, 2))
+          insertError = errorWithoutTeamSide
+        } else {
+          finalData = dataWithoutTeamSide[0]
+          console.log('At-bat created successfully (without team_side):', finalData)
+          
+          // If we have team_side and the insert succeeded, try to update it
+          if (teamSide && finalData?.id) {
+            const { error: updateError } = await supabase
+              .from('at_bats')
+              .update({ team_side: teamSide })
+              .eq('id', finalData.id)
+            
+            if (updateError) {
+              // Column doesn't exist, that's okay - just log it
+              console.log('team_side column does not exist, skipping update:', updateError.message)
+            } else {
+              // Update successful, refresh the data
+              const { data: updatedData } = await supabase
+                .from('at_bats')
+                .select(`
+                  *,
+                  players (
+                    first_name,
+                    last_name,
+                    jersey_number
+                  )
+                `)
+                .eq('id', finalData.id)
+                .single()
+              
+              if (updatedData) {
+                finalData = updatedData
+              }
+            }
+          }
+        }
+        
+        if (insertError) {
+          console.error('Insert data attempted:', JSON.stringify(insertDataWithoutTeamSide, null, 2))
+          const errorMessage = insertError?.message || insertError?.details || 'Unknown error occurred'
+          alert(`Error creating at-bat: ${errorMessage}. Please check console for details.`)
           return
         }
         
-        // Add to local state
-        setAtBats(prev => [...prev, data[0]])
-        console.log('At-bat successfully created:', data[0])
+        if (finalData) {
+          // Success
+          setAtBats(prev => [...prev, finalData])
+          console.log('At-bat successfully created:', finalData)
+        }
       }
 
-      // Update game score if run was scored
-      if (runsScored > 0) {
-        await updateGameScore(runsScored)
+      // Recalculate total score from all at-bats (more accurate than incrementing)
+      // This ensures we don't double-count runs
+      const allAtBats = await supabase
+        .from('at_bats')
+        .select('runs_scored')
+        .eq('game_id', game.id)
+      
+      if (!allAtBats.error && allAtBats.data) {
+        const totalRunsScored = allAtBats.data.reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        console.log(`Recalculating score after save. Total runs from all at-bats: ${totalRunsScored}`)
+        
+        // Update game score to match the sum of all at-bats
+        const { data: updatedGame, error: scoreError } = await supabase
+          .from('games')
+          .update({ 
+            our_score: totalRunsScored,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', game.id)
+          .select()
+        
+        if (!scoreError && updatedGame && updatedGame[0]) {
+          setCurrentGame(updatedGame[0])
+          console.log('Game score recalculated after save to:', totalRunsScored)
+        }
       }
 
       // Close the modal after successful save
@@ -543,14 +935,37 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     <div className="bg-white p-6 max-w-7xl mx-auto">
       {/* Game Information Header */}
       <div className="mb-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">vs {game.opponent}</h2>
-            <div className="text-right">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">vs {game.opponent}</h2>
+            <div className="mt-2">
+              <div className={`inline-block px-4 py-2 text-white rounded-lg font-semibold text-lg ${
+                currentTeamSide === 'home' ? 'bg-blue-600' : 'bg-red-600'
+              }`}>
+                {currentTeamSide === 'home' ? homeTeamName : game.opponent}
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
             <div className="text-3xl font-bold text-gray-900">
               {currentGame.our_score} - {currentGame.opponent_score}
             </div>
             <div className="text-sm text-gray-600">Score</div>
           </div>
+        </div>
+
+        {/* Team Switcher - Voltear Hoja Button */}
+        <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <button
+            onClick={() => setCurrentTeamSide(currentTeamSide === 'home' ? 'opponent' : 'home')}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center space-x-2 shadow-md"
+            title="Voltear Hoja - Cambiar de equipo"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <span className="text-lg">Voltear Hoja</span>
+          </button>
         </div>
         
         <div style={{display: 'none'}} className="grid grid-cols-6 gap-4 text-sm">
@@ -632,7 +1047,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           </thead>
           <tbody>
             {Array.from({ length: 9 }, (_, rowIndex) => {
-              const player = players[rowIndex]
+              const activePlayers = currentTeamSide === 'home' ? players : opponentPlayers
+              const player = activePlayers[rowIndex]
               const stats = player ? getPlayerStats(player.id) : { hits: 0, walks: 0, runs: 0, rbi: 0, errors: 0 }
               
               return (
@@ -661,10 +1077,29 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === col.inning && !col.isDuplicate
                     
                     // Check if this cell should be locked
+                    // Lock cells only for the team being viewed if that team has 3 outs in this inning
+                    // Don't lock cells for the other team, even if they have 3 outs (they're next to bat)
                     const inningNumber = col.inning
-                    const threeOuts = hasThreeOutsInInning(inningNumber)
+                    
+                    // Only lock if:
+                    // 1. The team being viewed has 3 outs in this inning
+                    // 2. AND this specific player hasn't batted in this inning
+                    // 3. AND there are actually at-bats for this team in this inning (to prevent locking empty innings)
+                    const threeOutsForViewedTeam = hasThreeOutsForTeam(inningNumber, currentTeamSide)
                     const playerBatted = player ? hasPlayerBattedInInning(player.id, inningNumber) : false
-                    const isLockedCell = threeOuts && !playerBatted
+                    
+                    // Check if there are any at-bats for the viewed team in this inning
+                    const hasAtBatsForTeam = atBats.some(ab => {
+                      if (ab.inning !== inningNumber) return false
+                      if (ab.team_side) {
+                        return ab.team_side === currentTeamSide
+                      }
+                      // Legacy data defaults to home
+                      return !ab.team_side && currentTeamSide === 'home'
+                    })
+                    
+                    // Only lock if team has 3 outs AND player hasn't batted AND there are at-bats for this team
+                    const isLockedCell = threeOutsForViewedTeam && !playerBatted && hasAtBatsForTeam
                     
                     return (
                       <td key={inningIndex} className="border border-gray-400 px-1 py-1 relative">
@@ -828,6 +1263,63 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           existingAtBat={getAtBatForPlayer(selectedCell.playerId, selectedCell.inning) as unknown as Record<string, unknown>}
           isLocked={isLocked}
         />
+      )}
+
+      {/* Opponent Lineup Entry Modal */}
+      {showOpponentLineupModal && (
+        <OpponentLineupEntry
+          gameId={game.id}
+          opponentName={game.opponent}
+          onClose={async () => {
+            setShowOpponentLineupModal(false)
+            // Refresh players to get opponent lineup (but don't check for opponent lineup again)
+            await fetchPlayers()
+            // After saving opponent lineup, ask about home/away team
+            // Use a small delay to ensure state is updated
+            setTimeout(() => {
+              setHomeAwayChecked(true)
+              setShowHomeAwayModal(true)
+            }, 300)
+          }}
+        />
+      )}
+
+      {/* Home/Away Team Selection Modal */}
+      {showHomeAwayModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
+              ¿Quién batea primero?
+            </h3>
+            <p className="text-sm text-gray-600 mb-6 text-center">
+              Selecciona el equipo que batea primero
+            </p>
+            <div className="flex flex-col space-y-3">
+              <button
+                onClick={() => {
+                  // Opponent bats first
+                  setCurrentTeamSide('opponent')
+                  setHomeAwayChecked(true)
+                  setShowHomeAwayModal(false)
+                }}
+                className="px-6 py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors"
+              >
+                {game.opponent}
+              </button>
+              <button
+                onClick={() => {
+                  // Home team (Dodgers) bats first
+                  setCurrentTeamSide('home')
+                  setHomeAwayChecked(true)
+                  setShowHomeAwayModal(false)
+                }}
+                className="px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors"
+              >
+                {homeTeamName}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

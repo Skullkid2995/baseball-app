@@ -20,6 +20,7 @@ interface Player {
   batting_hand: string
   throwing_hand: string
   debut_date?: string
+  photo_url?: string
   is_active?: boolean
   teams?: Array<{ id: string, name: string, city: string }>
 }
@@ -55,9 +56,12 @@ export default function PlayersList() {
     emergency_contact_name: '',
     jersey_number: 0,
     height_inches: 0,
-    weight_lbs: 0
+    weight_lbs: 0,
+    photo_url: ''
   })
   const [submitting, setSubmitting] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   useEffect(() => {
     fetchPlayers()
@@ -83,6 +87,7 @@ export default function PlayersList() {
           jersey_number,
           height_inches,
           weight_lbs,
+          photo_url,
           is_active,
           teams (
             name,
@@ -145,6 +150,7 @@ export default function PlayersList() {
             jersey_number,
             height_inches,
             weight_lbs,
+            photo_url,
             is_active,
             teams (
               name,
@@ -211,8 +217,10 @@ export default function PlayersList() {
       emergency_contact_name: '',
       jersey_number: 0,
       height_inches: 0,
-      weight_lbs: 0
+      weight_lbs: 0,
+      photo_url: ''
     })
+    setPhotoPreview(null)
     setShowAddForm(false)
     setEditingPlayer(null)
   }
@@ -231,9 +239,66 @@ export default function PlayersList() {
       emergency_contact_name: player.emergency_contact_name || '',
       jersey_number: player.jersey_number || 0,
       height_inches: player.height_inches || 0,
-      weight_lbs: player.weight_lbs || 0
+      weight_lbs: player.weight_lbs || 0,
+      photo_url: (player as any).photo_url || ''
     })
+    setPhotoPreview((player as any).photo_url || null)
     setShowAddForm(true)
+  }
+
+  async function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image size must be less than 5MB')
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      // Create a unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `player-photos/${fileName}`
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('player-photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError)
+        setError('Failed to upload photo. Please make sure the "player-photos" storage bucket exists in Supabase.')
+        setUploadingPhoto(false)
+        return
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('player-photos')
+        .getPublicUrl(filePath)
+
+      if (urlData?.publicUrl) {
+        setFormData({ ...formData, photo_url: urlData.publicUrl })
+        setPhotoPreview(urlData.publicUrl)
+      }
+    } catch (err) {
+      console.error('Error uploading photo:', err)
+      setError('Failed to upload photo')
+    } finally {
+      setUploadingPhoto(false)
+    }
   }
 
   function handlePositionChange(position: string, checked: boolean) {
@@ -285,6 +350,46 @@ export default function PlayersList() {
             {editingPlayer ? 'Edit Player' : 'Add New Player'}
           </h4>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Photo Upload Section */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Player Photo</label>
+              <div className="flex items-center space-x-4">
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoUpload}
+                    disabled={uploadingPhoto}
+                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                    style={{ display: 'block' }}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {uploadingPhoto ? 'Uploading...' : 'Take a photo or upload from gallery (max 5MB)'}
+                  </p>
+                </div>
+                {photoPreview && (
+                  <div className="relative">
+                    <img
+                      src={photoPreview}
+                      alt="Player preview"
+                      className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoPreview(null)
+                        setFormData({ ...formData, photo_url: '' })
+                      }}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
