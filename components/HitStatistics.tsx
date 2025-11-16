@@ -19,7 +19,20 @@ interface AtBat {
     first_name: string
     last_name: string
     jersey_number: number
+    team_id: string | null
   }
+}
+
+interface Game {
+  id: string
+  team_id: string | null
+  opponent: string
+}
+
+interface Team {
+  id: string
+  name: string
+  city: string
 }
 
 interface HitStats {
@@ -43,17 +56,132 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   const [atBats, setAtBats] = useState<AtBat[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPlayer, setSelectedPlayer] = useState<string>('all')
+  const [selectedTeam, setSelectedTeam] = useState<string>('our_team') // Default to Dodgers
+  const [game, setGame] = useState<Game | null>(null)
+  const [ourTeam, setOurTeam] = useState<Team | null>(null)
   const [stats, setStats] = useState<HitStats | null>(null)
 
   useEffect(() => {
+    // Reset filters when game changes
+    setSelectedTeam('our_team') // Default to Dodgers for all games
+    setSelectedPlayer('all')
+    setGame(null)
+    setOurTeam(null)
+    setStats(null)
+    setAtBats([])
+    setLoading(true)
+    
+    fetchGame()
     fetchAtBats()
   }, [gameId])
 
   useEffect(() => {
-    if (atBats.length > 0) {
+    if (atBats.length > 0 && game) {
+      calculateStats()
+    } else if (atBats.length > 0) {
+      // If no game data yet but we have at-bats, still calculate (will show all teams)
       calculateStats()
     }
-  }, [atBats, selectedPlayer])
+  }, [atBats, selectedPlayer, selectedTeam, game])
+
+  const fetchGame = async () => {
+    try {
+      // Try to fetch game with team_id first
+      const { data, error } = await supabase
+        .from('games')
+        .select('id, opponent, team_id')
+        .eq('id', gameId)
+        .single()
+
+      if (error) {
+        // Check if it's a column error or empty error (might indicate column doesn't exist)
+        const isColumnError = error.code === 'PGRST116' || 
+                             error.message?.includes('column') || 
+                             error.message?.includes('team_id') ||
+                             (typeof error === 'object' && Object.keys(error).length === 0)
+
+        if (isColumnError) {
+          // Try without team_id column
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('games')
+            .select('id, opponent')
+            .eq('id', gameId)
+            .single()
+
+          if (fallbackError) {
+            console.error('Error fetching game (fallback):', fallbackError)
+            return
+          }
+
+          // Set game with team_id as null if column doesn't exist
+          setGame({ ...fallbackData, team_id: null } as Game)
+          return
+        }
+        
+        // Other types of errors
+        console.error('Error fetching game:', error)
+        // Still try fallback in case it helps
+        const { data: fallbackData } = await supabase
+          .from('games')
+          .select('id, opponent')
+          .eq('id', gameId)
+          .single()
+        
+        if (fallbackData) {
+          setGame({ ...fallbackData, team_id: null } as Game)
+        }
+        return
+      }
+
+      // Success - ensure team_id is set (may be null if column exists but is null)
+      const gameData = {
+        id: data.id,
+        opponent: data.opponent,
+        team_id: data.team_id || null
+      } as Game
+      setGame(gameData)
+
+      // Fetch team name if team_id exists
+      if (gameData.team_id) {
+        fetchTeamName(gameData.team_id)
+      }
+    } catch (err) {
+      console.error('Failed to fetch game:', err)
+      // Last resort fallback
+      try {
+        const { data: fallbackData } = await supabase
+          .from('games')
+          .select('id, opponent')
+          .eq('id', gameId)
+          .single()
+        
+        if (fallbackData) {
+          setGame({ ...fallbackData, team_id: null } as Game)
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback fetch also failed:', fallbackErr)
+      }
+    }
+  }
+
+  const fetchTeamName = async (teamId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('teams')
+        .select('id, name, city')
+        .eq('id', teamId)
+        .single()
+
+      if (error) {
+        console.error('Error fetching team:', error)
+        return
+      }
+
+      setOurTeam(data)
+    } catch (err) {
+      console.error('Failed to fetch team:', err)
+    }
+  }
 
   const fetchAtBats = async () => {
     try {
@@ -64,7 +192,8 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
           players (
             first_name,
             last_name,
-            jersey_number
+            jersey_number,
+            team_id
           )
         `)
         .eq('game_id', gameId)
@@ -84,9 +213,28 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   }
 
   const calculateStats = () => {
-    const filteredAtBats = selectedPlayer === 'all' 
-      ? atBats 
-      : atBats.filter(ab => ab.player_id === selectedPlayer)
+    let filteredAtBats = atBats
+
+    // Filter by team - Dodgers is default
+    if (game) {
+      if (selectedTeam === 'our_team' && game.team_id) {
+        // Filter for Dodgers players (player team_id matches game team_id)
+        filteredAtBats = filteredAtBats.filter(ab => ab.players.team_id === game.team_id)
+      } else if (selectedTeam === 'opponent') {
+        // Filter for opponent players (player team_id doesn't match game team_id, or is null)
+        filteredAtBats = filteredAtBats.filter(ab => 
+          game.team_id ? ab.players.team_id !== game.team_id : true
+        )
+      } else if (selectedTeam === 'our_team' && !game.team_id) {
+        // If no team_id, show all (Dodgers filter will be based on player team_id)
+        // For now, we'll show all players if team_id is not available
+      }
+    }
+
+    // Then filter by player
+    if (selectedPlayer !== 'all') {
+      filteredAtBats = filteredAtBats.filter(ab => ab.player_id === selectedPlayer)
+    }
 
     const totalAtBats = filteredAtBats.length
     const hits = filteredAtBats.filter(ab => 
@@ -153,7 +301,20 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   }
 
   const getUniquePlayers = () => {
-    const players = atBats.map(ab => ({
+    let filteredAtBats = atBats
+
+    // Filter by team - Dodgers is default
+    if (game) {
+      if (selectedTeam === 'our_team' && game.team_id) {
+        filteredAtBats = filteredAtBats.filter(ab => ab.players.team_id === game.team_id)
+      } else if (selectedTeam === 'opponent') {
+        filteredAtBats = filteredAtBats.filter(ab => 
+          game.team_id ? ab.players.team_id !== game.team_id : true
+        )
+      }
+    }
+
+    const players = filteredAtBats.map(ab => ({
       id: ab.player_id,
       name: `${ab.players.first_name} ${ab.players.last_name}`,
       jersey: ab.players.jersey_number
@@ -199,23 +360,43 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
           </button>
         </div>
         
-        {/* Player Filter */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Filter by Player:
-          </label>
-          <select
-            value={selectedPlayer}
-            onChange={(e) => setSelectedPlayer(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Players</option>
-            {getUniquePlayers().map(player => (
-              <option key={player.id} value={player.id}>
-                #{player.jersey} {player.name}
+        {/* Team and Player Filters */}
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Filter by Team:
+            </label>
+            <select
+              value={selectedTeam}
+              onChange={(e) => {
+                setSelectedTeam(e.target.value)
+                setSelectedPlayer('all') // Reset player filter when team changes
+              }}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="our_team">Dodgers</option>
+              <option value="opponent">
+                {game?.opponent || 'Opponent'}
               </option>
-            ))}
-          </select>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Filter by Player:
+            </label>
+            <select
+              value={selectedPlayer}
+              onChange={(e) => setSelectedPlayer(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Players</option>
+              {getUniquePlayers().map(player => (
+                <option key={player.id} value={player.id}>
+                  #{player.jersey} {player.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

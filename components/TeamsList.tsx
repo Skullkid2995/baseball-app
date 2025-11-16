@@ -68,6 +68,7 @@ export default function TeamsList() {
   const [submittingPlayer, setSubmittingPlayer] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set())
 
   const BASEBALL_POSITIONS = [
     'Pitcher (P)', 'Catcher (C)', 'First Base (1B)', 'Second Base (2B)', 
@@ -253,6 +254,18 @@ export default function TeamsList() {
     })
     setPhotoPreview(null)
     setShowAddPlayerForm(teamId)
+  }
+
+  function toggleTeamPlayers(teamId: string) {
+    setExpandedTeams(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(teamId)) {
+        newSet.delete(teamId)
+      } else {
+        newSet.add(teamId)
+      }
+      return newSet
+    })
   }
 
   async function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -479,6 +492,12 @@ export default function TeamsList() {
                   </h5>
                   <div className="flex space-x-1">
                     <button
+                      onClick={() => toggleTeamPlayers(team.id)}
+                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                    >
+                      {expandedTeams.has(team.id) ? 'View Less' : 'View Players'}
+                    </button>
+                    <button
                       onClick={() => openAddPlayerForm(team.id)}
                       className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
                     >
@@ -487,45 +506,49 @@ export default function TeamsList() {
                   </div>
                 </div>
                 
-                {team.players && team.players.length > 0 ? (
-                  <div className="space-y-1">
-                    {team.players.map((player) => (
-                      <div key={player.id} className="text-xs bg-gray-50 p-2 rounded">
-                        <div className="flex items-center space-x-2">
-                          {player.photo_url ? (
-                            <img
-                              src={player.photo_url}
-                              alt={`${player.first_name} ${player.last_name}`}
-                              className="w-10 h-10 object-cover rounded-full border border-gray-300"
-                              onError={(e) => {
-                                // Hide image if it fails to load
-                                e.currentTarget.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-xs font-semibold">
-                              {player.first_name.charAt(0)}{player.last_name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="flex-1">
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium">
-                                {player.first_name} {player.last_name}
-                              </span>
-                              {player.jersey_number && (
-                                <span className="text-gray-500">#{player.jersey_number}</span>
+                {expandedTeams.has(team.id) && (
+                  <>
+                    {team.players && team.players.length > 0 ? (
+                      <div className="space-y-1">
+                        {team.players.map((player) => (
+                          <div key={player.id} className="text-xs bg-gray-50 p-2 rounded">
+                            <div className="flex items-center space-x-2">
+                              {player.photo_url ? (
+                                <img
+                                  src={player.photo_url}
+                                  alt={`${player.first_name} ${player.last_name}`}
+                                  className="w-10 h-10 object-cover rounded-full border border-gray-300"
+                                  onError={(e) => {
+                                    // Hide image if it fails to load
+                                    e.currentTarget.style.display = 'none'
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-xs font-semibold">
+                                  {player.first_name.charAt(0)}{player.last_name.charAt(0)}
+                                </div>
                               )}
-                            </div>
-                            <div className="text-gray-500">
-                              {player.positions?.join(', ')} • {player.handedness}
+                              <div className="flex-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium">
+                                    {player.first_name} {player.last_name}
+                                  </span>
+                                  {player.jersey_number && (
+                                    <span className="text-gray-500">#{player.jersey_number}</span>
+                                  )}
+                                </div>
+                                <div className="text-gray-500">
+                                  {player.positions?.join(', ')} • {player.handedness}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">No players yet</p>
+                    ) : (
+                      <p className="text-xs text-gray-500">No players yet</p>
+                    )}
+                  </>
                 )}
               </div>
 
