@@ -40,7 +40,24 @@ NEXT_PUBLIC_SUPABASE_URL=https://[YOUR-PROJECT-REF].supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=[YOUR-ANON-KEY]
 ```
 
-### 4. Email Allowlist (Optional but Recommended)
+### 4. Configure URL Settings (IMPORTANT for Vercel Deployment)
+
+1. In Supabase Dashboard, go to **Authentication** → **URL Configuration**
+2. Update **Site URL** to your Vercel deployment URL:
+   ```
+   https://your-vercel-app-name.vercel.app
+   ```
+3. Under **Redirect URLs**, add:
+   ```
+   https://your-vercel-app-name.vercel.app/auth/callback
+   https://your-vercel-app-name.vercel.app/*
+   ```
+4. Remove or keep localhost URLs (localhost is fine for development)
+5. Click **Save**
+
+**Note:** This is critical! If Supabase URL Configuration points to localhost, OAuth will redirect to localhost even when accessed from Vercel.
+
+### 5. Email Allowlist (Optional but Recommended)
 
 1. In Supabase Dashboard, go to **Authentication** → **Policies**
 2. You can restrict email signups by enabling email allowlist
