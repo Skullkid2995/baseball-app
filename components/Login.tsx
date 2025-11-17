@@ -67,7 +67,7 @@ export default function Login() {
       if (signInError) {
         // Check for specific error about provider not being enabled
         const errorMsg = signInError.message || ''
-        const errorCode = (signInError as any).error_code || (signInError as any).code || ''
+        const errorCode = (signInError as { error_code?: string; code?: string | number }).error_code || (signInError as { error_code?: string; code?: string | number }).code || ''
         
         if (errorCode === 'validation_failed' || errorCode === 400 || 
             errorMsg.includes('provider is not enabled') || 
@@ -79,10 +79,11 @@ export default function Login() {
         setLoading(false)
       }
       // User will be redirected to Google, then back to callback
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Handle provider not enabled error from catch block
-      const errorCode = err?.error_code || err?.code || ''
-      const errorMsg = err?.msg || err?.message || ''
+      const errorObj = err as { error_code?: string; code?: string | number; msg?: string; message?: string } | null
+      const errorCode = errorObj?.error_code || errorObj?.code || ''
+      const errorMsg = errorObj?.msg || errorObj?.message || ''
       
       if (errorCode === 'validation_failed' || errorCode === 400 || 
           errorMsg.includes('provider is not enabled') || 

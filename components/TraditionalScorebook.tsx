@@ -794,7 +794,27 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         // Create new at-bat
         console.log('Creating new at-bat')
         
-          const insertData: any = {
+          const insertData: {
+            game_id: string
+            player_id: string
+            inning: number
+            at_bat_number: number
+            notation: string
+            result: string
+            rbi: number
+            runs_scored: number
+            stolen_bases: number
+            base_runners: { first: boolean; second: boolean; third: boolean; home: boolean }
+            base_runner_outs?: { first: boolean; second: boolean; third: boolean; home: boolean }
+            out_type?: string
+            field_area?: string
+            field_zone?: string
+            hit_distance?: string
+            hit_angle?: string
+            x_coordinate?: number
+            y_coordinate?: number
+            team_side?: string
+          } = {
             game_id: game.id,
             player_id: selectedCell.playerId,
             inning: selectedCell.inning,
@@ -807,10 +827,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             base_runners: baseRunners || { first: false, second: false, third: false, home: false },
             base_runner_outs: baseRunnerOuts || { first: false, second: false, third: false, home: false },
             out_type: baseRunnerOutTypes ? Object.values(baseRunnerOutTypes).find(type => type !== '') || '' : '',
-            field_area: fieldLocationData?.fieldArea || '',
-            field_zone: fieldLocationData?.fieldZone || '',
-            hit_distance: fieldLocationData?.hitDistance || '',
-            hit_angle: fieldLocationData?.hitAngle || ''
+            field_area: (fieldLocationData?.fieldArea ? String(fieldLocationData.fieldArea) : ''),
+            field_zone: (fieldLocationData?.fieldZone ? String(fieldLocationData.fieldZone) : ''),
+            hit_distance: (fieldLocationData?.hitDistance ? String(fieldLocationData.hitDistance) : ''),
+            hit_angle: (fieldLocationData?.hitAngle ? String(fieldLocationData.hitAngle) : '')
           }
         
         // Try inserting without team_side first (in case column doesn't exist)

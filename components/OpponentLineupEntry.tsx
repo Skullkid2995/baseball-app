@@ -264,9 +264,10 @@ export default function OpponentLineupEntry({ gameId, opponentName, onClose }: O
       }
 
       onClose()
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { message?: string } | null
       console.error('Error saving opponent lineup:', err)
-      setError(err.message || 'Failed to save opponent lineup')
+      setError(error?.message || 'Failed to save opponent lineup')
     } finally {
       setSaving(false)
     }

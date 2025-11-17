@@ -1478,7 +1478,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       onClick={() => handleHitLikeOutcome('FC')}
                       className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
                     >
-                      Fielder's Choice
+                      Fielder&apos;s Choice
                     </button>
                     <button
                       onClick={() => handleHitLikeOutcome('BUNT')}

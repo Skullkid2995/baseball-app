@@ -240,9 +240,9 @@ export default function PlayersList() {
       jersey_number: player.jersey_number || 0,
       height_inches: player.height_inches || 0,
       weight_lbs: player.weight_lbs || 0,
-      photo_url: (player as any).photo_url || ''
+      photo_url: (player as { photo_url?: string }).photo_url || ''
     })
-    setPhotoPreview((player as any).photo_url || null)
+    setPhotoPreview((player as { photo_url?: string }).photo_url || null)
     setShowAddForm(true)
   }
 

@@ -39,7 +39,21 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'select' | 'create'>('select') // New mode for template selection
-  const [savedTemplates, setSavedTemplates] = useState<any[]>([]) // Store saved templates from database
+  interface LineupTemplatePlayer {
+    player_id: string
+    position: string
+    batting_order: number
+    players?: { id: string; first_name: string; last_name: string; jersey_number: number }
+  }
+  
+  interface LineupTemplate {
+    id: string
+    name: string
+    team_id?: string
+    lineup_template_players?: LineupTemplatePlayer[]
+  }
+  
+  const [savedTemplates, setSavedTemplates] = useState<LineupTemplate[]>([]) // Store saved templates from database
 
   const fieldPositions = [
     'Lanzador (P)',
@@ -243,14 +257,26 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
           try {
             const lineupData = JSON.parse(savedLineup)
             if (lineupData.lineup && Array.isArray(lineupData.lineup)) {
-              setSavedTemplates([{ id: 'local', lineup: lineupData.lineup }])
+              // Convert local storage format to template format
+              const template: LineupTemplate = {
+                id: 'local',
+                name: 'Local Lineup',
+                lineup_template_players: lineupData.lineup.map((entry: { playerId: string; position: string }, index: number) => ({
+                  player_id: entry.playerId,
+                  position: entry.position,
+                  batting_order: index + 1
+                }))
+              }
+              setSavedTemplates([template])
             }
           } catch (error) {
             console.log('Error parsing saved lineup:', error)
           }
         }
       } else {
-        setSavedTemplates(templates || [])
+        // Cast templates to LineupTemplate[] - Supabase returns the correct structure
+        // Note: players comes as array from Supabase but we use the first element
+        setSavedTemplates((templates as unknown as LineupTemplate[]) || [])
       }
     } catch (err) {
       console.error('Failed to fetch saved templates:', err)
@@ -576,8 +602,8 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
               <h5 className="text-md font-medium text-gray-700">Plantillas Guardadas:</h5>
               {savedTemplates.map((template) => {
                 const lineupEntries = template.lineup_template_players
-                  ?.sort((a: any, b: any) => a.batting_order - b.batting_order)
-                  .map((ltp: any) => ({
+                  ?.sort((a: LineupTemplatePlayer, b: LineupTemplatePlayer) => a.batting_order - b.batting_order)
+                  .map((ltp: LineupTemplatePlayer) => ({
                     playerId: ltp.player_id,
                     position: getPositionFromDb(ltp.position),
                     player: ltp.players
@@ -589,7 +615,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
                       <h6 className="text-sm font-semibold text-gray-800">{template.name || 'Default Lineup'}</h6>
                       <button
                         onClick={() => {
-                          const entries = lineupEntries.map((e: any) => ({
+                          const entries = lineupEntries.map((e: { playerId: string; position: string }) => ({
                             playerId: e.playerId,
                             position: e.position
                           }))
@@ -601,9 +627,9 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
                       </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {lineupEntries.map((entry: any, index: number) => {
+                      {lineupEntries.map((entry: { playerId: string; position: string; player?: { id: string; first_name: string; last_name: string; jersey_number: number } }, index: number) => {
                         if (entry.playerId && entry.position) {
-                          const player = entry.player || currentTeam.players?.find((p: any) => p.id === entry.playerId)
+                          const player = entry.player || currentTeam.players?.find((p: { id: string }) => p.id === entry.playerId)
                           return (
                             <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
                               <div className="flex items-center space-x-3">
