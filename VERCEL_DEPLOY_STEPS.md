@@ -65,6 +65,8 @@ After deployment completes, you'll see:
 
 ## Step 8: Update Google OAuth Redirect URI
 
+**Your Vercel Domain:** `baseball-app-swart.vercel.app`
+
 1. Go to: https://console.cloud.google.com/
 2. Navigate to **APIs & Services** → **Credentials**
 3. Find your OAuth 2.0 Client ID (the one with Client ID ending in `.apps.googleusercontent.com`)
@@ -72,23 +74,24 @@ After deployment completes, you'll see:
 5. Under **"Authorized redirect URIs"**, click **"+ ADD URI"**
 6. Add your Vercel URL:
    ```
-   https://your-vercel-app-name.vercel.app/auth/callback
+   https://baseball-app-swart.vercel.app/auth/callback
    ```
-   (Replace `your-vercel-app-name` with your actual Vercel URL)
 7. Click **"SAVE"**
 
 ## Step 9: Update Supabase URL Configuration
+
+**Your Vercel Domain:** `baseball-app-swart.vercel.app`
 
 1. Go to: https://supabase.com/dashboard
 2. Select your project: **uzbupbtrmbmmmkztmrtl**
 3. Go to **Authentication** → **URL Configuration**
 4. Update **Site URL**:
    ```
-   https://your-vercel-app-name.vercel.app
+   https://baseball-app-swart.vercel.app
    ```
 5. Under **Redirect URLs**, click **"Add URL"** and add:
    ```
-   https://your-vercel-app-name.vercel.app/auth/callback
+   https://baseball-app-swart.vercel.app/auth/callback
    ```
 6. Click **"Save"**
 
