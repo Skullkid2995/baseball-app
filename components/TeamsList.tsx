@@ -257,7 +257,7 @@ export default function TeamsList() {
       }
       
       if (editingPlayer) {
-        // Update existing player
+        // Update existing player (this happens when selecting existing player from modal)
         const { data, error } = await supabase
           .from('players')
           .update(submitData)
@@ -277,7 +277,11 @@ export default function TeamsList() {
             height_inches,
             weight_lbs,
             photo_url,
-            is_active
+            is_active,
+            teams (
+              name,
+              city
+            )
           `)
 
         if (error) {
@@ -289,7 +293,40 @@ export default function TeamsList() {
           resetPlayerForm()
         }
       } else {
-        // Add new player
+        // Add new player - check for duplicates first
+        const { data: existingPlayers, error: checkError } = await supabase
+          .from('players')
+          .select(`
+            id,
+            first_name,
+            last_name,
+            date_of_birth,
+            team_id,
+            teams (
+              name,
+              city
+            )
+          `)
+          .eq('first_name', submitData.first_name.trim())
+          .eq('last_name', submitData.last_name.trim())
+          .eq('date_of_birth', submitData.date_of_birth)
+
+        if (checkError) {
+          setError('Error checking for duplicates: ' + checkError.message)
+          setSubmittingPlayer(false)
+          return
+        }
+
+        if (existingPlayers && existingPlayers.length > 0) {
+          const existingPlayer = existingPlayers[0]
+          const existingTeam = existingPlayer.teams && existingPlayer.teams[0]
+          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : 'No Team'
+          setError(`This player exists on a different team: ${teamName}. Please select them from the list instead.`)
+          setSubmittingPlayer(false)
+          return
+        }
+
+        // No duplicate found, create new player
         const { data, error } = await supabase
           .from('players')
           .insert([submitData])
@@ -420,6 +457,8 @@ export default function TeamsList() {
   }
 
   function selectExistingPlayerForTeam(player: Player, teamId: string) {
+    // Set as editing player so it updates instead of creating duplicate
+    setEditingPlayer(player)
     setPlayerFormData({
       first_name: player.first_name,
       last_name: player.last_name,
