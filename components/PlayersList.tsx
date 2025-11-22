@@ -62,6 +62,7 @@ export default function PlayersList() {
   const [submitting, setSubmitting] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [selectExistingPlayer, setSelectExistingPlayer] = useState<string>('')
 
   // Helper function to sort players by team name, then by player name
   function sortPlayers(playersToSort: Player[]): Player[] {
@@ -147,11 +148,17 @@ export default function PlayersList() {
     setSubmitting(true)
     
     try {
+      // Convert empty team_id to null
+      const submitData = {
+        ...formData,
+        team_id: formData.team_id || null
+      }
+      
       if (editingPlayer) {
         // Update existing player
         const { data, error } = await supabase
           .from('players')
-          .update(formData)
+          .update(submitData)
           .eq('id', editingPlayer.id)
           .select(`
             id,
@@ -183,36 +190,106 @@ export default function PlayersList() {
           resetForm()
         }
       } else {
-        // Add new player
-        const { data, error } = await supabase
+        // Add new player - check for duplicates first
+        // Check if player with same name and DOB already exists
+        const { data: existingPlayers, error: checkError } = await supabase
           .from('players')
-          .insert([formData])
           .select(`
             id,
             first_name,
             last_name,
             date_of_birth,
             team_id,
-            positions,
-            handedness,
-            contact_number,
-            emergency_number,
-            emergency_contact_name,
-            jersey_number,
-            height_inches,
-            weight_lbs,
-            is_active,
             teams (
               name,
               city
             )
           `)
+          .eq('first_name', submitData.first_name.trim())
+          .eq('last_name', submitData.last_name.trim())
+          .eq('date_of_birth', submitData.date_of_birth)
 
-        if (error) {
-          setError(error.message)
+        if (checkError) {
+          setError('Error checking for duplicates: ' + checkError.message)
+          setSubmitting(false)
+          return
+        }
+
+        if (existingPlayers && existingPlayers.length > 0) {
+          const existingPlayer = existingPlayers[0]
+          const existingTeam = existingPlayer.teams && existingPlayer.teams[0]
+          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : 'No Team'
+          setError(`This player exists on a different team: ${teamName}`)
+          setSubmitting(false)
+          return
+        }
+
+        // If selecting an existing player without a team, update that player instead
+        if (selectExistingPlayer) {
+          const { data, error } = await supabase
+            .from('players')
+            .update(submitData)
+            .eq('id', selectExistingPlayer)
+            .select(`
+              id,
+              first_name,
+              last_name,
+              date_of_birth,
+              team_id,
+              positions,
+              handedness,
+              contact_number,
+              emergency_number,
+              emergency_contact_name,
+              jersey_number,
+              height_inches,
+              weight_lbs,
+              photo_url,
+              is_active,
+              teams (
+                name,
+                city
+              )
+            `)
+
+          if (error) {
+            setError(error.message)
+          } else {
+            setPlayers(sortPlayers(players.map(p => p.id === selectExistingPlayer ? data[0] as Player : p)))
+            resetForm()
+          }
         } else {
-          setPlayers(sortPlayers([...players, data[0] as Player]))
-          resetForm()
+          // Create new player
+          const { data, error } = await supabase
+            .from('players')
+            .insert([submitData])
+            .select(`
+              id,
+              first_name,
+              last_name,
+              date_of_birth,
+              team_id,
+              positions,
+              handedness,
+              contact_number,
+              emergency_number,
+              emergency_contact_name,
+              jersey_number,
+              height_inches,
+              weight_lbs,
+              is_active,
+              teams (
+                name,
+                city
+              )
+            `)
+
+          if (error) {
+            setError(error.message)
+          } else {
+            setPlayers(sortPlayers([...players, data[0] as Player]))
+            resetForm()
+          }
         }
       }
     } catch (err) {
@@ -239,6 +316,7 @@ export default function PlayersList() {
       photo_url: ''
     })
     setPhotoPreview(null)
+    setSelectExistingPlayer('')
     setShowAddForm(false)
     setEditingPlayer(null)
   }
@@ -262,6 +340,56 @@ export default function PlayersList() {
     })
     setPhotoPreview((player as { photo_url?: string }).photo_url || null)
     setShowAddForm(true)
+  }
+
+  async function handleRemoveFromTeam() {
+    if (!editingPlayer) return
+    
+    setSubmitting(true)
+    setError(null)
+    try {
+      const { data, error } = await supabase
+        .from('players')
+        .update({ team_id: null })
+        .eq('id', editingPlayer.id)
+        .select(`
+          id,
+          first_name,
+          last_name,
+          date_of_birth,
+          team_id,
+          positions,
+          handedness,
+          contact_number,
+          emergency_number,
+          emergency_contact_name,
+          jersey_number,
+          height_inches,
+          weight_lbs,
+          photo_url,
+          is_active,
+          teams (
+            name,
+            city
+          )
+        `)
+
+      if (error) {
+        setError(error.message)
+        setSubmitting(false)
+      } else {
+        // Update the players list
+        const updatedPlayers = players.map(p => p.id === editingPlayer.id ? data[0] as Player : p)
+        setPlayers(sortPlayers(updatedPlayers))
+        // Close the form
+        resetForm()
+        // Scroll to top to show teams view
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    } catch (err) {
+      setError('Failed to remove player from team')
+      setSubmitting(false)
+    }
   }
 
   async function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -368,6 +496,57 @@ export default function PlayersList() {
             {editingPlayer ? 'Edit Player' : 'Add New Player'}
           </h4>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!editingPlayer && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select existing player without team (optional)
+                </label>
+                <select
+                  value={selectExistingPlayer}
+                  onChange={(e) => {
+                    const playerId = e.target.value
+                    setSelectExistingPlayer(playerId)
+                    if (playerId) {
+                      const player = players.find(p => p.id === playerId && !p.team_id)
+                      if (player) {
+                        setFormData({
+                          first_name: player.first_name,
+                          last_name: player.last_name,
+                          date_of_birth: player.date_of_birth,
+                          team_id: formData.team_id,
+                          positions: player.positions || [],
+                          handedness: player.handedness,
+                          contact_number: player.contact_number || '',
+                          emergency_number: player.emergency_number || '',
+                          emergency_contact_name: player.emergency_contact_name || '',
+                          jersey_number: player.jersey_number || 0,
+                          height_inches: player.height_inches || 0,
+                          weight_lbs: player.weight_lbs || 0,
+                          photo_url: (player as { photo_url?: string }).photo_url || ''
+                        })
+                        setPhotoPreview((player as { photo_url?: string }).photo_url || null)
+                      }
+                    } else {
+                      resetForm()
+                      setSelectExistingPlayer('')
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="">Create new player</option>
+                  {players
+                    .filter(p => !p.team_id || p.team_id === null || p.team_id === '')
+                    .map((player) => (
+                      <option key={player.id} value={player.id}>
+                        {player.first_name} {player.last_name} (DOB: {player.date_of_birth})
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  If a player exists without a team, select them here to assign to a team instead of creating a duplicate.
+                </p>
+              </div>
+            )}
             {/* Photo Upload Section */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Player Photo</label>
@@ -442,14 +621,13 @@ export default function PlayersList() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
                 <select
-                  required
                   value={formData.team_id}
                   onChange={(e) => setFormData({...formData, team_id: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
-                  <option value="">Select a team</option>
+                  <option value="">No Team (Remove from team)</option>
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.city} {team.name}
@@ -563,6 +741,16 @@ export default function PlayersList() {
               >
                 Cancel
               </button>
+              {editingPlayer && editingPlayer.team_id && (
+                <button
+                  type="button"
+                  onClick={handleRemoveFromTeam}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Removing...' : 'Remove from Team'}
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={submitting || formData.positions.length === 0}
@@ -601,9 +789,13 @@ export default function PlayersList() {
                   </button>
                 </div>
               </div>
-              {player.teams && player.teams.length > 0 && (
+              {player.teams && player.teams.length > 0 ? (
                 <p className="text-sm font-medium text-blue-700 mb-2">
                   {player.teams[0].city} {player.teams[0].name}
+                </p>
+              ) : (
+                <p className="text-sm font-medium text-gray-500 mb-2">
+                  No Team
                 </p>
               )}
               <p className="text-sm text-gray-600 mb-1">

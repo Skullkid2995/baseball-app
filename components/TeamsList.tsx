@@ -39,11 +39,14 @@ interface Player {
 
 export default function TeamsList() {
   const [teams, setTeams] = useState<Team[]>([])
+  const [playersWithoutTeams, setPlayersWithoutTeams] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [showEditForm, setShowEditForm] = useState<string | null>(null)
   const [showAddPlayerForm, setShowAddPlayerForm] = useState<string | null>(null)
+  const [showPlayerSelectionModal, setShowPlayerSelectionModal] = useState<string | null>(null)
+  const [selectedTeamForPlayer, setSelectedTeamForPlayer] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     city: '',
@@ -83,7 +86,47 @@ export default function TeamsList() {
 
   useEffect(() => {
     fetchTeams()
+    fetchPlayersWithoutTeams()
   }, [])
+
+  async function fetchPlayersWithoutTeams() {
+    try {
+      // Fetch all players and filter client-side to catch both null and empty string
+      const { data, error } = await supabase
+        .from('players')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          date_of_birth,
+          team_id,
+          positions,
+          handedness,
+          contact_number,
+          emergency_number,
+          emergency_contact_name,
+          jersey_number,
+          height_inches,
+          weight_lbs,
+          photo_url,
+          is_active
+        `)
+        .order('last_name')
+
+      if (error) {
+        console.error('Error fetching players without teams:', error)
+        setPlayersWithoutTeams([])
+      } else {
+        // Filter for players with null or empty team_id
+        const playersWithoutTeams = (data || []).filter(p => !p.team_id || p.team_id === null || p.team_id === '')
+        console.log('Players without teams found:', playersWithoutTeams.length, playersWithoutTeams)
+        setPlayersWithoutTeams(playersWithoutTeams)
+      }
+    } catch (err) {
+      console.error('Failed to fetch players without teams:', err)
+      setPlayersWithoutTeams([])
+    }
+  }
 
   async function fetchTeams() {
     try {
@@ -207,11 +250,17 @@ export default function TeamsList() {
     setSubmittingPlayer(true)
     
     try {
+      // Convert empty team_id to null
+      const submitData = {
+        ...playerFormData,
+        team_id: playerFormData.team_id || null
+      }
+      
       if (editingPlayer) {
         // Update existing player
         const { data, error } = await supabase
           .from('players')
-          .update(playerFormData)
+          .update(submitData)
           .eq('id', editingPlayer.id)
           .select(`
             id,
@@ -234,15 +283,16 @@ export default function TeamsList() {
         if (error) {
           setError(error.message)
         } else {
-          // Refresh teams to show the updated player
+          // Refresh teams and players without teams
           await fetchTeams()
+          await fetchPlayersWithoutTeams()
           resetPlayerForm()
         }
       } else {
         // Add new player
         const { data, error } = await supabase
           .from('players')
-          .insert([playerFormData])
+          .insert([submitData])
           .select(`
             id,
             first_name,
@@ -264,14 +314,51 @@ export default function TeamsList() {
         if (error) {
           setError(error.message)
         } else {
-          // Refresh teams to show the new player
+          // Refresh teams and players without teams
           await fetchTeams()
+          await fetchPlayersWithoutTeams()
           resetPlayerForm()
         }
       }
     } catch (err) {
       setError(editingPlayer ? 'Failed to update player' : 'Failed to add player')
     } finally {
+      setSubmittingPlayer(false)
+    }
+  }
+
+  async function handleRemovePlayerFromTeam() {
+    if (!editingPlayer) return
+    
+    const playerIdToRemove = editingPlayer.id
+    setSubmittingPlayer(true)
+    setError(null)
+    
+    // Close the modal immediately
+    setEditingPlayer(null)
+    setShowAddPlayerForm(null)
+    
+    try {
+      const { error } = await supabase
+        .from('players')
+        .update({ team_id: null })
+        .eq('id', playerIdToRemove)
+
+      if (error) {
+        setError(error.message)
+        setSubmittingPlayer(false)
+      } else {
+        // Refresh teams and players without teams
+        await fetchTeams()
+        await fetchPlayersWithoutTeams()
+        // Reset form data
+        resetPlayerForm()
+        // Scroll to top to show teams view
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        setSubmittingPlayer(false)
+      }
+    } catch (err) {
+      setError('Failed to remove player from team')
       setSubmittingPlayer(false)
     }
   }
@@ -294,6 +381,8 @@ export default function TeamsList() {
     })
     setPhotoPreview(null)
     setShowAddPlayerForm(null)
+    setShowPlayerSelectionModal(null)
+    setSelectedTeamForPlayer(null)
     setEditingPlayer(null)
   }
 
@@ -326,11 +415,38 @@ export default function TeamsList() {
   }
 
   function openAddPlayerForm(teamId: string) {
+    setSelectedTeamForPlayer(teamId)
+    setShowPlayerSelectionModal(teamId)
+  }
+
+  function selectExistingPlayerForTeam(player: Player, teamId: string) {
+    setPlayerFormData({
+      first_name: player.first_name,
+      last_name: player.last_name,
+      date_of_birth: player.date_of_birth,
+      team_id: teamId,
+      positions: player.positions || [],
+      handedness: player.handedness,
+      contact_number: player.contact_number || '',
+      emergency_number: player.emergency_number || '',
+      emergency_contact_name: player.emergency_contact_name || '',
+      jersey_number: player.jersey_number || 0,
+      height_inches: player.height_inches || 0,
+      weight_lbs: player.weight_lbs || 0,
+      photo_url: player.photo_url || ''
+    })
+    setPhotoPreview(player.photo_url || null)
+    setShowPlayerSelectionModal(null)
+    setShowAddPlayerForm(teamId)
+  }
+
+  function openNewPlayerForm(teamId: string) {
+    resetPlayerForm()
     setPlayerFormData({
       ...playerFormData,
       team_id: teamId
     })
-    setPhotoPreview(null)
+    setShowPlayerSelectionModal(null)
     setShowAddPlayerForm(teamId)
   }
 
@@ -748,204 +864,314 @@ export default function TeamsList() {
                 )}
               </div>
 
-              {/* Add Player Form for this team */}
-              {showAddPlayerForm === team.id && !editingPlayer && (
-                <div className="mt-4 p-4 bg-gray-50 rounded border">
-                  <h6 className="text-lg font-medium text-gray-700 mb-4">{t.addPlayerTo} {team.name}</h6>
-                  <form onSubmit={handlePlayerSubmit} className="space-y-4">
-                    {/* Photo Upload Section */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.playerPhoto}</label>
-                      <div className="flex items-center space-x-4">
-                        <div className="flex-1">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handlePhotoUpload}
-                            disabled={uploadingPhoto}
-                            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 disabled:opacity-50"
-                            style={{ display: 'block' }}
-                          />
-                          <p className="text-xs text-gray-500 mt-1">
-                            {uploadingPhoto ? t.uploading : t.takePhotoOrUpload}
-                          </p>
-                        </div>
-                        {photoPreview && (
-                          <div className="relative">
-                            <img
-                              src={photoPreview}
-                              alt="Player preview"
-                              className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPhotoPreview(null)
-                                setPlayerFormData({ ...playerFormData, photo_url: '' })
-                              }}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.firstName} *</label>
-                        <input
-                          type="text"
-                          required
-                          value={playerFormData.first_name}
-                          onChange={(e) => setPlayerFormData({...playerFormData, first_name: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., John"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.lastName} *</label>
-                        <input
-                          type="text"
-                          required
-                          value={playerFormData.last_name}
-                          onChange={(e) => setPlayerFormData({...playerFormData, last_name: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., Smith"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.dateOfBirth} *</label>
-                        <input
-                          type="date"
-                          required
-                          value={playerFormData.date_of_birth}
-                          onChange={(e) => setPlayerFormData({...playerFormData, date_of_birth: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.handedness} *</label>
-                        <select
-                          required
-                          value={playerFormData.handedness}
-                          onChange={(e) => setPlayerFormData({...playerFormData, handedness: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        >
-                          <option value="Righty">{t.righty}</option>
-                          <option value="Lefty">{t.lefty}</option>
-                          <option value="Switch">{t.switch}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.jerseyNumber}</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="99"
-                          value={playerFormData.jersey_number || ''}
-                          onChange={(e) => setPlayerFormData({...playerFormData, jersey_number: parseInt(e.target.value) || 0})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., 24"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.height}</label>
-                        <input
-                          type="number"
-                          min="48"
-                          max="84"
-                          value={playerFormData.height_inches || ''}
-                          onChange={(e) => setPlayerFormData({...playerFormData, height_inches: parseInt(e.target.value) || 0})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., 72"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.weight}</label>
-                        <input
-                          type="number"
-                          min="100"
-                          max="350"
-                          value={playerFormData.weight_lbs || ''}
-                          onChange={(e) => setPlayerFormData({...playerFormData, weight_lbs: parseInt(e.target.value) || 0})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., 180"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.contactNumber}</label>
-                        <input
-                          type="tel"
-                          value={playerFormData.contact_number}
-                          onChange={(e) => setPlayerFormData({...playerFormData, contact_number: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., (555) 123-4567"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyNumber}</label>
-                        <input
-                          type="tel"
-                          value={playerFormData.emergency_number}
-                          onChange={(e) => setPlayerFormData({...playerFormData, emergency_number: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., (555) 987-6543"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyContactName}</label>
-                        <input
-                          type="text"
-                          value={playerFormData.emergency_contact_name}
-                          onChange={(e) => setPlayerFormData({...playerFormData, emergency_contact_name: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                          placeholder="e.g., Jane Smith"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.positions} * {t.selectAllThatApply}</label>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {BASEBALL_POSITIONS.map((position) => (
-                          <label key={position} className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={playerFormData.positions.includes(position)}
-                              onChange={(e) => handlePositionChange(position, e.target.checked)}
-                              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                            />
-                            <span className="text-sm text-gray-700">{position}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end space-x-3">
-                      <button
-                        type="button"
-                        onClick={resetPlayerForm}
-                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        {t.cancel}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={submittingPlayer || playerFormData.positions.length === 0}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                      >
-                        {submittingPlayer ? t.adding : t.addPlayer}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
 
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Player Selection Modal */}
+      {showPlayerSelectionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h4 className="text-lg font-semibold text-gray-800">
+                Select Player to Add to {teams.find(t => t.id === showPlayerSelectionModal)?.name || 'Team'}
+              </h4>
+              <button
+                onClick={() => {
+                  setShowPlayerSelectionModal(null)
+                  setSelectedTeamForPlayer(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              {playersWithoutTeams.length > 0 ? (
+                <div className="space-y-4 mb-6">
+                  <h5 className="text-md font-semibold text-gray-700 mb-3">Players Without Teams</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {playersWithoutTeams.map((player) => (
+                      <div
+                        key={player.id}
+                        className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => selectExistingPlayerForTeam(player, showPlayerSelectionModal)}
+                      >
+                        <div className="flex items-center space-x-3">
+                          {player.photo_url ? (
+                            <img
+                              src={player.photo_url}
+                              alt={`${player.first_name} ${player.last_name}`}
+                              className="w-12 h-12 object-cover rounded-full border border-gray-300"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none'
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-sm font-semibold">
+                              {player.first_name.charAt(0)}{player.last_name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">
+                              {player.first_name} {player.last_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              DOB: {player.date_of_birth}
+                            </div>
+                            {player.positions && player.positions.length > 0 && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                {player.positions.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                  <p className="text-gray-600 text-center">No players without teams available.</p>
+                </div>
+              )}
+              <div className="flex justify-center">
+                <button
+                  onClick={() => openNewPlayerForm(showPlayerSelectionModal)}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  New Player
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Player Form Modal */}
+      {showAddPlayerForm && !editingPlayer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+              <h4 className="text-lg font-semibold text-gray-800">
+                {t.addPlayerTo} {teams.find(t => t.id === showAddPlayerForm)?.name || 'Team'}
+              </h4>
+              <button
+                onClick={resetPlayerForm}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handlePlayerSubmit} className="space-y-4">
+                {/* Photo Upload Section */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.playerPhoto}</label>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoUpload}
+                        disabled={uploadingPhoto}
+                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 disabled:opacity-50"
+                        style={{ display: 'block' }}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {uploadingPhoto ? t.uploading : t.takePhotoOrUpload}
+                      </p>
+                    </div>
+                    {photoPreview && (
+                      <div className="relative">
+                        <img
+                          src={photoPreview}
+                          alt="Player preview"
+                          className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhotoPreview(null)
+                            setPlayerFormData({ ...playerFormData, photo_url: '' })
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.firstName} *</label>
+                    <input
+                      type="text"
+                      required
+                      value={playerFormData.first_name}
+                      onChange={(e) => setPlayerFormData({...playerFormData, first_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., John"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.lastName} *</label>
+                    <input
+                      type="text"
+                      required
+                      value={playerFormData.last_name}
+                      onChange={(e) => setPlayerFormData({...playerFormData, last_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., Smith"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.dateOfBirth} *</label>
+                    <input
+                      type="date"
+                      required
+                      value={playerFormData.date_of_birth}
+                      onChange={(e) => setPlayerFormData({...playerFormData, date_of_birth: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.team}</label>
+                    <select
+                      value={playerFormData.team_id}
+                      onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    >
+                      <option value="">No Team (Remove from team)</option>
+                      {teams.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.city} {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.handedness} *</label>
+                    <select
+                      required
+                      value={playerFormData.handedness}
+                      onChange={(e) => setPlayerFormData({...playerFormData, handedness: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    >
+                      <option value="Righty">{t.righty}</option>
+                      <option value="Lefty">{t.lefty}</option>
+                      <option value="Switch">{t.switch}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.jerseyNumber}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={playerFormData.jersey_number || ''}
+                      onChange={(e) => setPlayerFormData({...playerFormData, jersey_number: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., 24"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.height}</label>
+                    <input
+                      type="number"
+                      min="48"
+                      max="84"
+                      value={playerFormData.height_inches || ''}
+                      onChange={(e) => setPlayerFormData({...playerFormData, height_inches: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., 72"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.weight}</label>
+                    <input
+                      type="number"
+                      min="100"
+                      max="350"
+                      value={playerFormData.weight_lbs || ''}
+                      onChange={(e) => setPlayerFormData({...playerFormData, weight_lbs: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., 180"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.contactNumber}</label>
+                    <input
+                      type="tel"
+                      value={playerFormData.contact_number}
+                      onChange={(e) => setPlayerFormData({...playerFormData, contact_number: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., (555) 123-4567"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyNumber}</label>
+                    <input
+                      type="tel"
+                      value={playerFormData.emergency_number}
+                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_number: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., (555) 987-6543"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyContactName}</label>
+                    <input
+                      type="text"
+                      value={playerFormData.emergency_contact_name}
+                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_contact_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="e.g., Jane Smith"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.positions} * {t.selectAllThatApply}</label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {BASEBALL_POSITIONS.map((position) => (
+                      <label key={position} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={playerFormData.positions.includes(position)}
+                          onChange={(e) => handlePositionChange(position, e.target.checked)}
+                          className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        />
+                        <span className="text-sm text-gray-700">{position}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={resetPlayerForm}
+                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingPlayer || playerFormData.positions.length === 0}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {submittingPlayer ? t.adding : t.addPlayer}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1040,14 +1266,13 @@ export default function TeamsList() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.team} *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.team}</label>
                     <select
-                      required
                       value={playerFormData.team_id}
                       onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">{t.selectTeam}</option>
+                      <option value="">No Team (Remove from team)</option>
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.city} {team.name}
@@ -1161,6 +1386,16 @@ export default function TeamsList() {
                   >
                     {t.cancel}
                   </button>
+                  {editingPlayer && editingPlayer.team_id && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePlayerFromTeam}
+                      disabled={submittingPlayer}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {submittingPlayer ? 'Removing...' : 'Remove from Team'}
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={submittingPlayer || playerFormData.positions.length === 0}
