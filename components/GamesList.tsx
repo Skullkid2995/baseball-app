@@ -6,6 +6,7 @@ import TraditionalScorebook from './TraditionalScorebook'
 import HitStatistics from './HitStatistics'
 import LineupSelection from './LineupSelection'
 import OpponentLineupEntry from './OpponentLineupEntry'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 interface Game {
   id: string
@@ -33,6 +34,7 @@ export default function GamesList() {
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useLanguage()
   const [showNewGameForm, setShowNewGameForm] = useState(false)
   const [showScorebook, setShowScorebook] = useState<string | null>(null)
   const [showStatistics, setShowStatistics] = useState<string | null>(null)
@@ -252,22 +254,22 @@ export default function GamesList() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h3 className="text-base sm:text-lg font-semibold text-gray-800">Juegos ({games.length})</h3>
+        <h3 className="text-base sm:text-lg font-semibold text-gray-800">{t.gamesCount} ({games.length})</h3>
         <button
           onClick={() => setShowNewGameForm(!showNewGameForm)}
           className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm w-full sm:w-auto"
         >
-          {showNewGameForm ? 'Cancelar' : 'Nuevo Juego'}
+          {showNewGameForm ? t.cancel : t.newGame}
         </button>
       </div>
 
       {showNewGameForm && gameCreationStep === 'info' && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-6">
-          <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Crear Nuevo Juego - Información del Juego</h4>
+          <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">{t.createNewGame}</h4>
           <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Oponente *</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">{t.opponent} *</label>
                 <input
                   type="text"
                   required
@@ -278,7 +280,7 @@ export default function GamesList() {
                 />
               </div>
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Fecha del Juego *</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">{t.gameDate} *</label>
                 <input
                   type="date"
                   required
@@ -288,7 +290,7 @@ export default function GamesList() {
                 />
               </div>
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Hora del Juego</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">{t.gameTime}</label>
                 <input
                   type="time"
                   value={formData.game_time}
@@ -297,7 +299,7 @@ export default function GamesList() {
                 />
               </div>
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Estadio</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">{t.stadium}</label>
                 <input
                   type="text"
                   value={formData.stadium}
@@ -307,7 +309,7 @@ export default function GamesList() {
                 />
               </div>
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Clima</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">{t.weather}</label>
                 <input
                   type="text"
                   value={formData.weather_conditions}
@@ -327,14 +329,14 @@ export default function GamesList() {
                 }}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="submit"
                 disabled={submitting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {submitting ? 'Creating...' : 'Next: Select Our Lineup'}
+                {submitting ? t.creating : t.nextSelectLineup}
               </button>
             </div>
           </form>
@@ -346,7 +348,7 @@ export default function GamesList() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-base sm:text-lg font-semibold text-gray-800">
-              {gameCreationStep === 'ourLineup' ? 'Step 2: Select Our Team Lineup' : 'Step 3: Enter Opponent Lineup'}
+              {gameCreationStep === 'ourLineup' ? t.step2SelectLineup : t.step3EnterOpponent}
             </h4>
             <button
               onClick={() => {
@@ -370,7 +372,7 @@ export default function GamesList() {
 
       {games.length === 0 ? (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-yellow-800">No games found. Create your first game using the form above.</p>
+          <p className="text-yellow-800">{t.noItemsFound} {t.gamesCount.toLowerCase()}. {t.addFirstItem}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -388,10 +390,10 @@ export default function GamesList() {
                       </span>
                     </div>
                     <div className="text-xs sm:text-sm text-gray-600 space-y-1">
-                      <p>Fecha: {new Date(game.game_date).toLocaleDateString()}</p>
-                      {game.game_time && <p>Hora: {formatGameTime(game.game_time)}</p>}
-                      {game.stadium && <p>Estadio: {game.stadium}</p>}
-                      {game.weather_conditions && <p>Clima: {game.weather_conditions}</p>}
+                      <p>{t.date}: {new Date(game.game_date).toLocaleDateString()}</p>
+                      {game.game_time && <p>{t.time}: {formatGameTime(game.game_time)}</p>}
+                      {game.stadium && <p>{t.stadium}: {game.stadium}</p>}
+                      {game.weather_conditions && <p>{t.weather}: {game.weather_conditions}</p>}
                     </div>
                   </div>
                   <div className="text-center sm:text-right">
@@ -407,13 +409,13 @@ export default function GamesList() {
                         }}
                         className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
                       >
-                        Iniciar Anotación
+                        {t.startScoring}
                       </button>
                       <button
                         onClick={() => setShowLineupSelection(game.id)}
                         className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
                       >
-                        Elegir Alineación
+                        {t.selectLineup}
                       </button>
                     </div>
                   )}
@@ -423,19 +425,19 @@ export default function GamesList() {
                         onClick={() => setShowScorebook(game.id)}
                         className="bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 text-xs w-full sm:w-auto"
                       >
-                        Continuar Anotación
+                        {t.continueScoring}
                       </button>
                       <button
                         onClick={() => setShowStatistics(game.id)}
                         className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-xs w-full sm:w-auto"
                       >
-                        Ver Estadísticas
+                        {t.viewStatistics}
                       </button>
                       <button
                         onClick={() => clearGameData(game.id)}
                         className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
                       >
-                        Borrar Datos del Juego
+                        {t.clearGameData}
                       </button>
                     </div>
                   )}
@@ -445,19 +447,19 @@ export default function GamesList() {
                         onClick={() => setShowScorebook(game.id)}
                         className="bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 text-xs w-full sm:w-auto"
                       >
-                        Ver Anotación
+                        {t.viewScorebook}
                       </button>
                       <button
                         onClick={() => setShowStatistics(game.id)}
                         className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
                       >
-                        Ver Estadísticas
+                        {t.viewStatistics}
                       </button>
                       <button
                         onClick={() => clearGameData(game.id)}
                         className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
                       >
-                        Limpiar Datos
+                        {t.clearData}
                       </button>
                     </div>
                   )}
@@ -503,7 +505,7 @@ export default function GamesList() {
           <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] overflow-y-auto">
             <div className="p-4">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">Select Our Team Lineup</h3>
+                <h3 className="text-lg font-semibold text-gray-800">{t.selectOurLineup}</h3>
                 <button
                   onClick={() => {
                     setShowLineupSelection(null)

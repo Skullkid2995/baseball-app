@@ -63,6 +63,24 @@ export default function PlayersList() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
+  // Helper function to sort players by team name, then by player name
+  function sortPlayers(playersToSort: Player[]): Player[] {
+    return [...playersToSort].sort((a, b) => {
+      const teamA = (a.teams && a.teams[0]) ? `${a.teams[0].city} ${a.teams[0].name}` : 'No Team'
+      const teamB = (b.teams && b.teams[0]) ? `${b.teams[0].city} ${b.teams[0].name}` : 'No Team'
+      
+      // First sort by team name
+      if (teamA !== teamB) {
+        return teamA.localeCompare(teamB)
+      }
+      
+      // If same team, sort by player name (last name, then first name)
+      const nameA = `${a.last_name} ${a.first_name}`
+      const nameB = `${b.last_name} ${b.first_name}`
+      return nameA.localeCompare(nameB)
+    })
+  }
+
   useEffect(() => {
     fetchPlayers()
     fetchTeams()
@@ -94,12 +112,11 @@ export default function PlayersList() {
             city
           )
         `)
-        .order('last_name')
 
       if (error) {
         setError(error.message)
       } else {
-        setPlayers((data || []) as Player[])
+        setPlayers(sortPlayers((data || []) as Player[]))
       }
     } catch (err) {
       setError('Failed to fetch players')
@@ -161,7 +178,8 @@ export default function PlayersList() {
         if (error) {
           setError(error.message)
         } else {
-          setPlayers(players.map(p => p.id === editingPlayer.id ? data[0] as Player : p))
+          const updatedPlayers = players.map(p => p.id === editingPlayer.id ? data[0] as Player : p)
+          setPlayers(sortPlayers(updatedPlayers))
           resetForm()
         }
       } else {
@@ -193,7 +211,7 @@ export default function PlayersList() {
         if (error) {
           setError(error.message)
         } else {
-          setPlayers([...players, data[0] as Player])
+          setPlayers(sortPlayers([...players, data[0] as Player]))
           resetForm()
         }
       }
@@ -565,32 +583,32 @@ export default function PlayersList() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {players.map((player) => (
             <div key={player.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-semibold text-gray-900">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <h4 className="font-semibold text-gray-900 min-w-0 flex-1 truncate">
                   {player.first_name} {player.last_name}
                 </h4>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   {player.jersey_number && (
-                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded whitespace-nowrap">
                       #{player.jersey_number}
                     </span>
                   )}
                   <button
                     onClick={() => editPlayer(player)}
-                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 whitespace-nowrap"
                   >
                     Edit
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mb-1">
-                {player.positions?.join(', ') || 'No positions'}
-              </p>
               {player.teams && player.teams.length > 0 && (
-                <p className="text-sm text-gray-500 mb-2">
+                <p className="text-sm font-medium text-blue-700 mb-2">
                   {player.teams[0].city} {player.teams[0].name}
                 </p>
               )}
+              <p className="text-sm text-gray-600 mb-1">
+                {player.positions?.join(', ') || 'No positions'}
+              </p>
               <div className="text-xs text-gray-400 space-y-1">
                 <p>Handedness: {player.handedness}</p>
                 {player.height_inches > 0 && (

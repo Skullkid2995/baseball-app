@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 const ALLOWED_EMAIL = 'jesus.contreras@group-u.com'
 
@@ -11,15 +12,16 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const supabase = createClient()
+  const { t } = useLanguage()
   
   useEffect(() => {
     const errorParam = searchParams.get('error')
     if (errorParam === 'unauthorized') {
-      setError('Access denied. Only authorized users can access this application.')
+      setError(t.accessDenied)
     } else if (errorParam === 'auth_failed') {
-      setError('Authentication failed. Please try again.')
+      setError(t.authFailed)
     }
-  }, [searchParams])
+  }, [searchParams, t])
 
   useEffect(() => {
     // Check if user is already logged in
@@ -43,7 +45,7 @@ export default function Login() {
         if (session.user.email === ALLOWED_EMAIL) {
           window.location.href = '/'
         } else {
-          setError('Access denied. Only authorized users can access this application.')
+          setError(t.accessDenied)
           supabase.auth.signOut()
         }
       }
@@ -74,7 +76,7 @@ export default function Login() {
             errorMsg.includes('Unsupported provider')) {
           setError('Google OAuth is not enabled in Supabase. Please enable it in your Supabase Dashboard under Authentication > Providers > Google. See AUTH_SETUP.md for detailed instructions.')
         } else {
-          setError(errorMsg || 'Authentication failed. Please try again.')
+          setError(errorMsg || t.authFailed)
         }
         setLoading(false)
       }
@@ -100,8 +102,8 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-blue-900 to-green-900 flex items-center justify-center p-8">
       <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">⚾ Baseball Management System</h1>
-          <p className="text-gray-600">Sign in to access the application</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">⚾ {t.appTitle}</h1>
+          <p className="text-gray-600">{t.signInToAccess}</p>
         </div>
 
         {error && (
@@ -119,7 +121,7 @@ export default function Login() {
             {loading ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-700"></div>
-                <span>Signing in...</span>
+                <span>{t.signingIn}</span>
               </>
             ) : (
               <>
@@ -141,14 +143,14 @@ export default function Login() {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
-                <span>Sign in with Google</span>
+                <span>{t.signInWithGoogle}</span>
               </>
             )}
           </button>
         </div>
 
         <div className="mt-6 text-center text-xs text-gray-500">
-          <p>Only authorized users can access this application.</p>
+          <p>{t.onlyAuthorizedUsers}</p>
         </div>
       </div>
     </div>

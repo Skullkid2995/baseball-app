@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 interface AtBat {
   id: string
@@ -60,6 +61,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   const [game, setGame] = useState<Game | null>(null)
   const [ourTeam, setOurTeam] = useState<Team | null>(null)
   const [stats, setStats] = useState<HitStats | null>(null)
+  const { t } = useLanguage()
 
   useEffect(() => {
     // Reset filters when game changes
@@ -342,7 +344,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   if (!stats) {
     return (
       <div className="p-6 text-center text-gray-500">
-        No statistics available
+        {t.noStatisticsAvailable}
       </div>
     )
   }
@@ -351,12 +353,12 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
     <div className="p-6">
       <div className="mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">Hit Statistics & Analysis</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t.hitStatistics}</h2>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
           >
-            Close
+            {t.close}
           </button>
         </div>
         
@@ -364,7 +366,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
         <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filter by Team:
+              {t.filterByTeam}:
             </label>
             <select
               value={selectedTeam}
@@ -376,20 +378,20 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
             >
               <option value="our_team">Dodgers</option>
               <option value="opponent">
-                {game?.opponent || 'Opponent'}
+                {game?.opponent || t.opponent}
               </option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filter by Player:
+              {t.filterByPlayer}:
             </label>
             <select
               value={selectedPlayer}
               onChange={(e) => setSelectedPlayer(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Players</option>
+              <option value="all">{t.allPlayers}</option>
               {getUniquePlayers().map(player => (
                 <option key={player.id} value={player.id}>
                   #{player.jersey} {player.name}
@@ -404,63 +406,63 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
         <div className="bg-blue-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-blue-600">{stats.totalAtBats}</div>
-          <div className="text-sm text-blue-800">Total At-Bats</div>
+          <div className="text-sm text-blue-800">{t.totalAtBats}</div>
         </div>
         <div className="bg-green-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-green-600">{stats.hits}</div>
-          <div className="text-sm text-green-800">Hits</div>
+          <div className="text-sm text-green-800">{t.hits}</div>
         </div>
         <div className="bg-pink-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-pink-600">{stats.totalRBIs}</div>
-          <div className="text-sm text-pink-800">RBIs</div>
+          <div className="text-sm text-pink-800">{t.rbis}</div>
         </div>
         <div className="bg-red-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-red-600">{stats.totalStrikeouts}</div>
-          <div className="text-sm text-red-800">Strikeouts</div>
+          <div className="text-sm text-red-800">{t.strikeouts}</div>
         </div>
         <div className="bg-yellow-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-yellow-600">
             {stats.battingAverage.toFixed(3)}
           </div>
-          <div className="text-sm text-yellow-800">Batting Average</div>
+          <div className="text-sm text-yellow-800">{t.battingAverage}</div>
         </div>
         <div className="bg-purple-50 p-4 rounded-lg">
           <div className="text-2xl font-bold text-purple-600">
             {stats.sluggingPercentage.toFixed(3)}
           </div>
-          <div className="text-sm text-purple-800">Slugging %</div>
+          <div className="text-sm text-purple-800">{t.sluggingPercent}</div>
         </div>
       </div>
 
       {/* Hit Types Breakdown */}
       <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Hit Types</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.hitTypes}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-gray-50 p-4 rounded-lg text-center">
             <div className="text-xl font-bold text-gray-700">{stats.singles}</div>
-            <div className="text-sm text-gray-600">Singles</div>
+            <div className="text-sm text-gray-600">{t.singles}</div>
           </div>
           <div className="bg-orange-50 p-4 rounded-lg text-center">
             <div className="text-xl font-bold text-orange-600">{stats.doubles}</div>
-            <div className="text-sm text-orange-800">Doubles</div>
+            <div className="text-sm text-orange-800">{t.doubles}</div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg text-center">
             <div className="text-xl font-bold text-red-600">{stats.triples}</div>
-            <div className="text-sm text-red-800">Triples</div>
+            <div className="text-sm text-red-800">{t.triples}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg text-center">
             <div className="text-xl font-bold text-indigo-600">{stats.homeRuns}</div>
-            <div className="text-sm text-indigo-800">Home Runs</div>
+            <div className="text-sm text-indigo-800">{t.homeRuns}</div>
           </div>
         </div>
       </div>
 
       {/* Field Distribution */}
       <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Where Hits Land</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.whereHitsLand}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h4 className="font-medium text-gray-700 mb-2">Field Areas</h4>
+            <h4 className="font-medium text-gray-700 mb-2">{t.fieldAreas}</h4>
             <div className="space-y-2">
               {Object.entries(stats.fieldDistribution).map(([area, count]) => (
                 <div key={area} className="flex justify-between items-center">
@@ -482,7 +484,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
           </div>
 
           <div>
-            <h4 className="font-medium text-gray-700 mb-2">Hit Distance</h4>
+            <h4 className="font-medium text-gray-700 mb-2">{t.hitDistance}</h4>
             <div className="space-y-2">
               {Object.entries(stats.distanceDistribution).map(([distance, count]) => (
                 <div key={distance} className="flex justify-between items-center">
@@ -505,10 +507,10 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
 
       {/* Hit Angle Analysis */}
       <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Hit Direction</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.hitDirection}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h4 className="font-medium text-gray-700 mb-2">Hit Angles</h4>
+            <h4 className="font-medium text-gray-700 mb-2">{t.hitAngles}</h4>
             <div className="space-y-2">
               {Object.entries(stats.angleDistribution).map(([angle, count]) => (
                 <div key={angle} className="flex justify-between items-center">
@@ -528,7 +530,7 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
           </div>
 
           <div>
-            <h4 className="font-medium text-gray-700 mb-2">Specific Zones</h4>
+            <h4 className="font-medium text-gray-700 mb-2">{t.specificZones}</h4>
             <div className="space-y-2">
               {Object.entries(stats.zoneDistribution).map(([zone, count]) => (
                 <div key={zone} className="flex justify-between items-center">
@@ -553,29 +555,29 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
 
       {/* Recent At-Bats Log */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent At-Bats</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.recentAtBats}</h3>
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Player
+                    {t.player}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Result
+                    {t.result}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Field Area
+                    {t.fieldArea}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Distance
+                    {t.distance}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Angle
+                    {t.angle}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    RBIs
+                    {t.rbis}
                   </th>
                 </tr>
               </thead>

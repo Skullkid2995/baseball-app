@@ -4,15 +4,17 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User, Session } from '@supabase/supabase-js'
 import TeamsList from '@/components/TeamsList'
-import PlayersList from '@/components/PlayersList'
 import GamesList from '@/components/GamesList'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { createClient } from '@/lib/supabase-browser'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'teams' | 'players' | 'games'>('teams')
+  const [activeTab, setActiveTab] = useState<'teams' | 'games'>('teams')
   const [user, setUser] = useState<User | null>(null)
   const router = useRouter()
   const supabase = createClient()
+  const { t } = useLanguage()
 
   useEffect(() => {
     // Get current user
@@ -44,11 +46,11 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 to-green-900 p-8">
       <div className="max-w-6xl mx-auto">
-        <header className="text-center mb-12 relative">
-          <h1 className="text-4xl font-bold text-white mb-4">⚾ Baseball Management System</h1>
-          <p className="text-blue-200 text-lg">Manage teams, players, and live games</p>
+        <header className="mb-12">
+          {/* User info, language switcher, and logout at top right */}
           {user && (
-            <div className="absolute top-0 right-0 flex items-center gap-3">
+            <div className="flex justify-end items-center gap-3 mb-6">
+              <LanguageSwitcher />
               <span className="text-blue-200 text-sm">
                 {user.email}
               </span>
@@ -56,10 +58,15 @@ export default function Home() {
                 onClick={handleLogout}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
               >
-                Logout
+                {t.logout}
               </button>
             </div>
           )}
+          {/* Title section */}
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-white mb-4">⚾ {t.appTitle}</h1>
+            <p className="text-blue-200 text-lg">{t.appSubtitle}</p>
+          </div>
         </header>
 
         {/* Navigation Tabs */}
@@ -74,17 +81,7 @@ export default function Home() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Teams
-              </button>
-              <button
-                onClick={() => setActiveTab('players')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'players'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Players
+                {t.teams}
               </button>
               <button
                 onClick={() => setActiveTab('games')}
@@ -94,14 +91,13 @@ export default function Home() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Games
+                {t.games}
               </button>
             </nav>
           </div>
 
           <div className="p-6">
             {activeTab === 'teams' && <TeamsList />}
-            {activeTab === 'players' && <PlayersList />}
             {activeTab === 'games' && <GamesList />}
           </div>
         </div>
