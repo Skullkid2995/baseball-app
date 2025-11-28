@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-const ALLOWED_EMAIL = 'jesus.contreras@group-u.com'
+const ALLOWED_EMAILS = ['jesus.contreras@group-u.com', 'skullkid2995@gmail.com']
 
 export default function Login() {
   const [loading, setLoading] = useState(false)
@@ -28,7 +28,7 @@ export default function Login() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         // Check if email matches
-        if (session.user.email === ALLOWED_EMAIL) {
+        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
           window.location.href = '/'
         } else {
           // User is logged in but email doesn't match
@@ -42,7 +42,7 @@ export default function Login() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        if (session.user.email === ALLOWED_EMAIL) {
+        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
           window.location.href = '/'
         } else {
           setError(t.accessDenied)

@@ -1,6 +1,6 @@
 # Authentication Setup Guide
 
-This application uses Google OAuth for authentication and only allows access to **jesus.contreras@group-u.com**.
+This application uses Google OAuth for authentication and allows access to authorized email addresses: **jesus.contreras@group-u.com** and **skullkid2995@gmail.com**.
 
 ## Supabase Configuration
 
@@ -66,11 +66,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=[YOUR-ANON-KEY]
 
 1. In Supabase Dashboard, go to **Authentication** → **Policies**
 2. You can restrict email signups by enabling email allowlist
-3. Add `jesus.contreras@group-u.com` to the allowlist
+3. Add authorized emails to the allowlist:
+   - `jesus.contreras@group-u.com`
+   - `skullkid2995@gmail.com`
 
 ## Security Features
 
-- **Email Restriction**: Only `jesus.contreras@group-u.com` can access the application
+- **Email Restriction**: Only authorized email addresses can access the application:
+  - `jesus.contreras@group-u.com`
+  - `skullkid2995@gmail.com`
 - **Middleware Protection**: All routes are protected except `/login` and `/auth/callback`
 - **Auto Sign-out**: If a user with a different email tries to access, they are automatically signed out
 - **Session Management**: Sessions are managed securely through Supabase Auth
@@ -81,12 +85,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=[YOUR-ANON-KEY]
 2. Navigate to `http://localhost:3000`
 3. You should be redirected to `/login`
 4. Click "Sign in with Google"
-5. Sign in with `jesus.contreras@group-u.com`
+5. Sign in with an authorized email address (e.g., `jesus.contreras@group-u.com` or `skullkid2995@gmail.com`)
 6. You should be redirected back to the main application
 
 ## Troubleshooting
 
-- **"Access denied" error**: Make sure you're signing in with `jesus.contreras@group-u.com`
+- **"Access denied" error**: Make sure you're signing in with an authorized email address (`jesus.contreras@group-u.com` or `skullkid2995@gmail.com`)
 - **OAuth callback fails**: Verify the redirect URI in Google Cloud Console matches Supabase's callback URL
 - **Session not persisting**: Check that cookies are enabled in your browser
 

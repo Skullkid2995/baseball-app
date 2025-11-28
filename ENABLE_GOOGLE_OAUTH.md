@@ -55,7 +55,7 @@
 1. Refresh your application
 2. Click "Sign in with Google"
 3. You should be redirected to Google's login page
-4. Sign in with `jesus.contreras@group-u.com`
+4. Sign in with an authorized email address (e.g., `jesus.contreras@group-u.com` or `skullkid2995@gmail.com`)
 5. You'll be redirected back and logged in
 
 ## Troubleshooting
@@ -66,7 +66,7 @@
 
 ## Important Notes
 
-- Only `jesus.contreras@group-u.com` will be able to access the application after sign-in
+- Only authorized email addresses (currently `jesus.contreras@group-u.com` and `skullkid2995@gmail.com`) will be able to access the application after sign-in
 - The redirect URI must match exactly between Google Cloud Console and Supabase
 - It may take a few minutes for changes to propagate after saving
 

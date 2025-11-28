@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const ALLOWED_EMAIL = 'jesus.contreras@group-u.com'
+const ALLOWED_EMAILS = ['jesus.contreras@group-u.com', 'skullkid2995@gmail.com']
 
 // Fallback values from env.ts (in case environment variables are not set)
 const DEFAULT_SUPABASE_URL = 'https://uzbupbtrmbmmmkztmrtl.supabase.co'
@@ -60,14 +60,14 @@ export async function middleware(request: NextRequest) {
     }
 
     // If user is logged in but email doesn't match, redirect to login
-    if (user.email !== ALLOWED_EMAIL) {
+    if (!user.email || !ALLOWED_EMAILS.includes(user.email)) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
     }
   }
 
   // If user is already logged in and on login page, redirect to home
-  if (isLoginPage && user && user.email === ALLOWED_EMAIL) {
+  if (isLoginPage && user && user.email && ALLOWED_EMAILS.includes(user.email)) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 

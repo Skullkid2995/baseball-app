@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { type NextRequest } from 'next/server'
 
-const ALLOWED_EMAIL = 'jesus.contreras@group-u.com'
+const ALLOWED_EMAILS = ['jesus.contreras@group-u.com', 'skullkid2995@gmail.com']
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error && data.session?.user) {
-      // Check if email matches allowed email
-      if (data.session.user.email === ALLOWED_EMAIL) {
+      // Check if email matches allowed emails
+      if (data.session.user.email && ALLOWED_EMAILS.includes(data.session.user.email)) {
         // Redirect to home page
         return NextResponse.redirect(`${origin}/`)
       } else {
