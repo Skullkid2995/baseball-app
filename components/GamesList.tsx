@@ -50,7 +50,12 @@ export default function GamesList() {
     weather_conditions: ''
   })
   const [submitting, setSubmitting] = useState(false)
-  const [gamesLineupStatus, setGamesLineupStatus] = useState<Record<string, boolean>>({}) // Track lineup status for each game
+  const [gamesLineupStatus, setGamesLineupStatus] = useState<Record<string, {
+    homeTeamSaved: boolean
+    opponentTeamSaved: boolean
+    homeTeamName: string
+    opponentTeamName: string
+  }>>({}) // Track lineup status for each game with team details
 
   useEffect(() => {
     fetchGames()
@@ -59,14 +64,13 @@ export default function GamesList() {
 
   // Check lineup status for all games
   useEffect(() => {
-    if (games.length > 0) {
-      games.forEach(game => {
-        checkBothLineupsSaved(game.id).then(saved => {
-          setGamesLineupStatus(prev => ({ ...prev, [game.id]: saved }))
-        })
-      })
+    async function checkStatus() {
+      if (games.length > 0) {
+        await updateLineupStatusForAllGames()
+      }
     }
-  }, [games])
+    checkStatus()
+  }, [games.length])
 
   async function fetchGames() {
     try {
@@ -105,7 +109,130 @@ export default function GamesList() {
     }
   }
 
-  // Check if both lineups are saved for a game
+  // Check lineup status for each team in a game
+  async function checkLineupStatus(gameId: string): Promise<{
+    homeTeamSaved: boolean
+    opponentTeamSaved: boolean
+    homeTeamName: string
+    opponentTeamName: string
+  }> {
+    const defaultStatus = {
+      homeTeamSaved: false,
+      opponentTeamSaved: false,
+      homeTeamName: 'Dodgers',
+      opponentTeamName: 'Oponente'
+    }
+
+    try {
+      // First try to get all fields
+      const { data, error } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .single()
+
+      if (error) {
+        // Check if it's a column error (columns don't exist)
+        const errorMessage = error?.message || ''
+        const errorCode = error?.code || ''
+        
+        if (errorMessage.includes('column') || errorCode === '42703') {
+          // Columns don't exist, try alternative approach
+          const { data: gameData } = await supabase
+            .from('games')
+            .select('opponent, team_id')
+            .eq('id', gameId)
+            .single()
+          
+          if (!gameData) return defaultStatus
+          
+          // Get team names
+          const { data: dodgersTeam } = await supabase
+            .from('teams')
+            .select('id, name')
+            .eq('name', 'Dodgers')
+            .maybeSingle()
+          
+          const homeTeamId = gameData.team_id || dodgersTeam?.id
+          let opponentTeamId: string | undefined
+          let opponentTeamName = gameData.opponent || 'Oponente'
+          
+          if (gameData.opponent) {
+            const { data: opponentTeam } = await supabase
+              .from('teams')
+              .select('id, name')
+              .eq('name', gameData.opponent)
+              .maybeSingle()
+            opponentTeamId = opponentTeam?.id
+            opponentTeamName = opponentTeam?.name || gameData.opponent
+          }
+          
+          // Check if templates exist for both teams
+          let hasHomeLineup = false
+          let hasOpponentLineup = false
+          
+          if (homeTeamId) {
+            const { data: homeTemplate } = await supabase
+              .from('lineup_templates')
+              .select('id')
+              .eq('team_id', homeTeamId)
+              .limit(1)
+            hasHomeLineup = !!homeTemplate && homeTemplate.length > 0
+          }
+          
+          if (opponentTeamId) {
+            const { data: opponentTemplate } = await supabase
+              .from('lineup_templates')
+              .select('id')
+              .eq('team_id', opponentTeamId)
+              .limit(1)
+            hasOpponentLineup = !!opponentTemplate && opponentTemplate.length > 0
+          }
+          
+          return {
+            homeTeamSaved: hasHomeLineup,
+            opponentTeamSaved: hasOpponentLineup,
+            homeTeamName: 'Dodgers',
+            opponentTeamName: opponentTeamName
+          }
+        } else {
+          console.error('Error checking lineups:', error)
+          return defaultStatus
+        }
+      }
+
+      // Check if columns exist in the data
+      const homeLineupId = (data as any)?.lineup_template_id
+      const opponentLineupId = (data as any)?.opponent_lineup_template_id
+      
+      // Get team names
+      let homeTeamName = 'Dodgers'
+      let opponentTeamName = (data as any)?.opponent || 'Oponente'
+      
+      if (opponentTeamName && opponentTeamName !== 'Oponente') {
+        const { data: opponentTeam } = await supabase
+          .from('teams')
+          .select('name')
+          .eq('name', opponentTeamName)
+          .maybeSingle()
+        if (opponentTeam) {
+          opponentTeamName = opponentTeam.name
+        }
+      }
+
+      return {
+        homeTeamSaved: !!homeLineupId,
+        opponentTeamSaved: !!opponentLineupId,
+        homeTeamName: homeTeamName,
+        opponentTeamName: opponentTeamName
+      }
+    } catch (err) {
+      console.error('Failed to check lineups:', err)
+      return defaultStatus
+    }
+  }
+
+  // Check if both lineups are saved for a game (for backward compatibility)
   async function checkBothLineupsSaved(gameId: string): Promise<boolean> {
     try {
       // First try to get all fields
@@ -244,6 +371,30 @@ export default function GamesList() {
     } catch (err) {
       console.error('Failed to check lineups:', err)
       return false
+    }
+  }
+  
+  // Check lineup status for all games
+  async function updateLineupStatusForAllGames() {
+    if (games.length > 0) {
+      const statusPromises = games.map(async (game) => {
+        const status = await checkLineupStatus(game.id)
+        return { gameId: game.id, status }
+      })
+      
+      const results = await Promise.all(statusPromises)
+      const newStatus: Record<string, {
+        homeTeamSaved: boolean
+        opponentTeamSaved: boolean
+        homeTeamName: string
+        opponentTeamName: string
+      }> = {}
+      
+      results.forEach(({ gameId, status }) => {
+        newStatus[gameId] = status
+      })
+      
+      setGamesLineupStatus(newStatus)
     }
   }
 
@@ -649,23 +800,54 @@ export default function GamesList() {
                           updateGameStatus(game.id, 'in_progress')
                           setShowScorebook(game.id)
                         }}
-                        disabled={!gamesLineupStatus[game.id]}
+                        disabled={!gamesLineupStatus[game.id]?.homeTeamSaved || !gamesLineupStatus[game.id]?.opponentTeamSaved}
                         className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs w-full sm:w-auto"
-                        title={!gamesLineupStatus[game.id] ? "Ambas alineaciones deben estar guardadas" : "Iniciar anotación"}
+                        title={
+                          !gamesLineupStatus[game.id]?.homeTeamSaved || !gamesLineupStatus[game.id]?.opponentTeamSaved
+                            ? "Ambas alineaciones deben estar guardadas"
+                            : "Iniciar anotación"
+                        }
                       >
                         {t.startScoring}
                       </button>
-                      {!gamesLineupStatus[game.id] && (
-                        <div className="text-xs text-red-600 mt-1">
-                          ⚠ Ambas alineaciones deben estar guardadas
-                        </div>
-                      )}
                       <button
                         onClick={() => setShowLineupSelection(game.id)}
                         className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
                       >
                         {t.selectLineup}
                       </button>
+                    </div>
+                  )}
+                  
+                  {/* Lineup Status Section - Compact - Below buttons */}
+                  {game.game_status === 'scheduled' && gamesLineupStatus[game.id] && (
+                    <div className="mt-2 flex justify-center sm:justify-end">
+                      <div className="flex items-center gap-3 text-xs">
+                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+                          gamesLineupStatus[game.id]?.homeTeamSaved 
+                            ? 'bg-green-50 text-green-700' 
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          <span className="text-xs font-bold">
+                            {gamesLineupStatus[game.id]?.homeTeamSaved ? '✓' : '✗'}
+                          </span>
+                          <span className="font-medium">
+                            {gamesLineupStatus[game.id]?.homeTeamName || 'Dodgers'}
+                          </span>
+                        </div>
+                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+                          gamesLineupStatus[game.id]?.opponentTeamSaved 
+                            ? 'bg-green-50 text-green-700' 
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          <span className="text-xs font-bold">
+                            {gamesLineupStatus[game.id]?.opponentTeamSaved ? '✓' : '✗'}
+                          </span>
+                          <span className="font-medium">
+                            {gamesLineupStatus[game.id]?.opponentTeamName || 'Oponente'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   )}
                   {game.game_status === 'in_progress' && (
@@ -795,9 +977,11 @@ export default function GamesList() {
                 onLineupSaved={async () => {
                   // Refresh lineup status when a lineup is saved
                   if (showLineupSelection) {
-                    const saved = await checkBothLineupsSaved(showLineupSelection)
-                    setGamesLineupStatus(prev => ({ ...prev, [showLineupSelection]: saved }))
+                    const status = await checkLineupStatus(showLineupSelection)
+                    setGamesLineupStatus(prev => ({ ...prev, [showLineupSelection]: status }))
                   }
+                  // Also refresh all games status
+                  await updateLineupStatusForAllGames()
                 }}
               />
             </div>

@@ -68,6 +68,37 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     opponentTeamLineupSaved: boolean
   }>({ homeTeamLineupSaved: false, opponentTeamLineupSaved: false })
   const [showTeamSelection, setShowTeamSelection] = useState(true) // Control if showing team selection or lineup templates
+  const [teamPlayersFromTemplates, setTeamPlayersFromTemplates] = useState<Player[]>([]) // Players from saved templates
+  const [allTeamPlayers, setAllTeamPlayers] = useState<Player[]>([]) // All players from team (including from templates)
+  
+  // Add Player Modal State
+  const [showAddPlayerModal, setShowAddPlayerModal] = useState(false)
+  const [addPlayerForIndex, setAddPlayerForIndex] = useState<number | null>(null) // Track which lineup entry to update
+  const [newPlayerData, setNewPlayerData] = useState({
+    first_name: '',
+    last_name: '',
+    jersey_number: 0
+  })
+  const [addingPlayer, setAddingPlayer] = useState(false)
+  
+  // Duplicate Player Modal State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [duplicatePlayerInfo, setDuplicatePlayerInfo] = useState<{
+    id: string
+    first_name: string
+    last_name: string
+    jersey_number: number | null
+    photo_url: string | null
+    team_id: string | null
+    team_name: string
+    team_city: string
+  } | null>(null)
+  const [pendingPlayerData, setPendingPlayerData] = useState<{
+    firstName: string
+    lastName: string
+    jerseyNumber: number
+    index: number | null
+  } | null>(null)
 
   const fieldPositions = [
     'Lanzador (P)',
@@ -91,6 +122,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     }
     if (selectedTeam) {
       fetchSavedTemplates()
+      fetchPlayersFromTemplates()
     }
   }, [selectedTeam, gameId])
 
@@ -283,6 +315,23 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     }
     // If no teamId but gameId is provided, we'll show team selection first
   }, [teamId, teams, gameId])
+
+  // Debug: Log available players when in create mode
+  useEffect(() => {
+    if (selectedTeam && mode === 'create') {
+      const currentTeamDebug = selectedTeam ? teams.find(t => t.id === selectedTeam) : null
+      const availablePlayersDebug = getAvailablePlayers()
+      console.log('=== AVAILABLE PLAYERS DEBUG ===')
+      console.log('Selected Team:', selectedTeam)
+      console.log('Team Players from Templates:', teamPlayersFromTemplates.length)
+      console.log('All Team Players:', allTeamPlayers.length)
+      console.log('Available Players (filtered):', availablePlayersDebug.length)
+      console.log('Available Players List:', availablePlayersDebug.map(p => `${p.first_name} ${p.last_name}`))
+      console.log('Current Team:', currentTeamDebug?.name)
+      console.log('Team Players from State:', currentTeamDebug?.players?.length || 0)
+      console.log('================================')
+    }
+  }, [selectedTeam, mode, teamPlayersFromTemplates.length, allTeamPlayers.length, teams, availableTeams])
 
   // Fetch game teams (home team and opponent team)
   async function fetchGameTeams() {
@@ -503,13 +552,147 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     }
   }
 
+  // Fetch players from saved templates for the selected team
+  async function fetchPlayersFromTemplates() {
+    if (!selectedTeam) {
+      console.log('No team selected for fetching players')
+      setTeamPlayersFromTemplates([])
+      setAllTeamPlayers([])
+      return
+    }
+
+    console.log('Fetching players for team:', selectedTeam)
+    try {
+      // Get all players from saved templates for this team
+      const { data: templates, error } = await supabase
+        .from('lineup_templates')
+        .select(`
+          id,
+          lineup_template_players (
+            player_id,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number,
+              positions
+            )
+          )
+        `)
+        .eq('team_id', selectedTeam)
+      
+      console.log('Templates found:', templates?.length || 0)
+
+      if (error) {
+        console.error('Error fetching players from templates:', error)
+        setTeamPlayersFromTemplates([])
+      } else {
+        // Extract unique players from all templates
+        const playersMap = new Map<string, Player>()
+        
+        templates?.forEach(template => {
+          const templatePlayers = template.lineup_template_players as any[]
+          
+          templatePlayers?.forEach((tp: any) => {
+            // Handle Supabase nested response - players can be an object or array
+            let player: Player | null = null
+            if (tp.players) {
+              if (Array.isArray(tp.players)) {
+                player = tp.players[0] as Player
+              } else {
+                player = tp.players as Player
+              }
+            }
+            
+            if (player && tp.player_id && !playersMap.has(tp.player_id)) {
+              playersMap.set(tp.player_id, player)
+            }
+          })
+        })
+
+        const playersFromTemplates = Array.from(playersMap.values())
+        setTeamPlayersFromTemplates(playersFromTemplates)
+
+        // Also fetch all players from the team directly from database
+        console.log('Fetching players from database for team:', selectedTeam)
+        const { data: teamPlayersData, error: playersError } = await supabase
+          .from('players')
+          .select('id, first_name, last_name, jersey_number, positions')
+          .eq('team_id', selectedTeam)
+
+        if (playersError) {
+          console.error('Error fetching players from database:', playersError)
+        } else {
+          console.log('Players from database:', teamPlayersData?.length || 0)
+        }
+
+        const teamPlayersFromDb = (teamPlayersData || []) as Player[]
+        
+        // Also get players from teams state (already loaded)
+        const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
+        const teamPlayersFromState = team?.players || []
+
+        // Combine all sources: templates, database, and state
+        const allPlayersMap = new Map<string, Player>()
+        playersFromTemplates.forEach(p => allPlayersMap.set(p.id, p))
+        teamPlayersFromDb.forEach(p => {
+          if (!allPlayersMap.has(p.id)) {
+            allPlayersMap.set(p.id, p)
+          }
+        })
+        teamPlayersFromState.forEach(p => {
+          if (!allPlayersMap.has(p.id)) {
+            allPlayersMap.set(p.id, p)
+          }
+        })
+
+        setAllTeamPlayers(Array.from(allPlayersMap.values()))
+      }
+    } catch (err) {
+      console.error('Error fetching players from templates:', err)
+      setTeamPlayersFromTemplates([])
+      setAllTeamPlayers([])
+    }
+  }
+
   function getAvailablePlayers() {
-    if (!selectedTeam) return []
-    const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
-    if (!team?.players) return []
+    if (!selectedTeam) {
+      console.log('No team selected')
+      return []
+    }
     
+    // Combine all sources: templates, all team players, and team state
+    const allPlayersMap = new Map<string, Player>()
+    
+    // Add players from templates
+    if (teamPlayersFromTemplates.length > 0) {
+      console.log('Adding players from templates:', teamPlayersFromTemplates.length)
+      teamPlayersFromTemplates.forEach(p => allPlayersMap.set(p.id, p))
+    }
+    
+    // Add players from allTeamPlayers (includes DB and state)
+    if (allTeamPlayers.length > 0) {
+      console.log('Adding players from allTeamPlayers:', allTeamPlayers.length)
+      allTeamPlayers.forEach(p => allPlayersMap.set(p.id, p))
+    }
+    
+    // Also get players from teams state as fallback
+    const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
+    if (team?.players && team.players.length > 0) {
+      console.log('Adding players from team state:', team.players.length)
+      team.players.forEach(p => {
+        if (!allPlayersMap.has(p.id)) {
+          allPlayersMap.set(p.id, p)
+        }
+      })
+    }
+    
+    const allPlayers = Array.from(allPlayersMap.values())
+    console.log('Total players available:', allPlayers.length)
     const usedPlayerIds = lineupEntries.map(entry => entry.playerId).filter(id => id !== '')
-    return team.players.filter(player => !usedPlayerIds.includes(player.id))
+    const available = allPlayers.filter(player => !usedPlayerIds.includes(player.id))
+    console.log('Available players (not used):', available.length)
+    return available
   }
 
   function getAvailablePositions(currentIndex: number) {
@@ -972,6 +1155,250 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     return player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : ''
   }
 
+  // Add new player to team
+  async function handleAddPlayer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedTeam) {
+      alert('Por favor selecciona un equipo primero')
+      return
+    }
+
+    if (!newPlayerData.first_name.trim() || !newPlayerData.last_name.trim()) {
+      alert('Por favor ingresa el nombre y apellido del jugador')
+      return
+    }
+
+    setAddingPlayer(true)
+    try {
+      // Check for duplicate players (same first_name and last_name) in any team
+      const firstName = newPlayerData.first_name.trim()
+      const lastName = newPlayerData.last_name.trim()
+
+      const { data: existingPlayers, error: checkError } = await supabase
+        .from('players')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          jersey_number,
+          photo_url,
+          team_id,
+          teams (
+            id,
+            name,
+            city
+          )
+        `)
+        .eq('first_name', firstName)
+        .eq('last_name', lastName)
+
+      if (checkError) {
+        console.error('Error checking for duplicates:', checkError)
+        alert(`Error al verificar jugadores existentes: ${checkError.message}`)
+        setAddingPlayer(false)
+        return
+      }
+
+      if (existingPlayers && existingPlayers.length > 0) {
+        const existingPlayer = existingPlayers[0]
+        const existingTeam = existingPlayer.teams && (Array.isArray(existingPlayer.teams) ? existingPlayer.teams[0] : existingPlayer.teams)
+        const teamName = existingTeam ? `${existingTeam.city || ''} ${existingTeam.name || ''}`.trim() : 'sin equipo'
+        const teamCity = existingTeam?.city || ''
+        const teamNameOnly = existingTeam?.name || 'sin equipo'
+        
+        // Store duplicate player info and show modal
+        setDuplicatePlayerInfo({
+          id: existingPlayer.id,
+          first_name: existingPlayer.first_name,
+          last_name: existingPlayer.last_name,
+          jersey_number: existingPlayer.jersey_number,
+          photo_url: existingPlayer.photo_url,
+          team_id: existingPlayer.team_id,
+          team_name: teamNameOnly,
+          team_city: teamCity
+        })
+        
+        // Store pending player data to create after user confirms
+        setPendingPlayerData({
+          firstName,
+          lastName,
+          jerseyNumber: newPlayerData.jersey_number,
+          index: addPlayerForIndex
+        })
+        
+        // Close add player modal and show duplicate modal
+        setShowAddPlayerModal(false)
+        setShowDuplicateModal(true)
+        setAddingPlayer(false)
+        return
+      }
+
+      // Create player with minimal required data
+      // Use default values for required fields that user doesn't want to fill now
+      const playerData = {
+        first_name: firstName,
+        last_name: lastName,
+        jersey_number: newPlayerData.jersey_number || null,
+        team_id: selectedTeam,
+        date_of_birth: '2000-01-01', // Default date, user can update later
+        positions: [], // Empty array, user can update later
+        handedness: 'Righty', // Default value
+        is_active: true
+      }
+
+      const { data, error } = await supabase
+        .from('players')
+        .insert([playerData])
+        .select(`
+          id,
+          first_name,
+          last_name,
+          jersey_number,
+          positions
+        `)
+        .single()
+
+      if (error) {
+        console.error('Error creating player:', error)
+        alert(`Error al crear el jugador: ${error.message}`)
+        setAddingPlayer(false)
+        return
+      }
+
+      if (data) {
+        // Add the new player to the available players list
+        const newPlayer: Player = {
+          id: data.id,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          jersey_number: data.jersey_number || 0,
+          positions: data.positions || []
+        }
+
+        // Store player name for success message before resetting
+        const playerName = `${data.first_name} ${data.last_name}`
+
+        // Update state to include new player
+        setAllTeamPlayers([...allTeamPlayers, newPlayer])
+        setTeamPlayersFromTemplates([...teamPlayersFromTemplates, newPlayer])
+
+        // Automatically assign the new player to the lineup entry where it was added
+        if (addPlayerForIndex !== null) {
+          updatePlayerInLineup(addPlayerForIndex, data.id)
+        }
+
+        // Reset form and close modal
+        setNewPlayerData({
+          first_name: '',
+          last_name: '',
+          jersey_number: 0
+        })
+        setAddPlayerForIndex(null)
+        setShowAddPlayerModal(false)
+
+        // Refresh players from templates to ensure consistency
+        await fetchPlayersFromTemplates()
+
+        alert(`✓ Jugador ${playerName} agregado exitosamente y asignado a la alineación`)
+      }
+    } catch (err) {
+      console.error('Error adding player:', err)
+      alert('Error al agregar el jugador. Por favor intenta de nuevo.')
+    } finally {
+      setAddingPlayer(false)
+    }
+  }
+
+  // Handle duplicate player confirmation - create anyway
+  async function handleCreateDuplicateAnyway() {
+    if (!pendingPlayerData || !selectedTeam) {
+      setShowDuplicateModal(false)
+      setDuplicatePlayerInfo(null)
+      setPendingPlayerData(null)
+      return
+    }
+
+    setAddingPlayer(true)
+    try {
+      const playerData = {
+        first_name: pendingPlayerData.firstName,
+        last_name: pendingPlayerData.lastName,
+        jersey_number: pendingPlayerData.jerseyNumber || null,
+        team_id: selectedTeam,
+        date_of_birth: '2000-01-01',
+        positions: [],
+        handedness: 'Righty',
+        is_active: true
+      }
+
+      const { data, error } = await supabase
+        .from('players')
+        .insert([playerData])
+        .select(`
+          id,
+          first_name,
+          last_name,
+          jersey_number,
+          positions
+        `)
+        .single()
+
+      if (error) {
+        console.error('Error creating player:', error)
+        alert(`Error al crear el jugador: ${error.message}`)
+        setAddingPlayer(false)
+        return
+      }
+
+      if (data) {
+        const newPlayer: Player = {
+          id: data.id,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          jersey_number: data.jersey_number || 0,
+          positions: data.positions || []
+        }
+
+        const playerName = `${data.first_name} ${data.last_name}`
+
+        setAllTeamPlayers([...allTeamPlayers, newPlayer])
+        setTeamPlayersFromTemplates([...teamPlayersFromTemplates, newPlayer])
+
+        if (pendingPlayerData.index !== null) {
+          updatePlayerInLineup(pendingPlayerData.index, data.id)
+        }
+
+        await fetchPlayersFromTemplates()
+
+        setShowDuplicateModal(false)
+        setDuplicatePlayerInfo(null)
+        setPendingPlayerData(null)
+        setNewPlayerData({
+          first_name: '',
+          last_name: '',
+          jersey_number: 0
+        })
+        setAddPlayerForIndex(null)
+
+        alert(`✓ Jugador ${playerName} agregado exitosamente y asignado a la alineación`)
+      }
+    } catch (err) {
+      console.error('Error adding player:', err)
+      alert('Error al agregar el jugador. Por favor intenta de nuevo.')
+    } finally {
+      setAddingPlayer(false)
+    }
+  }
+
+  // Handle duplicate player cancellation
+  function handleCancelDuplicate() {
+    setShowDuplicateModal(false)
+    setDuplicatePlayerInfo(null)
+    setPendingPlayerData(null)
+    // Reopen add player modal
+    setShowAddPlayerModal(true)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -1242,13 +1669,81 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
                   Ver Plantillas
         </button>
               )}
-              {localStorage.getItem(`lineup_${selectedTeam}`) && (
-                <span className="text-sm bg-green-100 text-green-800 px-3 py-2 rounded-lg font-medium">
-                  ✓ Datos guardados localmente
-                </span>
-              )}
             </div>
           </div>
+
+          {/* Players Info Section */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h5 className="text-sm font-semibold text-blue-800">Jugadores Disponibles:</h5>
+              <span className="text-xs text-blue-600">
+                {teamPlayersFromTemplates.length > 0 
+                  ? `${teamPlayersFromTemplates.length} de plantillas guardadas`
+                  : allTeamPlayers.length > 0
+                    ? `${allTeamPlayers.length} del equipo`
+                    : 'Sin jugadores guardados'}
+              </span>
+            </div>
+            {teamPlayersFromTemplates.length > 0 ? (
+              <div className="text-xs text-blue-700">
+                <p className="mb-1">✓ Jugadores encontrados en plantillas guardadas de este equipo:</p>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {teamPlayersFromTemplates.slice(0, 10).map((player) => (
+                    <span key={player.id} className="bg-white px-2 py-1 rounded border border-blue-200">
+                      {player.first_name} {player.last_name} #{player.jersey_number}
+                    </span>
+                  ))}
+                  {teamPlayersFromTemplates.length > 10 && (
+                    <span className="bg-white px-2 py-1 rounded border border-blue-200">
+                      +{teamPlayersFromTemplates.length - 10} más
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : allTeamPlayers.length > 0 ? (
+              <div className="text-xs text-blue-700">
+                <p className="mb-1">✓ Jugadores del equipo disponibles:</p>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {allTeamPlayers.slice(0, 10).map((player) => (
+                    <span key={player.id} className="bg-white px-2 py-1 rounded border border-blue-200">
+                      {player.first_name} {player.last_name} #{player.jersey_number}
+                    </span>
+                  ))}
+                  {allTeamPlayers.length > 10 && (
+                    <span className="bg-white px-2 py-1 rounded border border-blue-200">
+                      +{allTeamPlayers.length - 10} más
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-yellow-700">
+                <p className="mb-2">⚠ No hay jugadores guardados en plantillas previas para este equipo.</p>
+                <p className="mb-2">Puedes seleccionar jugadores de la base de datos del equipo o agregar nuevos jugadores desde la sección de Jugadores.</p>
+                <p className="text-red-600 font-semibold">
+                  Si no ves jugadores en el dropdown, asegúrate de que el equipo tenga jugadores asignados en la sección de Jugadores.
+                </p>
+              </div>
+            )}
+            {availablePlayers.length === 0 && selectedTeam && (
+              <div className="mt-2 bg-red-50 border border-red-200 rounded p-2">
+                <p className="text-xs text-red-700 font-semibold">
+                  ⚠ No hay jugadores disponibles para este equipo. 
+                </p>
+                <p className="text-xs text-red-600 mt-1">
+                  Ve a la sección "Jugadores" en el menú principal para agregar jugadores a este equipo primero.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {localStorage.getItem(`lineup_${selectedTeam}`) && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <span className="text-sm bg-green-100 text-green-800 px-3 py-2 rounded-lg font-medium">
+                ✓ Datos guardados localmente
+              </span>
+            </div>
+          )}
 
           {/* Grid Table */}
           <div className="overflow-x-auto">
@@ -1276,23 +1771,51 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
                     
                     {/* Player Selection */}
                     <td className="border border-gray-300 px-3 py-2">
-                      <select
-                        value={lineupEntries[index]?.playerId || ''}
-                        onChange={(e) => updatePlayerInLineup(index, e.target.value)}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Seleccionar jugador...</option>
-                        {availablePlayers.map((player) => (
-                          <option key={player.id} value={player.id}>
-                            {player.first_name} {player.last_name} #{player.jersey_number}
-                          </option>
-                        ))}
-                        {lineupEntries[index]?.playerId && (
-                          <option value={lineupEntries[index].playerId}>
-                            {getPlayerName(lineupEntries[index].playerId)}
-                          </option>
-                        )}
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={lineupEntries[index]?.playerId || ''}
+                          onChange={(e) => {
+                            console.log('Player selected:', e.target.value, 'for position', index + 1)
+                            updatePlayerInLineup(index, e.target.value)
+                          }}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          disabled={availablePlayers.length === 0 && !lineupEntries[index]?.playerId}
+                        >
+                          <option value="">Seleccionar jugador...</option>
+                          {availablePlayers.length > 0 ? (
+                            availablePlayers.map((player) => (
+                              <option key={player.id} value={player.id}>
+                                {player.first_name} {player.last_name} #{player.jersey_number}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="" disabled>
+                              {selectedTeam ? 'No hay jugadores disponibles' : 'Selecciona un equipo primero'}
+                            </option>
+                          )}
+                          {lineupEntries[index]?.playerId && !availablePlayers.find(p => p.id === lineupEntries[index].playerId) && (
+                            <option value={lineupEntries[index].playerId}>
+                              {getPlayerName(lineupEntries[index].playerId)}
+                            </option>
+                          )}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddPlayerForIndex(index)
+                            setShowAddPlayerModal(true)
+                          }}
+                          className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 whitespace-nowrap"
+                          title="Agregar nuevo jugador al equipo"
+                        >
+                          + Agregar
+                        </button>
+                      </div>
+                      {availablePlayers.length === 0 && selectedTeam && (
+                        <p className="text-xs text-red-600 mt-1">
+                          No hay jugadores disponibles. Puedes agregar uno usando el botón "+ Agregar" arriba.
+                        </p>
+                      )}
                     </td>
                     
                     {/* Position Selection */}
@@ -1372,6 +1895,206 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
           </button>
         </div>
       </div>
+      )}
+
+      {/* Add Player Modal */}
+      {showAddPlayerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Agregar Nuevo Jugador
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddPlayerModal(false)
+                  setAddPlayerForIndex(null)
+                  setNewPlayerData({ first_name: '', last_name: '', jersey_number: 0 })
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleAddPlayer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newPlayerData.first_name}
+                  onChange={(e) => setNewPlayerData({ ...newPlayerData, first_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Ej: Juan"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Apellido <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newPlayerData.last_name}
+                  onChange={(e) => setNewPlayerData({ ...newPlayerData, last_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Ej: Pérez"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número de Camiseta (Opcional)
+                </label>
+                <input
+                  type="number"
+                  value={newPlayerData.jersey_number || ''}
+                  onChange={(e) => setNewPlayerData({ ...newPlayerData, jersey_number: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Ej: 23"
+                  min="0"
+                />
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-700">
+                  <strong>Nota:</strong> Solo se guardará la información básica. Puedes agregar más detalles (fecha de nacimiento, posiciones, etc.) más tarde desde la sección de Jugadores.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddPlayerModal(false)
+                    setAddPlayerForIndex(null)
+                    setNewPlayerData({ first_name: '', last_name: '', jersey_number: 0 })
+                  }}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingPlayer || !newPlayerData.first_name.trim() || !newPlayerData.last_name.trim()}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {addingPlayer ? 'Agregando...' : 'Agregar Jugador'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Player Modal */}
+      {showDuplicateModal && duplicatePlayerInfo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-yellow-800 flex items-center gap-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                Jugador Duplicado Encontrado
+              </h3>
+              <button
+                onClick={handleCancelDuplicate}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-yellow-800 mb-3">
+                Ya existe un jugador con el nombre <strong>"{duplicatePlayerInfo.first_name} {duplicatePlayerInfo.last_name}"</strong> en el sistema.
+              </p>
+              <p className="text-xs text-yellow-700">
+                Por favor verifica si es el mismo jugador antes de continuar.
+              </p>
+            </div>
+
+            {/* Existing Player Info */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Jugador Existente:</h4>
+              <div className="flex items-start gap-4">
+                {/* Player Photo */}
+                <div className="flex-shrink-0">
+                  {duplicatePlayerInfo.photo_url ? (
+                    <img
+                      src={duplicatePlayerInfo.photo_url}
+                      alt={`${duplicatePlayerInfo.first_name} ${duplicatePlayerInfo.last_name}`}
+                      className="w-24 h-24 object-cover rounded-lg border-2 border-gray-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"%3E%3Cpath d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"%3E%3C/%3E%3Ccircle cx="12" cy="7" r="4"%3E%3C/%3E%3C/%3E%3C/svg%3E'
+                        ;(e.target as HTMLImageElement).className = 'w-24 h-24 bg-gray-200 rounded-lg border-2 border-gray-300 p-4'
+                      }}
+                    />
+                  ) : (
+                    <div className="w-24 h-24 bg-gray-200 rounded-lg border-2 border-gray-300 flex items-center justify-center">
+                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Player Details */}
+                <div className="flex-1">
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Nombre</p>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {duplicatePlayerInfo.first_name} {duplicatePlayerInfo.last_name}
+                      </p>
+                    </div>
+                    {duplicatePlayerInfo.jersey_number && (
+                      <div>
+                        <p className="text-xs text-gray-500">Número de Camiseta</p>
+                        <p className="text-sm text-gray-800">#{duplicatePlayerInfo.jersey_number}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs text-gray-500">Equipo</p>
+                      <p className="text-sm text-gray-800">
+                        {duplicatePlayerInfo.team_city ? `${duplicatePlayerInfo.team_city} ` : ''}
+                        {duplicatePlayerInfo.team_name}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button
+                type="button"
+                onClick={handleCancelDuplicate}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateDuplicateAnyway}
+                disabled={addingPlayer}
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {addingPlayer ? 'Agregando...' : 'Agregar de Todas Formas'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -193,7 +193,7 @@ export default function PlayersList() {
         }
       } else {
         // Add new player - check for duplicates first
-        // Check if player with same name and DOB already exists
+        // Check if player with same first_name and last_name already exists (in any team)
         const { data: existingPlayers, error: checkError } = await supabase
           .from('players')
           .select(`
@@ -203,13 +203,13 @@ export default function PlayersList() {
             date_of_birth,
             team_id,
             teams (
+              id,
               name,
               city
             )
           `)
           .eq('first_name', submitData.first_name.trim())
           .eq('last_name', submitData.last_name.trim())
-          .eq('date_of_birth', submitData.date_of_birth)
 
         if (checkError) {
           setError('Error checking for duplicates: ' + checkError.message)
@@ -219,9 +219,15 @@ export default function PlayersList() {
 
         if (existingPlayers && existingPlayers.length > 0) {
           const existingPlayer = existingPlayers[0]
-          const existingTeam = existingPlayer.teams && existingPlayer.teams[0]
-          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : t.noTeam
-          setError(`${t.playerExistsOnTeam}: ${teamName}`)
+          const existingTeam = existingPlayer.teams && (Array.isArray(existingPlayer.teams) ? existingPlayer.teams[0] : existingPlayer.teams)
+          const teamName = existingTeam ? `${existingTeam.city || ''} ${existingTeam.name || ''}`.trim() : t.noTeam
+          const isSameTeam = existingPlayer.team_id === submitData.team_id
+          
+          if (isSameTeam) {
+            setError(`Ya existe un jugador con el nombre "${submitData.first_name.trim()} ${submitData.last_name.trim()}" en este equipo (${teamName}). Por favor verifica que no sea un duplicado.`)
+          } else {
+            setError(`Ya existe un jugador con el nombre "${submitData.first_name.trim()} ${submitData.last_name.trim()}" en el equipo "${teamName}". Por favor verifica que no sea un duplicado antes de continuar.`)
+          }
           setSubmitting(false)
           return
         }
