@@ -29,6 +29,7 @@ interface LineupSelectionProps {
   gameId?: string
   onClose: () => void
   onLineupSaved?: () => void | Promise<void> // Callback when lineup is saved
+  onStartScoring?: () => void // Callback to start scoring when both lineups are saved
 }
 
 interface GameTeams {
@@ -37,7 +38,7 @@ interface GameTeams {
   opponentName?: string
 }
 
-export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved }: LineupSelectionProps) {
+export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved, onStartScoring }: LineupSelectionProps) {
   const [teams, setTeams] = useState<Team[]>([])
   const [gameTeams, setGameTeams] = useState<GameTeams>({})
   const [availableTeams, setAvailableTeams] = useState<Team[]>([]) // Only teams from the game
@@ -67,6 +68,10 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
     homeTeamLineupSaved: boolean
     opponentTeamLineupSaved: boolean
   }>({ homeTeamLineupSaved: false, opponentTeamLineupSaved: false })
+  const [homeTeamId, setHomeTeamId] = useState<string | null>(null) // Track which team is home
+  const [awayTeamId, setAwayTeamId] = useState<string | null>(null) // Track which team is away
+  const [showHomeAwaySelection, setShowHomeAwaySelection] = useState(false) // Show home/away selection
+  const [gameStatus, setGameStatus] = useState<string | null>(null) // Track game status
   const [showTeamSelection, setShowTeamSelection] = useState(true) // Control if showing team selection or lineup templates
   const [teamPlayersFromTemplates, setTeamPlayersFromTemplates] = useState<Player[]>([]) // Players from saved templates
   const [allTeamPlayers, setAllTeamPlayers] = useState<Player[]>([]) // All players from team (including from templates)
@@ -341,9 +346,27 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
       // First, try to get all fields from games table
       const { data: gameData, error: gameError } = await supabase
         .from('games')
-        .select('*')
+        .select('*, home_team_id, away_team_id, game_status')
         .eq('id', gameId)
         .single()
+
+      // Store game status
+      if (gameData && (gameData as any)?.game_status) {
+        setGameStatus((gameData as any).game_status)
+      }
+
+      // Check if home_team_id and away_team_id are already set
+      if (gameData && (gameData as any)?.home_team_id && (gameData as any)?.away_team_id) {
+        setHomeTeamId((gameData as any).home_team_id)
+        setAwayTeamId((gameData as any).away_team_id)
+        // Only show selection if game is scheduled (not in_progress or completed)
+        const status = (gameData as any)?.game_status || 'scheduled'
+        setShowHomeAwaySelection(status === 'scheduled' ? false : false) // Don't show by default if already set
+      } else {
+        // Need to show home/away selection only if game is scheduled
+        const status = (gameData as any)?.game_status || 'scheduled'
+        setShowHomeAwaySelection(status === 'scheduled')
+      }
 
       // Always find Dodgers team (home team)
       const { data: dodgersTeam } = await supabase
@@ -1149,10 +1172,31 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
   }
 
   function getPlayerName(playerId: string) {
-    if (!selectedTeam) return ''
+    if (!playerId || !selectedTeam) return ''
+    
+    // Search in all available sources
+    let player: Player | undefined
+    
+    // First, check in teamPlayersFromTemplates
+    player = teamPlayersFromTemplates.find(p => p.id === playerId)
+    if (player) {
+      return `${player.first_name} ${player.last_name} #${player.jersey_number}`
+    }
+    
+    // Then check in allTeamPlayers
+    player = allTeamPlayers.find(p => p.id === playerId)
+    if (player) {
+      return `${player.first_name} ${player.last_name} #${player.jersey_number}`
+    }
+    
+    // Finally, check in teams state
     const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
-    const player = team?.players?.find(p => p.id === playerId)
-    return player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : ''
+    player = team?.players?.find(p => p.id === playerId)
+    if (player) {
+      return `${player.first_name} ${player.last_name} #${player.jersey_number}`
+    }
+    
+    return 'Jugador no encontrado'
   }
 
   // Add new player to team
@@ -1455,6 +1499,157 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
               </p>
             </div>
           )}
+          
+          {/* Home/Away Selection - Show if not yet set OR if user wants to change (only if game is scheduled) */}
+          {gameId && availableTeams.length >= 2 && gameStatus === 'scheduled' && (
+            <div className="mb-4">
+              {!homeTeamId || !awayTeamId || showHomeAwaySelection ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-blue-800 mb-3">
+                    Selecciona quién es el equipo local (Home) y quién es visitante (Away)
+                  </h4>
+                  <p className="text-xs text-blue-700 mb-3">
+                    El equipo local batea último en cada entrada (cierra la entrada).
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {availableTeams.map((team) => {
+                      const isHome = homeTeamId === team.id
+                      const isAway = awayTeamId === team.id
+                      
+                      return (
+                        <div key={team.id} className="flex flex-col gap-2">
+                          <div className="text-sm font-medium text-gray-700">{team.name}</div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                setHomeTeamId(team.id)
+                                setAwayTeamId(availableTeams.find(t => t.id !== team.id)?.id || null)
+                                
+                                // Save to database
+                                if (gameId) {
+                                  const otherTeam = availableTeams.find(t => t.id !== team.id)
+                                  const { error } = await supabase
+                                    .from('games')
+                                    .update({
+                                      home_team_id: team.id,
+                                      away_team_id: otherTeam?.id || null
+                                    })
+                                    .eq('id', gameId)
+                                  
+                                  if (error) {
+                                    console.error('Error saving home/away teams:', error)
+                                    const errorMessage = error.message || 'Error desconocido'
+                                    if (errorMessage.includes('column') || errorMessage.includes('home_team_id') || errorMessage.includes('away_team_id')) {
+                                      alert('Error: Las columnas home_team_id y away_team_id no existen en la tabla games.\n\nPor favor ejecuta el query SQL en database/add_home_away_columns.sql en tu base de datos Supabase primero.\n\nVer INSTRUCCIONES_AGREGAR_COLUMNAS.md para más detalles.')
+                                    } else {
+                                      alert(`Error al guardar la selección de equipos: ${errorMessage}`)
+                                    }
+                                  } else {
+                                    setShowHomeAwaySelection(false)
+                                  }
+                                }
+                              }}
+                              className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                                isHome
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                              }`}
+                            >
+                              {isHome ? '✓' : ''} Local (Home)
+                            </button>
+                            <button
+                              onClick={async () => {
+                                setAwayTeamId(team.id)
+                                setHomeTeamId(availableTeams.find(t => t.id !== team.id)?.id || null)
+                                
+                                // Save to database
+                                if (gameId) {
+                                  const otherTeam = availableTeams.find(t => t.id !== team.id)
+                                  const { error } = await supabase
+                                    .from('games')
+                                    .update({
+                                      home_team_id: otherTeam?.id || null,
+                                      away_team_id: team.id
+                                    })
+                                    .eq('id', gameId)
+                                  
+                                  if (error) {
+                                    console.error('Error saving home/away teams:', error)
+                                    const errorMessage = error.message || 'Error desconocido'
+                                    if (errorMessage.includes('column') || errorMessage.includes('home_team_id') || errorMessage.includes('away_team_id')) {
+                                      alert('Error: Las columnas home_team_id y away_team_id no existen en la tabla games.\n\nPor favor ejecuta el query SQL en database/add_home_away_columns.sql en tu base de datos Supabase primero.\n\nVer INSTRUCCIONES_AGREGAR_COLUMNAS.md para más detalles.')
+                                    } else {
+                                      alert(`Error al guardar la selección de equipos: ${errorMessage}`)
+                                    }
+                                  } else {
+                                    setShowHomeAwaySelection(false)
+                                  }
+                                }
+                              }}
+                              className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                                isAway
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                              }`}
+                            >
+                              {isAway ? '✓' : ''} Visitante (Away)
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                        Equipos Asignados
+                      </h4>
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div>
+                          <span className="font-medium">Local (Home):</span>{' '}
+                          {availableTeams.find(t => t.id === homeTeamId)?.name || 'No asignado'}
+                        </div>
+                        <div>
+                          <span className="font-medium">Visitante (Away):</span>{' '}
+                          {availableTeams.find(t => t.id === awayTeamId)?.name || 'No asignado'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowHomeAwaySelection(true)}
+                      className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Warning if game is already started */}
+          {gameId && gameStatus && gameStatus !== 'scheduled' && (
+            <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-yellow-800">
+                    La anotación ya ha comenzado
+                  </p>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    No se puede cambiar la asignación de equipos (Home/Away) una vez que la anotación ha iniciado. 
+                    Para cambiar los equipos, debes borrar la anotación y crear un nuevo juego.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {availableTeams.map((team) => {
               // Determine if this is Dodgers (home) or opponent
@@ -1532,6 +1727,27 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
               <p className="text-red-800 text-sm">
                 No se encontraron equipos para este juego. Por favor, asegúrate de que Dodgers existe y el equipo oponente esté configurado.
               </p>
+            </div>
+          )}
+          
+          {/* Start Scoring Button - Bottom right inside modal */}
+          {gameId && gameLineupStatus.homeTeamLineupSaved && gameLineupStatus.opponentTeamLineupSaved && !showHomeAwaySelection && homeTeamId && awayTeamId && (
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => {
+                  if (onStartScoring) {
+                    onStartScoring()
+                  } else {
+                    onClose()
+                  }
+                }}
+                className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-medium text-base shadow-lg transition-all hover:scale-105 flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Iniciar Anotación
+              </button>
             </div>
           )}
         </div>
@@ -1782,18 +1998,38 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
                           disabled={availablePlayers.length === 0 && !lineupEntries[index]?.playerId}
                         >
                           <option value="">Seleccionar jugador...</option>
-                          {availablePlayers.length > 0 ? (
-                            availablePlayers.map((player) => (
+                          {/* Always show selected player first if exists */}
+                          {lineupEntries[index]?.playerId && (() => {
+                            const selectedPlayer = 
+                              allTeamPlayers.find(p => p.id === lineupEntries[index].playerId) ||
+                              teamPlayersFromTemplates.find(p => p.id === lineupEntries[index].playerId) ||
+                              availablePlayers.find(p => p.id === lineupEntries[index].playerId)
+                            
+                            if (selectedPlayer) {
+                              return (
+                                <option key={selectedPlayer.id} value={selectedPlayer.id}>
+                                  {selectedPlayer.first_name} {selectedPlayer.last_name} #{selectedPlayer.jersey_number}
+                                </option>
+                              )
+                            }
+                            return null
+                          })()}
+                          {/* Show available players (excluding the one already selected for this row) */}
+                          {availablePlayers
+                            .filter(player => player.id !== lineupEntries[index]?.playerId)
+                            .map((player) => (
                               <option key={player.id} value={player.id}>
                                 {player.first_name} {player.last_name} #{player.jersey_number}
                               </option>
-                            ))
-                          ) : (
+                            ))}
+                          {/* Fallback: if no available players and no selected player, show message */}
+                          {availablePlayers.length === 0 && !lineupEntries[index]?.playerId && (
                             <option value="" disabled>
                               {selectedTeam ? 'No hay jugadores disponibles' : 'Selecciona un equipo primero'}
                             </option>
                           )}
-                          {lineupEntries[index]?.playerId && !availablePlayers.find(p => p.id === lineupEntries[index].playerId) && (
+                          {/* Fallback: if selected player is not in available list, show it anyway */}
+                          {lineupEntries[index]?.playerId && !allTeamPlayers.find(p => p.id === lineupEntries[index].playerId) && !teamPlayersFromTemplates.find(p => p.id === lineupEntries[index].playerId) && (
                             <option value={lineupEntries[index].playerId}>
                               {getPlayerName(lineupEntries[index].playerId)}
                             </option>

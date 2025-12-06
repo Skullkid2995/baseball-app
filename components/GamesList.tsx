@@ -974,6 +974,13 @@ export default function GamesList() {
                     setShowLineupSelection(null)
                   }
                 }}
+                onStartScoring={() => {
+                  // Start scoring when both lineups are saved
+                  if (showLineupSelection) {
+                    setShowLineupSelection(null)
+                    setShowScorebook(showLineupSelection)
+                  }
+                }}
                 onLineupSaved={async () => {
                   // Refresh lineup status when a lineup is saved
                   if (showLineupSelection) {
