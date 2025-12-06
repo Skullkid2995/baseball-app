@@ -320,8 +320,8 @@ export default function TeamsList() {
         if (existingPlayers && existingPlayers.length > 0) {
           const existingPlayer = existingPlayers[0]
           const existingTeam = existingPlayer.teams && existingPlayer.teams[0]
-          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : 'No Team'
-          setError(`This player exists on a different team: ${teamName}. Please select them from the list instead.`)
+          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : t.noTeam
+          setError(t.playerExistsOnTeamMessage.replace('{teamName}', teamName))
           setSubmittingPlayer(false)
           return
         }
@@ -656,7 +656,7 @@ export default function TeamsList() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Team Logo Upload Section */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Team Logo</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t.teamLogo}</label>
               <div className="flex items-center space-x-4">
                 <div className="flex-1">
                   <input
@@ -668,7 +668,7 @@ export default function TeamsList() {
                     style={{ display: 'block' }}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {uploadingLogo ? 'Uploading...' : 'Upload team logo (max 5MB)'}
+                    {uploadingLogo ? t.uploading : t.uploadTeamLogo}
                   </p>
                 </div>
                 {logoPreview && (
@@ -915,7 +915,7 @@ export default function TeamsList() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
               <h4 className="text-lg font-semibold text-gray-800">
-                Select Player to Add to {teams.find(t => t.id === showPlayerSelectionModal)?.name || 'Team'}
+                {t.selectPlayerToAdd} {teams.find(t => t.id === showPlayerSelectionModal)?.name || t.team}
               </h4>
               <button
                 onClick={() => {
@@ -930,7 +930,7 @@ export default function TeamsList() {
             <div className="p-6">
               {playersWithoutTeams.length > 0 ? (
                 <div className="space-y-4 mb-6">
-                  <h5 className="text-md font-semibold text-gray-700 mb-3">Players Without Teams</h5>
+                  <h5 className="text-md font-semibold text-gray-700 mb-3">{t.playersWithoutTeams}</h5>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {playersWithoutTeams.map((player) => (
                       <div
@@ -973,7 +973,7 @@ export default function TeamsList() {
                 </div>
               ) : (
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-gray-600 text-center">No players without teams available.</p>
+                  <p className="text-gray-600 text-center">{t.noPlayersWithoutTeams}</p>
                 </div>
               )}
               <div className="flex justify-center">
@@ -981,7 +981,7 @@ export default function TeamsList() {
                   onClick={() => openNewPlayerForm(showPlayerSelectionModal)}
                   className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
                 >
-                  New Player
+                  {t.newPlayer}
                 </button>
               </div>
             </div>
@@ -1086,7 +1086,7 @@ export default function TeamsList() {
                       onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     >
-                      <option value="">No Team (Remove from team)</option>
+                      <option value="">{t.noTeamRemove}</option>
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.city} {team.name}
@@ -1311,7 +1311,7 @@ export default function TeamsList() {
                       onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">No Team (Remove from team)</option>
+                      <option value="">{t.noTeamRemove}</option>
                       {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.city} {team.name}
@@ -1432,7 +1432,7 @@ export default function TeamsList() {
                       disabled={submittingPlayer}
                       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
-                      {submittingPlayer ? 'Removing...' : 'Remove from Team'}
+                      {submittingPlayer ? t.removing : t.removeFromTeam}
                     </button>
                   )}
                   <button

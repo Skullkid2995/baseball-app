@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/contexts/LanguageContext'
 
 interface Player {
   id: string
@@ -38,6 +39,7 @@ const BASEBALL_POSITIONS = [
 ]
 
 export default function PlayersList() {
+  const { t } = useLanguage()
   const [players, setPlayers] = useState<Player[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,8 +69,8 @@ export default function PlayersList() {
   // Helper function to sort players by team name, then by player name
   function sortPlayers(playersToSort: Player[]): Player[] {
     return [...playersToSort].sort((a, b) => {
-      const teamA = (a.teams && a.teams[0]) ? `${a.teams[0].city} ${a.teams[0].name}` : 'No Team'
-      const teamB = (b.teams && b.teams[0]) ? `${b.teams[0].city} ${b.teams[0].name}` : 'No Team'
+      const teamA = (a.teams && a.teams[0]) ? `${a.teams[0].city} ${a.teams[0].name}` : t.noTeam
+      const teamB = (b.teams && b.teams[0]) ? `${b.teams[0].city} ${b.teams[0].name}` : t.noTeam
       
       // First sort by team name
       if (teamA !== teamB) {
@@ -218,8 +220,8 @@ export default function PlayersList() {
         if (existingPlayers && existingPlayers.length > 0) {
           const existingPlayer = existingPlayers[0]
           const existingTeam = existingPlayer.teams && existingPlayer.teams[0]
-          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : 'No Team'
-          setError(`This player exists on a different team: ${teamName}`)
+          const teamName = existingTeam ? `${existingTeam.city} ${existingTeam.name}` : t.noTeam
+          setError(`${t.playerExistsOnTeam}: ${teamName}`)
           setSubmitting(false)
           return
         }
@@ -493,13 +495,13 @@ export default function PlayersList() {
       {showAddForm && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
           <h4 className="text-lg font-semibold text-gray-800 mb-4">
-            {editingPlayer ? 'Edit Player' : 'Add New Player'}
+            {editingPlayer ? t.editPlayer : t.addPlayer}
           </h4>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!editingPlayer && (
               <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select existing player without team (optional)
+                  {t.selectExistingPlayer}
                 </label>
                 <select
                   value={selectExistingPlayer}
@@ -533,7 +535,7 @@ export default function PlayersList() {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
-                  <option value="">Create new player</option>
+                  <option value="">{t.createNewPlayer}</option>
                   {players
                     .filter(p => !p.team_id || p.team_id === null || p.team_id === '')
                     .map((player) => (
@@ -543,7 +545,7 @@ export default function PlayersList() {
                     ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  If a player exists without a team, select them here to assign to a team instead of creating a duplicate.
+                  {t.selectExistingPlayerHint}
                 </p>
               </div>
             )}
@@ -627,7 +629,7 @@ export default function PlayersList() {
                   onChange={(e) => setFormData({...formData, team_id: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
-                  <option value="">No Team (Remove from team)</option>
+                      <option value="">{t.noTeamRemove}</option>
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.city} {team.name}
@@ -748,7 +750,7 @@ export default function PlayersList() {
                   disabled={submitting}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                 >
-                  {submitting ? 'Removing...' : 'Remove from Team'}
+                  {submitting ? t.removing : t.removeFromTeam}
                 </button>
               )}
               <button
@@ -795,7 +797,7 @@ export default function PlayersList() {
                 </p>
               ) : (
                 <p className="text-sm font-medium text-gray-500 mb-2">
-                  No Team
+                  {t.noTeam}
                 </p>
               )}
               <p className="text-sm text-gray-600 mb-1">

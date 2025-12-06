@@ -28,10 +28,19 @@ interface LineupSelectionProps {
   teamId?: string
   gameId?: string
   onClose: () => void
+  onLineupSaved?: () => void | Promise<void> // Callback when lineup is saved
 }
 
-export default function LineupSelection({ teamId, gameId, onClose }: LineupSelectionProps) {
+interface GameTeams {
+  homeTeamId?: string
+  opponentTeamId?: string
+  opponentName?: string
+}
+
+export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved }: LineupSelectionProps) {
   const [teams, setTeams] = useState<Team[]>([])
+  const [gameTeams, setGameTeams] = useState<GameTeams>({})
+  const [availableTeams, setAvailableTeams] = useState<Team[]>([]) // Only teams from the game
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>([])
   const [hasDH, setHasDH] = useState(false)
@@ -54,6 +63,11 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   }
   
   const [savedTemplates, setSavedTemplates] = useState<LineupTemplate[]>([]) // Store saved templates from database
+  const [gameLineupStatus, setGameLineupStatus] = useState<{
+    homeTeamLineupSaved: boolean
+    opponentTeamLineupSaved: boolean
+  }>({ homeTeamLineupSaved: false, opponentTeamLineupSaved: false })
+  const [showTeamSelection, setShowTeamSelection] = useState(true) // Control if showing team selection or lineup templates
 
   const fieldPositions = [
     'Lanzador (P)',
@@ -69,11 +83,195 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   ]
 
   useEffect(() => {
-    fetchTeams()
+    if (gameId) {
+      fetchGameTeams()
+      checkGameLineupStatus()
+    } else {
+      fetchTeams()
+    }
     if (selectedTeam) {
       fetchSavedTemplates()
     }
-  }, [selectedTeam])
+  }, [selectedTeam, gameId])
+
+  // Check if lineups are saved for this game
+  async function checkGameLineupStatus() {
+    if (!gameId) return
+
+    try {
+      console.log('=== CHECKING GAME LINEUP STATUS ===')
+      console.log('Game ID:', gameId)
+      
+      // First try to get game data with lineup template IDs
+      const { data: gameData, error: gameError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .single()
+
+      if (gameError) {
+        console.log('Error fetching game data, trying fallback...', gameError)
+        // Try fallback approach
+        const { data: fallbackData } = await supabase
+          .from('games')
+          .select('opponent, team_id')
+          .eq('id', gameId)
+          .single()
+
+        if (fallbackData) {
+          await checkLineupsViaTemplates(fallbackData)
+        }
+        return
+      }
+
+      // Check if lineup_template_id and opponent_lineup_template_id columns exist
+      const hasHomeLineupId = (gameData as any)?.lineup_template_id !== undefined
+      const hasOpponentLineupId = (gameData as any)?.opponent_lineup_template_id !== undefined
+
+      if (hasHomeLineupId && hasOpponentLineupId) {
+        // Columns exist, use them directly
+        const homeLineupId = (gameData as any)?.lineup_template_id
+        const opponentLineupId = (gameData as any)?.opponent_lineup_template_id
+        
+        console.log('Lineup IDs from games table:')
+        console.log('  Home (Dodgers):', homeLineupId)
+        console.log('  Opponent:', opponentLineupId)
+        
+        const newStatus = {
+          homeTeamLineupSaved: !!homeLineupId,
+          opponentTeamLineupSaved: !!opponentLineupId
+        }
+        
+        setGameLineupStatus(newStatus)
+        console.log('Final status:', newStatus)
+      } else {
+        // Columns don't exist, check via lineup_templates table
+        console.log('Lineup template ID columns not found, checking via lineup_templates table...')
+        const { data: fallbackData } = await supabase
+          .from('games')
+          .select('opponent, team_id')
+          .eq('id', gameId)
+          .single()
+        
+        if (fallbackData) {
+          await checkLineupsViaTemplates(fallbackData)
+        }
+      }
+      
+      console.log('===================================')
+    } catch (err) {
+      console.error('Error checking game lineup status:', err)
+    }
+  }
+
+  // Helper function to check lineups via lineup_templates table
+  async function checkLineupsViaTemplates(gameData: { opponent?: string; team_id?: string }) {
+    // Find Dodgers team
+    const { data: dodgersTeam } = await supabase
+      .from('teams')
+      .select('id')
+      .eq('name', 'Dodgers')
+      .maybeSingle()
+    
+    const homeTeamId = gameData.team_id || dodgersTeam?.id
+    
+    // Find opponent team
+    let opponentTeamId: string | undefined
+    if (gameData.opponent) {
+      const { data: opponentTeam } = await supabase
+        .from('teams')
+        .select('id')
+        .eq('name', gameData.opponent)
+        .maybeSingle()
+      opponentTeamId = opponentTeam?.id
+    }
+    
+    console.log('Team IDs:')
+    console.log('  Home (Dodgers):', homeTeamId)
+    console.log('  Opponent:', opponentTeamId)
+    
+    // Check if templates exist for both teams (check if they have at least one template with players)
+    let hasHome = false
+    let hasOpponent = false
+    
+    if (homeTeamId) {
+      const { data: homeTemplates } = await supabase
+        .from('lineup_templates')
+        .select(`
+          id,
+          lineup_template_players (id)
+        `)
+        .eq('team_id', homeTeamId)
+      
+      // Check if any template has players
+      hasHome = !!homeTemplates && homeTemplates.some(t => 
+        t.lineup_template_players && Array.isArray(t.lineup_template_players) && t.lineup_template_players.length > 0
+      )
+      console.log('Dodgers templates with players found:', homeTemplates?.filter(t => 
+        t.lineup_template_players && Array.isArray(t.lineup_template_players) && t.lineup_template_players.length > 0
+      ).length || 0)
+    }
+    
+    if (opponentTeamId) {
+      const { data: opponentTemplates } = await supabase
+        .from('lineup_templates')
+        .select(`
+          id,
+          lineup_template_players (id)
+        `)
+        .eq('team_id', opponentTeamId)
+      
+      // Check if any template has players
+      hasOpponent = !!opponentTemplates && opponentTemplates.some(t => 
+        t.lineup_template_players && Array.isArray(t.lineup_template_players) && t.lineup_template_players.length > 0
+      )
+      console.log('Opponent templates with players found:', opponentTemplates?.filter(t => 
+        t.lineup_template_players && Array.isArray(t.lineup_template_players) && t.lineup_template_players.length > 0
+      ).length || 0)
+    }
+    
+    const newStatus = {
+      homeTeamLineupSaved: hasHome,
+      opponentTeamLineupSaved: hasOpponent
+    }
+    
+    setGameLineupStatus(newStatus)
+    console.log('Final status from templates check:', newStatus)
+  }
+
+  // Update available teams when game teams are loaded
+  useEffect(() => {
+    if (gameId && teams.length > 0) {
+      // Filter to only show teams from the game
+      const filtered = teams.filter(team => {
+        // Include home team if available
+        if (gameTeams.homeTeamId && team.id === gameTeams.homeTeamId) return true
+        // Include opponent team if available
+        if (gameTeams.opponentTeamId && team.id === gameTeams.opponentTeamId) return true
+        return false
+      })
+      
+      // If we have at least one team (home or opponent), use filtered list
+      if (filtered.length > 0) {
+        setAvailableTeams(filtered)
+        
+        // Auto-select home team if available and not already selected
+        if (!selectedTeam && gameTeams.homeTeamId) {
+          setSelectedTeam(gameTeams.homeTeamId)
+        } else if (!selectedTeam && gameTeams.opponentTeamId && filtered.length === 1) {
+          // If only opponent team available, select it
+          setSelectedTeam(gameTeams.opponentTeamId)
+        }
+      } else {
+        // No teams found for this game, show all teams as fallback
+        console.warn('No teams found for game, showing all teams')
+        setAvailableTeams(teams)
+      }
+    } else if (!gameId) {
+      // If no gameId, show all teams
+      setAvailableTeams(teams)
+    }
+  }, [gameTeams, teams, gameId, selectedTeam])
 
   useEffect(() => {
     if (teamId && teams.length > 0) {
@@ -85,6 +283,104 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
     }
     // If no teamId but gameId is provided, we'll show team selection first
   }, [teamId, teams, gameId])
+
+  // Fetch game teams (home team and opponent team)
+  async function fetchGameTeams() {
+    if (!gameId) return
+    
+    try {
+      // First, try to get all fields from games table
+      const { data: gameData, error: gameError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .single()
+
+      // Always find Dodgers team (home team)
+      const { data: dodgersTeam } = await supabase
+        .from('teams')
+        .select('id')
+        .eq('name', 'Dodgers')
+        .maybeSingle()
+
+      const dodgersTeamId = dodgersTeam?.id
+
+      if (gameError) {
+        // Check if it's a column error (field doesn't exist) vs actual error
+        const errorMessage = gameError?.message || ''
+        const errorCode = gameError?.code || ''
+        
+        // If it's a column error, try without team_id
+        if (errorMessage.includes('column') || errorCode === '42703') {
+          console.log('team_id column not found, using Dodgers as default...')
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('games')
+            .select('opponent')
+            .eq('id', gameId)
+            .single()
+          
+          if (fallbackError) {
+            console.error('Error fetching game data (fallback):', fallbackError)
+            setError('Error loading game data')
+            return
+          }
+          
+          // Use fallback data (no team_id) - always use Dodgers as home
+          const opponentName = fallbackData?.opponent
+          
+          // Find opponent team by name
+          let opponentTeamId: string | undefined
+          if (opponentName) {
+            const { data: opponentTeam } = await supabase
+              .from('teams')
+              .select('id')
+              .eq('name', opponentName)
+              .maybeSingle()
+            
+            opponentTeamId = opponentTeam?.id
+          }
+
+          setGameTeams({
+            homeTeamId: dodgersTeamId || undefined, // Always Dodgers
+            opponentTeamId: opponentTeamId,
+            opponentName: opponentName
+          })
+        } else {
+          console.error('Error fetching game data:', gameError)
+          setError('Error loading game data')
+          return
+        }
+      } else {
+        // Successfully got game data
+        const homeTeamId = (gameData as any)?.team_id || dodgersTeamId // Use Dodgers if team_id not set
+        const opponentName = gameData?.opponent
+
+        // Find opponent team by name
+        let opponentTeamId: string | undefined
+        if (opponentName) {
+          const { data: opponentTeam } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('name', opponentName)
+            .maybeSingle()
+          
+          opponentTeamId = opponentTeam?.id
+        }
+
+        setGameTeams({
+          homeTeamId: homeTeamId || dodgersTeamId || undefined, // Always default to Dodgers
+          opponentTeamId: opponentTeamId,
+          opponentName: opponentName
+        })
+      }
+
+      // Now fetch teams (will be filtered in useEffect)
+      await fetchTeams()
+    } catch (err) {
+      console.error('Failed to fetch game teams:', err)
+      setError('Failed to load game teams')
+    }
+  }
 
   async function fetchTeams() {
     try {
@@ -151,9 +447,10 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   }
 
   function selectTeam(teamId: string) {
-    const team = teams.find(t => t.id === teamId)
+    const team = availableTeams.find(t => t.id === teamId) || teams.find(t => t.id === teamId)
     if (team) {
       setSelectedTeam(teamId)
+      setShowTeamSelection(false) // Show lineup templates when team is selected
       
       // Try to load existing lineup from localStorage first
       const savedLineup = localStorage.getItem(`lineup_${teamId}`)
@@ -208,7 +505,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
 
   function getAvailablePlayers() {
     if (!selectedTeam) return []
-    const team = teams.find(t => t.id === selectedTeam)
+    const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
     if (!team?.players) return []
     
     const usedPlayerIds = lineupEntries.map(entry => entry.playerId).filter(id => id !== '')
@@ -346,10 +643,19 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
   }
 
   async function saveLineup() {
-    if (!selectedTeam) return
+    console.log('🔵 saveLineup function called')
+    console.log('🔵 selectedTeam:', selectedTeam)
+    console.log('🔵 mode:', mode)
+    console.log('🔵 gameId:', gameId)
+    
+    if (!selectedTeam) {
+      console.log('❌ No team selected, returning')
+      return
+    }
 
     // If in select mode and gameId is provided, just link the game to the team
     if (mode === 'select' && gameId) {
+      console.log('🔵 Mode is select, linking game to team')
       setSaving(true)
       try {
         // Link game to team (with fallback to localStorage)
@@ -384,8 +690,22 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
           localStorage.setItem(`game_team_${gameId}`, JSON.stringify(gameTeamLink))
         }
 
-        alert('Plantilla seleccionada exitosamente')
-        onClose()
+        // Update game lineup status after linking
+        if (gameId) {
+          await checkGameLineupStatus()
+        }
+        
+        // Return to team selection view instead of closing
+        setSelectedTeam(null)
+        setShowTeamSelection(true)
+        setMode('select')
+        
+        // Notify parent component that lineup was saved
+        if (onLineupSaved) {
+          onLineupSaved()
+        }
+        
+        alert('✓ Lineup guardado')
       } catch (err) {
         console.error('Error linking game to team:', err)
         alert('Error al vincular el juego con el equipo')
@@ -414,8 +734,14 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       return
     }
 
+    console.log('🔵🔵🔵 STARTING TO SAVE LINEUP TO DATABASE 🔵🔵🔵')
     setSaving(true)
     try {
+      console.log('=== SAVING LINEUP ===')
+      console.log('Selected Team:', selectedTeam)
+      console.log('Filled Entries:', filledEntries.length)
+      console.log('Filled Entries Data:', filledEntries)
+      
       // Position mapping from Spanish to database format
       const positionMap: { [key: string]: string } = {
         'Lanzador (P)': 'P',
@@ -430,75 +756,210 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
         'Bateador Designado (DH)': 'DH'
       }
 
-      // Create or update lineup template for this team
-      const { data: existingTemplate } = await supabase
-        .from('lineup_templates')
-        .select('id')
-        .eq('team_id', selectedTeam)
-        .single()
-
-      let templateId: string
-      if (existingTemplate) {
-        templateId = existingTemplate.id
-        // Delete existing lineup template players
-        await supabase
-          .from('lineup_template_players')
-          .delete()
-          .eq('template_id', templateId)
-      } else {
-        // Create new template
-        const { data: newTemplate, error: templateError } = await supabase
-          .from('lineup_templates')
-          .insert([{
-            team_id: selectedTeam,
-            name: 'Default Lineup'
-          }])
-          .select('id')
-          .single()
-
-        if (templateError || !newTemplate) {
-          throw new Error('Failed to create lineup template')
-        }
-        templateId = newTemplate.id
-      }
-
-      // Create lineup template players
-      const templatePlayers = filledEntries.map((entry, index) => ({
-        template_id: templateId,
+      // Prepare the lineup data for comparison
+      const newLineupData = filledEntries.map((entry, index) => ({
         player_id: entry.playerId,
         batting_order: index + 1,
         position: positionMap[entry.position] || 'DH'
       }))
 
-      const { error: templatePlayersError } = await supabase
-        .from('lineup_template_players')
-        .insert(templatePlayers)
+      // Check if a template with the same batting order and positions already exists
+      console.log('Checking for existing templates with same lineup for team:', selectedTeam)
+      const { data: existingTemplates, error: templatesError } = await supabase
+        .from('lineup_templates')
+        .select(`
+          id,
+          lineup_template_players (
+            player_id,
+            batting_order,
+            position
+          )
+        `)
+        .eq('team_id', selectedTeam)
 
-      if (templatePlayersError) {
-        throw new Error('Failed to save lineup template players')
+      if (templatesError) {
+        console.error('Error checking for existing templates:', templatesError)
+        throw new Error(`Error checking templates: ${templatesError.message}`)
+      }
+
+      // Check if any existing template has the same lineup
+      let existingTemplateId: string | null = null
+      if (existingTemplates && existingTemplates.length > 0) {
+        for (const template of existingTemplates) {
+          const existingPlayers = (template.lineup_template_players || []) as Array<{
+            player_id: string
+            batting_order: number
+            position: string
+          }>
+          
+          // Sort both lineups by batting_order for comparison
+          const existingSorted = [...existingPlayers].sort((a, b) => a.batting_order - b.batting_order)
+          const newSorted = [...newLineupData].sort((a, b) => a.batting_order - b.batting_order)
+          
+          // Check if lineups match (same length, same players in same order, same positions)
+          if (existingSorted.length === newSorted.length) {
+            const isMatch = existingSorted.every((existing, index) => {
+              const newEntry = newSorted[index]
+              return existing.player_id === newEntry.player_id &&
+                     existing.batting_order === newEntry.batting_order &&
+                     existing.position === newEntry.position
+            })
+            
+            if (isMatch) {
+              console.log('Found existing template with same lineup:', template.id)
+              existingTemplateId = template.id
+              break // Use the first matching template
+            }
+          }
+        }
+      }
+
+      let templateId: string
+      if (existingTemplateId) {
+        // Use existing template instead of creating a new one
+        console.log('Using existing template:', existingTemplateId)
+        templateId = existingTemplateId
+      } else {
+        // No duplicate found, create new template
+        console.log('No duplicate found, creating new template for team:', selectedTeam)
+        const { data: newTemplate, error: templateError } = await supabase
+          .from('lineup_templates')
+          .insert([{
+            team_id: selectedTeam,
+            name: `Lineup ${new Date().toLocaleDateString()}`
+          }])
+          .select('id')
+          .single()
+
+        if (templateError) {
+          console.error('Error creating template:', templateError)
+          throw new Error(`Failed to create lineup template: ${templateError.message}`)
+        }
+        
+        if (!newTemplate) {
+          throw new Error('Failed to create lineup template: No data returned')
+        }
+        
+        templateId = newTemplate.id
+        console.log('Created new template with ID:', templateId)
+        
+        // Create lineup template players for the new template
+        const templatePlayers = newLineupData.map(entry => ({
+          template_id: templateId,
+          player_id: entry.player_id,
+          batting_order: entry.batting_order,
+          position: entry.position
+        }))
+
+        console.log('Inserting template players:', templatePlayers.length)
+        const { data: insertedPlayers, error: templatePlayersError } = await supabase
+          .from('lineup_template_players')
+          .insert(templatePlayers)
+          .select()
+
+        if (templatePlayersError) {
+          console.error('Error inserting template players:', templatePlayersError)
+          // Rollback: delete the template if players insertion fails
+          await supabase.from('lineup_templates').delete().eq('id', templateId)
+          throw new Error(`Failed to save lineup template players: ${templatePlayersError.message}`)
+        }
+        
+        console.log('Successfully inserted players:', insertedPlayers?.length || 0)
+        console.log('✅ New template and players saved successfully in database')
+      }
+      
+      // If using existing template, log it
+      if (existingTemplateId) {
+        console.log('✅ Using existing template, players already saved')
       }
 
       // Link game to our team's lineup template (only if gameId is provided)
       if (gameId) {
-        const { error: gameError } = await supabase
-          .from('games')
-          .update({ lineup_template_id: templateId })
-          .eq('id', gameId)
+        // Determine if this is Dodgers (home) or opponent
+        const isDodgers = selectedTeam === gameTeams.homeTeamId || (availableTeams.find(t => t.id === selectedTeam)?.name === 'Dodgers')
+        const isOpponent = selectedTeam === gameTeams.opponentTeamId
+        
+        if (isDodgers) {
+          // Link Dodgers lineup to game
+          console.log('Linking Dodgers lineup template to game:', { gameId, templateId })
+          const { data: updateData, error: gameError } = await supabase
+            .from('games')
+            .update({ lineup_template_id: templateId })
+            .eq('id', gameId)
+            .select('lineup_template_id')
 
-        if (gameError) {
-          console.error('Error linking game to lineup template:', gameError)
-          // Continue anyway - the template is saved
+          if (gameError) {
+            // If column doesn't exist, that's okay - template is still saved
+            const errorMessage = gameError?.message || ''
+            if (!errorMessage.includes('column')) {
+              console.error('Error linking game to lineup template:', gameError)
+            } else {
+              console.log('Note: lineup_template_id column may not exist, but template is saved')
+            }
+          } else {
+            console.log('Dodgers lineup template linked to game successfully:', updateData)
+          }
+        } else if (isOpponent) {
+          // Link opponent lineup to game
+          console.log('Linking opponent lineup template to game:', { gameId, templateId })
+          const { data: updateData, error: gameError } = await supabase
+            .from('games')
+            .update({ opponent_lineup_template_id: templateId })
+            .eq('id', gameId)
+            .select('opponent_lineup_template_id')
+
+          if (gameError) {
+            // If column doesn't exist, that's okay - template is still saved
+            const errorMessage = gameError?.message || ''
+            if (!errorMessage.includes('column')) {
+              console.error('Error linking opponent lineup to game:', gameError)
+            } else {
+              console.log('Note: opponent_lineup_template_id column may not exist, but template is saved')
+            }
+          } else {
+            console.log('Opponent lineup template linked to game successfully:', updateData)
+          }
+        } else {
+          console.log('Warning: Could not determine if this is Dodgers or opponent team')
         }
       }
 
       // Refresh saved templates
       await fetchSavedTemplates()
+      
+      // Update game lineup status - wait a bit for database to update
+      if (gameId) {
+        console.log('Waiting for database to update...')
+        // Wait a moment for the database update to complete
+        await new Promise(resolve => setTimeout(resolve, 500))
+        console.log('Checking game lineup status...')
+        await checkGameLineupStatus()
+        // Wait again and check one more time to ensure state is updated
+        await new Promise(resolve => setTimeout(resolve, 300))
+        await checkGameLineupStatus()
+      }
 
-      alert('Alineación guardada exitosamente')
-      onClose()
+      // Return to team selection view instead of closing
+      setSelectedTeam(null)
+      setShowTeamSelection(true)
+      setMode('select')
+      setLineupEntries([])
+      
+      // Notify parent component that lineup was saved
+      if (onLineupSaved) {
+        onLineupSaved()
+      }
+      
+      // Show success message
+      console.log('=== LINEUP SAVED SUCCESSFULLY ===')
+      console.log('Template ID:', templateId)
+      console.log('Game ID:', gameId)
+      alert('✓ Lineup guardado')
     } catch (err) {
-      console.error('Error saving lineup:', err)
-      alert('Error al guardar la alineación')
+      console.error('=== ERROR SAVING LINEUP ===')
+      console.error('Error details:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido'
+      alert(`Error al guardar la alineación: ${errorMessage}`)
     } finally {
       setSaving(false)
     }
@@ -506,7 +967,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
 
   function getPlayerName(playerId: string) {
     if (!selectedTeam) return ''
-    const team = teams.find(t => t.id === selectedTeam)
+    const team = availableTeams.find(t => t.id === selectedTeam) || teams.find(t => t.id === selectedTeam)
     const player = team?.players?.find(p => p.id === playerId)
     return player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : ''
   }
@@ -546,31 +1007,111 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       {/* Team Selection - Show if no teamId provided */}
       {!teamId && (
         <div>
-          <h4 className="text-md font-semibold text-gray-800 mb-3">Seleccionar Equipo:</h4>
+          <h4 className="text-md font-semibold text-gray-800 mb-3">
+            {gameId ? 'Seleccionar Equipo del Juego:' : 'Seleccionar Equipo:'}
+          </h4>
+          {gameId && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+              <p className="text-blue-800 text-sm font-medium">
+                {gameTeams.homeTeamId && selectedTeam === gameTeams.homeTeamId
+                  ? 'Selecciona la alineación para Dodgers (Equipo Local)'
+                  : gameTeams.opponentTeamId && selectedTeam === gameTeams.opponentTeamId
+                  ? 'Selecciona la alineación para el Equipo Visitante'
+                  : 'Solo se muestran los equipos de este juego'}
+              </p>
+            </div>
+          )}
+          {gameId && availableTeams.length === 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+              <p className="text-yellow-800 text-sm">
+                Cargando equipos del juego...
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {teams.map((team) => (
-              <button
-                key={team.id}
-                onClick={() => selectTeam(team.id)}
-                className={`p-3 border rounded-lg text-left transition-colors ${
-                  selectedTeam === team.id
-                    ? 'border-blue-500 bg-blue-50 text-blue-800'
-                    : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                }`}
-              >
-                <div className="font-medium">{team.name}</div>
-                <div className="text-sm text-gray-600">{team.city}</div>
-                <div className="text-xs text-gray-500">
-                  {team.players?.length || 0} jugadores
-                </div>
-              </button>
-            ))}
+            {availableTeams.map((team) => {
+              // Determine if this is Dodgers (home) or opponent
+              const isDodgers = team.name === 'Dodgers' || team.id === gameTeams.homeTeamId
+              const isOpponent = team.id === gameTeams.opponentTeamId
+              
+              // Check if lineup is saved for this team
+              const hasLineupSaved = gameId && (
+                (isDodgers && gameLineupStatus.homeTeamLineupSaved) ||
+                (isOpponent && gameLineupStatus.opponentTeamLineupSaved)
+              )
+              
+              return (
+                <button
+                  key={team.id}
+                  onClick={() => selectTeam(team.id)}
+                  className={`p-3 border rounded-lg text-left transition-colors relative ${
+                    selectedTeam === team.id
+                      ? 'border-blue-500 bg-blue-50 text-blue-800'
+                      : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                  }`}
+                >
+                  {/* Lineup Saved Indicator */}
+                  {hasLineupSaved && (
+                    <div className="absolute top-2 right-2">
+                      <div className="bg-green-500 text-white rounded-full p-1.5 shadow-md" title="Alineación guardada para este juego">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Lineup Not Saved Indicator */}
+                  {gameId && !hasLineupSaved && (
+                    <div className="absolute top-2 right-2">
+                      <div className="bg-yellow-500 text-white rounded-full p-1.5 shadow-md" title="Alineación pendiente para este juego">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="font-medium pr-8">{team.name}</div>
+                  <div className="text-sm text-gray-600">{team.city}</div>
+                  <div className="text-xs text-gray-500">
+                    {team.players?.length || 0} jugadores
+                  </div>
+                  {gameId && isDodgers && (
+                    <div className="text-xs text-blue-600 font-medium mt-1">(Dodgers - Equipo Local)</div>
+                  )}
+                  {gameId && isOpponent && (
+                    <div className="text-xs text-red-600 font-medium mt-1">(Equipo Visitante)</div>
+                  )}
+                  
+                  {/* Status Badge */}
+                  {gameId && (
+                    <div className={`mt-2 text-xs font-semibold px-2 py-1 rounded ${
+                      hasLineupSaved 
+                        ? 'text-green-700 bg-green-100' 
+                        : 'text-yellow-700 bg-yellow-100'
+                    }`}>
+                      {hasLineupSaved 
+                        ? '✓ Listo' 
+                        : '⚠ Alineación pendiente - Selecciona una plantilla'}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
           </div>
+          {gameId && availableTeams.length === 0 && !loading && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-red-800 text-sm">
+                No se encontraron equipos para este juego. Por favor, asegúrate de que Dodgers existe y el equipo oponente esté configurado.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
       {/* Template Selection Mode */}
-      {currentTeam && mode === 'select' && gameId && (
+      {currentTeam && mode === 'select' && gameId && !showTeamSelection && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-lg font-semibold text-gray-800">
@@ -626,14 +1167,14 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
                         Usar Esta Plantilla
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2">
                       {lineupEntries.map((entry: { playerId: string; position: string; player?: { id: string; first_name: string; last_name: string; jersey_number: number } }, index: number) => {
                         if (entry.playerId && entry.position) {
                           const player = entry.player || currentTeam.players?.find((p: { id: string }) => p.id === entry.playerId)
                           return (
                             <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
                               <div className="flex items-center space-x-3">
-                                <span className="text-sm font-bold text-blue-800 bg-blue-200 px-2 py-1 rounded-full">
+                                <span className="text-sm font-bold text-blue-800 bg-blue-200 px-2 py-1 rounded-full min-w-[2rem] text-center">
                                   {index + 1}
                                 </span>
                                 <span className="text-sm font-medium text-gray-800">
@@ -686,7 +1227,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       )}
 
       {/* Lineup Grid - Create/Edit Mode */}
-      {currentTeam && mode === 'create' && (
+      {currentTeam && mode === 'create' && !showTeamSelection && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h4 className="text-lg font-semibold text-gray-800">
@@ -820,7 +1361,10 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
               Cancelar
           </button>
           <button
-              onClick={saveLineup}
+              onClick={() => {
+                console.log('🟢🟢🟢 BUTTON CLICKED - saveLineup 🟢🟢🟢')
+                saveLineup()
+              }}
               disabled={saving}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >

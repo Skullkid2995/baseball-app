@@ -119,3 +119,5 @@ The credentials are stored in Supabase, not in your code. To see them:
 - [ ] Waited 5 minutes
 - [ ] Tested sign-in again
 
+
+

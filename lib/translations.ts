@@ -161,6 +161,22 @@ export interface Translations {
   noStatisticsAvailable: string
   distance: string
   angle: string
+  // New features
+  teamLogo: string
+  uploadTeamLogo: string
+  removeFromTeam: string
+  removing: string
+  selectPlayerToAdd: string
+  playersWithoutTeams: string
+  noPlayersWithoutTeams: string
+  newPlayer: string
+  createNewPlayer: string
+  selectExistingPlayer: string
+  selectExistingPlayerHint: string
+  noTeam: string
+  noTeamRemove: string
+  playerExistsOnTeam: string
+  playerExistsOnTeamMessage: string
 }
 
 const translations: Record<Language, Translations> = {
@@ -325,6 +341,22 @@ const translations: Record<Language, Translations> = {
     noStatisticsAvailable: 'No statistics available',
     distance: 'Distance',
     angle: 'Angle',
+    // New features
+    teamLogo: 'Team Logo',
+    uploadTeamLogo: 'Upload team logo (max 5MB)',
+    removeFromTeam: 'Remove from Team',
+    removing: 'Removing...',
+    selectPlayerToAdd: 'Select Player to Add to',
+    playersWithoutTeams: 'Players Without Teams',
+    noPlayersWithoutTeams: 'No players without teams available.',
+    newPlayer: 'New Player',
+    createNewPlayer: 'Create new player',
+    selectExistingPlayer: 'Select existing player without team (optional)',
+    selectExistingPlayerHint: 'If a player exists without a team, select them here to assign to a team instead of creating a duplicate.',
+    noTeam: 'No Team',
+    noTeamRemove: 'No Team (Remove from team)',
+    playerExistsOnTeam: 'This player exists on a different team',
+    playerExistsOnTeamMessage: 'This player exists on a different team: {teamName}. Please select them from the list instead.',
   },
   es: {
     // Header
@@ -487,6 +519,22 @@ const translations: Record<Language, Translations> = {
     noStatisticsAvailable: 'No hay estadísticas disponibles',
     distance: 'Distancia',
     angle: 'Ángulo',
+    // New features
+    teamLogo: 'Logo del Equipo',
+    uploadTeamLogo: 'Subir logo del equipo (máx 5MB)',
+    removeFromTeam: 'Remover del Equipo',
+    removing: 'Removiendo...',
+    selectPlayerToAdd: 'Seleccionar Jugador para Agregar a',
+    playersWithoutTeams: 'Jugadores Sin Equipos',
+    noPlayersWithoutTeams: 'No hay jugadores sin equipos disponibles.',
+    newPlayer: 'Nuevo Jugador',
+    createNewPlayer: 'Crear nuevo jugador',
+    selectExistingPlayer: 'Seleccionar jugador existente sin equipo (opcional)',
+    selectExistingPlayerHint: 'Si un jugador existe sin equipo, selecciónalo aquí para asignarlo a un equipo en lugar de crear un duplicado.',
+    noTeam: 'Sin Equipo',
+    noTeamRemove: 'Sin Equipo (Remover del equipo)',
+    playerExistsOnTeam: 'Este jugador existe en un equipo diferente',
+    playerExistsOnTeamMessage: 'Este jugador existe en un equipo diferente: {teamName}. Por favor, selecciónalo de la lista en su lugar.',
   },
 }
 

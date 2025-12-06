@@ -63,11 +63,53 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [showHomeAwayModal, setShowHomeAwayModal] = useState(false)
   const [opponentLineupChecked, setOpponentLineupChecked] = useState(false)
   const [homeAwayChecked, setHomeAwayChecked] = useState(false)
+  const [bothLineupsValid, setBothLineupsValid] = useState(false)
+  const [lineupValidationMessage, setLineupValidationMessage] = useState<string>('')
 
   useEffect(() => {
+    validateBothLineups()
     fetchPlayers()
     fetchAtBats()
   }, [game.id])
+
+  // Validate that both lineups exist before allowing scorebook access
+  async function validateBothLineups() {
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select('lineup_template_id, opponent_lineup_template_id')
+        .eq('id', game.id)
+        .single()
+
+      if (error) {
+        console.error('Error validating lineups:', error)
+        setBothLineupsValid(false)
+        setLineupValidationMessage('Error checking lineups')
+        return
+      }
+
+      const hasHomeLineup = !!data?.lineup_template_id
+      const hasOpponentLineup = !!data?.opponent_lineup_template_id
+
+      if (!hasHomeLineup && !hasOpponentLineup) {
+        setBothLineupsValid(false)
+        setLineupValidationMessage('Both team lineups must be saved before accessing the scorebook. Please select lineups for Dodgers (home team) and the opponent team.')
+      } else if (!hasHomeLineup) {
+        setBothLineupsValid(false)
+        setLineupValidationMessage('Dodgers lineup must be saved. Please select a lineup for Dodgers (home team).')
+      } else if (!hasOpponentLineup) {
+        setBothLineupsValid(false)
+        setLineupValidationMessage('Opponent team lineup must be saved. Please select a lineup for the opponent team.')
+      } else {
+        setBothLineupsValid(true)
+        setLineupValidationMessage('')
+      }
+    } catch (err) {
+      console.error('Failed to validate lineups:', err)
+      setBothLineupsValid(false)
+      setLineupValidationMessage('Error validating lineups')
+    }
+  }
 
   // Refetch game data when currentGame changes to ensure score is up to date
   useEffect(() => {
@@ -109,12 +151,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   async function fetchPlayers() {
     try {
+      setLoading(true)
       // Fetch our team's lineup from lineup template
       const { data: gameData } = await supabase
         .from('games')
-        .select('lineup_template_id, opponent_lineup_template_id')
+        .select('lineup_template_id, opponent_lineup_template_id, team_id')
         .eq('id', game.id)
         .single()
+      
+      console.log('=== FETCHING PLAYERS ===')
+      console.log('Game data:', gameData)
+      console.log('Current team side:', currentTeamSide)
 
       // Check if opponent lineup exists, if not show modal to create it
       // Only check once to prevent loops
@@ -215,12 +262,25 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             .map(lp => {
               const player = lp.players
               if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
-                return player as Player
+                return {
+                  ...(player as Player),
+                  batting_order: lp.batting_order // Preserve batting order
+                } as Player & { batting_order: number }
               }
               return null
             })
-            .filter((p): p is Player => p !== null)
+            .filter((p): p is Player & { batting_order: number } => p !== null)
+            // Remove duplicates by player ID (in case same player appears multiple times)
+            .filter((p, index, self) => index === self.findIndex((pl) => pl.id === p.id))
+            .sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0)) // Sort by batting order to ensure correct sequence
+            .slice(0, 9) // Limit to first 9 batters
           setPlayers(ourPlayers)
+          console.log('Home team players loaded in batting order:', ourPlayers.map((p, idx) => `${idx + 1}. ${p.first_name} ${p.last_name} (order: ${(p as Player & { batting_order?: number }).batting_order})`))
+          setLoading(false)
+        } else {
+          console.log('No home team lineup template found')
+          setPlayers([])
+          setLoading(false)
         }
       } else {
         // Fallback: fetch all players (limit to 9)
@@ -285,19 +345,30 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             .map(lp => {
               const player = lp.players
               if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
-                return player as Player
+                return {
+                  ...(player as Player),
+                  batting_order: lp.batting_order // Preserve batting order
+                } as Player & { batting_order: number }
               }
               return null
             })
-            .filter((p): p is Player => p !== null)
+            .filter((p): p is Player & { batting_order: number } => p !== null)
+            // Remove duplicates by player ID (in case same player appears multiple times)
+            .filter((p, index, self) => index === self.findIndex((pl) => pl.id === p.id))
+            .sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0)) // Sort by batting order to ensure correct sequence
+            .slice(0, 9) // Limit to first 9 batters
           setOpponentPlayers(oppPlayers)
-          console.log('Opponent players loaded:', oppPlayers.length, 'players')
+          console.log('Opponent players loaded in batting order:', oppPlayers.map((p, idx) => `${idx + 1}. ${p.first_name} ${p.last_name} (order: ${(p as Player & { batting_order?: number }).batting_order})`))
         } else {
           console.log('No opponent lineup players found for template:', opponentTemplateId)
+          setOpponentPlayers([])
         }
       } else {
         console.log('No opponent lineup template found')
+        setOpponentPlayers([])
       }
+      
+      console.log('=== PLAYERS FETCH COMPLETE ===')
     } catch (err) {
       console.error('Failed to fetch players:', err)
     }
@@ -951,6 +1022,29 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     )
   }
 
+  // Show validation message if both lineups are not saved
+  if (!bothLineupsValid) {
+    return (
+      <div className="bg-white p-6 max-w-2xl mx-auto">
+        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6 text-center">
+          <div className="text-red-600 mb-4">
+            <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-red-800 mb-2">Lineups Required</h3>
+          <p className="text-red-700 mb-4">{lineupValidationMessage}</p>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white p-6 max-w-7xl mx-auto">
       {/* Game Information Header */}
@@ -1071,11 +1165,22 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               const player = activePlayers[rowIndex]
               const stats = player ? getPlayerStats(player.id) : { hits: 0, walks: 0, runs: 0, rbi: 0, errors: 0 }
               
+              // Debug logging for first row only
+              if (rowIndex === 0) {
+                console.log('Displaying scorebook:', {
+                  currentTeamSide,
+                  homePlayersCount: players.length,
+                  opponentPlayersCount: opponentPlayers.length,
+                  activePlayersCount: activePlayers.length,
+                  firstPlayer: activePlayers[0] ? `${activePlayers[0].first_name} ${activePlayers[0].last_name}` : 'none'
+                })
+              }
+              
               return (
                 <tr key={rowIndex} className="h-12">
-                  {/* Jersey Number */}
-                  <td className="border border-gray-400 px-2 py-1 text-center">
-                    {player ? player.jersey_number : ''}
+                  {/* Batting Order Number */}
+                  <td className="border border-gray-400 px-2 py-1 text-center font-bold">
+                    {player ? (rowIndex + 1) : ''}
                   </td>
                   
                   {/* Player Name */}
