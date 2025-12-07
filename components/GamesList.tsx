@@ -589,14 +589,18 @@ export default function GamesList() {
         return
       }
 
-      // Reset game scores and status
+      // Reset game scores, status, lineups, and home/away assignment
       const { error: gameError } = await supabase
         .from('games')
         .update({
           our_score: 0,
           opponent_score: 0,
           innings_played: 0,
-          game_status: 'scheduled'
+          game_status: 'scheduled',
+          lineup_template_id: null,
+          opponent_lineup_template_id: null,
+          home_team_id: null,
+          away_team_id: null
         })
         .eq('id', gameId)
 
