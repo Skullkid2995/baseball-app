@@ -38,6 +38,17 @@ interface GameTeams {
   opponentName?: string
 }
 
+interface GameData {
+  lineup_template_id?: string
+  opponent_lineup_template_id?: string
+  home_team_id?: string
+  away_team_id?: string
+  game_status?: string
+  team_id?: string
+  opponent?: string
+  [key: string]: unknown
+}
+
 export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved, onStartScoring }: LineupSelectionProps) {
   const [teams, setTeams] = useState<Team[]>([])
   const [gameTeams, setGameTeams] = useState<GameTeams>({})
@@ -162,13 +173,14 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
       }
 
       // Check if lineup_template_id and opponent_lineup_template_id columns exist
-      const hasHomeLineupId = (gameData as any)?.lineup_template_id !== undefined
-      const hasOpponentLineupId = (gameData as any)?.opponent_lineup_template_id !== undefined
+      const typedGameData = gameData as GameData
+      const hasHomeLineupId = typedGameData?.lineup_template_id !== undefined
+      const hasOpponentLineupId = typedGameData?.opponent_lineup_template_id !== undefined
 
       if (hasHomeLineupId && hasOpponentLineupId) {
         // Columns exist, use them directly
-        const homeLineupId = (gameData as any)?.lineup_template_id
-        const opponentLineupId = (gameData as any)?.opponent_lineup_template_id
+        const homeLineupId = typedGameData?.lineup_template_id
+        const opponentLineupId = typedGameData?.opponent_lineup_template_id
         
         console.log('Lineup IDs from games table:')
         console.log('  Home (Dodgers):', homeLineupId)
@@ -351,20 +363,21 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
         .single()
 
       // Store game status
-      if (gameData && (gameData as any)?.game_status) {
-        setGameStatus((gameData as any).game_status)
+      const typedGameData = gameData as GameData
+      if (typedGameData?.game_status) {
+        setGameStatus(typedGameData.game_status)
       }
 
       // Check if home_team_id and away_team_id are already set
-      if (gameData && (gameData as any)?.home_team_id && (gameData as any)?.away_team_id) {
-        setHomeTeamId((gameData as any).home_team_id)
-        setAwayTeamId((gameData as any).away_team_id)
+      if (typedGameData?.home_team_id && typedGameData?.away_team_id) {
+        setHomeTeamId(typedGameData.home_team_id)
+        setAwayTeamId(typedGameData.away_team_id)
         // Only show selection if game is scheduled (not in_progress or completed)
-        const status = (gameData as any)?.game_status || 'scheduled'
+        const status = typedGameData.game_status || 'scheduled'
         setShowHomeAwaySelection(status === 'scheduled' ? false : false) // Don't show by default if already set
       } else {
         // Need to show home/away selection only if game is scheduled
-        const status = (gameData as any)?.game_status || 'scheduled'
+        const status = typedGameData.game_status || 'scheduled'
         setShowHomeAwaySelection(status === 'scheduled')
       }
 
@@ -424,8 +437,9 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
         }
       } else {
         // Successfully got game data
-        const homeTeamId = (gameData as any)?.team_id || dodgersTeamId // Use Dodgers if team_id not set
-        const opponentName = gameData?.opponent
+        const typedGameData = gameData as GameData
+        const homeTeamId = typedGameData?.team_id || dodgersTeamId // Use Dodgers if team_id not set
+        const opponentName = typedGameData?.opponent
 
         // Find opponent team by name
         let opponentTeamId: string | undefined
@@ -614,9 +628,14 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
         const playersMap = new Map<string, Player>()
         
         templates?.forEach(template => {
-          const templatePlayers = template.lineup_template_players as any[]
+          interface TemplatePlayer {
+            player_id: string
+            players?: Player | Player[]
+          }
           
-          templatePlayers?.forEach((tp: any) => {
+          const templatePlayers = (template.lineup_template_players || []) as TemplatePlayer[]
+          
+          templatePlayers?.forEach((tp: TemplatePlayer) => {
             // Handle Supabase nested response - players can be an object or array
             let player: Player | null = null
             if (tp.players) {
@@ -1947,7 +1966,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
                   ⚠ No hay jugadores disponibles para este equipo. 
                 </p>
                 <p className="text-xs text-red-600 mt-1">
-                  Ve a la sección "Jugadores" en el menú principal para agregar jugadores a este equipo primero.
+                  Ve a la sección &quot;Jugadores&quot; en el menú principal para agregar jugadores a este equipo primero.
                 </p>
               </div>
             )}
@@ -2049,7 +2068,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
                       </div>
                       {availablePlayers.length === 0 && selectedTeam && (
                         <p className="text-xs text-red-600 mt-1">
-                          No hay jugadores disponibles. Puedes agregar uno usando el botón "+ Agregar" arriba.
+                          No hay jugadores disponibles. Puedes agregar uno usando el botón &quot;+ Agregar&quot; arriba.
                         </p>
                       )}
                     </td>
@@ -2252,7 +2271,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onLineupSaved
 
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
               <p className="text-sm text-yellow-800 mb-3">
-                Ya existe un jugador con el nombre <strong>"{duplicatePlayerInfo.first_name} {duplicatePlayerInfo.last_name}"</strong> en el sistema.
+                Ya existe un jugador con el nombre <strong>&quot;{duplicatePlayerInfo.first_name} {duplicatePlayerInfo.last_name}&quot;</strong> en el sistema.
               </p>
               <p className="text-xs text-yellow-700">
                 Por favor verifica si es el mismo jugador antes de continuar.

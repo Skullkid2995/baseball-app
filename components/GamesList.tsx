@@ -202,12 +202,13 @@ export default function GamesList() {
       }
 
       // Check if columns exist in the data
-      const homeLineupId = (data as any)?.lineup_template_id
-      const opponentLineupId = (data as any)?.opponent_lineup_template_id
+      const gameData = data as { lineup_template_id?: string; opponent_lineup_template_id?: string; opponent?: string }
+      const homeLineupId = gameData?.lineup_template_id
+      const opponentLineupId = gameData?.opponent_lineup_template_id
       
       // Get team names
-      let homeTeamName = 'Dodgers'
-      let opponentTeamName = (data as any)?.opponent || 'Oponente'
+      const homeTeamName = 'Dodgers'
+      let opponentTeamName = gameData?.opponent || 'Oponente'
       
       if (opponentTeamName && opponentTeamName !== 'Oponente') {
         const { data: opponentTeam } = await supabase
@@ -310,8 +311,9 @@ export default function GamesList() {
       }
 
       // Check if columns exist in the data
-      const hasHomeLineup = !!(data as any)?.lineup_template_id
-      const hasOpponentLineup = !!(data as any)?.opponent_lineup_template_id
+      const gameData = data as { lineup_template_id?: string; opponent_lineup_template_id?: string }
+      const hasHomeLineup = !!gameData?.lineup_template_id
+      const hasOpponentLineup = !!gameData?.opponent_lineup_template_id
 
       // If columns don't exist in response, try alternative check
       if (hasHomeLineup === undefined && hasOpponentLineup === undefined) {
@@ -451,7 +453,18 @@ export default function GamesList() {
       }
 
       // Create game with Dodgers as the home team
-      const gameData: any = {
+      const gameData: {
+        opponent: string
+        game_date: string
+        game_time: string
+        stadium: string
+        weather_conditions: string
+        our_score: number
+        opponent_score: number
+        innings_played: number
+        game_status: string
+        team_id?: string
+      } = {
         ...formData,
         our_score: 0,
         opponent_score: 0,
