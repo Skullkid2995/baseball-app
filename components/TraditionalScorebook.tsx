@@ -60,54 +60,14 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [showCanvasModal, setShowCanvasModal] = useState(false)
   const [isLocked, setIsLocked] = useState(game.game_status === 'completed')
   const [showOpponentLineupModal, setShowOpponentLineupModal] = useState(false)
+  const [showHomeAwayModal, setShowHomeAwayModal] = useState(false)
   const [opponentLineupChecked, setOpponentLineupChecked] = useState(false)
-  const [bothLineupsValid, setBothLineupsValid] = useState(false)
-  const [lineupValidationMessage, setLineupValidationMessage] = useState<string>('')
+  const [homeAwayChecked, setHomeAwayChecked] = useState(false)
 
   useEffect(() => {
-    validateBothLineups()
     fetchPlayers()
     fetchAtBats()
   }, [game.id])
-
-  // Validate that both lineups exist before allowing scorebook access
-  async function validateBothLineups() {
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('lineup_template_id, opponent_lineup_template_id')
-        .eq('id', game.id)
-        .single()
-
-      if (error) {
-        console.error('Error validating lineups:', error)
-        setBothLineupsValid(false)
-        setLineupValidationMessage('Error checking lineups')
-        return
-      }
-
-      const hasHomeLineup = !!data?.lineup_template_id
-      const hasOpponentLineup = !!data?.opponent_lineup_template_id
-
-      if (!hasHomeLineup && !hasOpponentLineup) {
-        setBothLineupsValid(false)
-        setLineupValidationMessage('Both team lineups must be saved before accessing the scorebook. Please select lineups for Dodgers (home team) and the opponent team.')
-      } else if (!hasHomeLineup) {
-        setBothLineupsValid(false)
-        setLineupValidationMessage('Dodgers lineup must be saved. Please select a lineup for Dodgers (home team).')
-      } else if (!hasOpponentLineup) {
-        setBothLineupsValid(false)
-        setLineupValidationMessage('Opponent team lineup must be saved. Please select a lineup for the opponent team.')
-      } else {
-        setBothLineupsValid(true)
-        setLineupValidationMessage('')
-      }
-    } catch (err) {
-      console.error('Failed to validate lineups:', err)
-      setBothLineupsValid(false)
-      setLineupValidationMessage('Error validating lineups')
-    }
-  }
 
   // Refetch game data when currentGame changes to ensure score is up to date
   useEffect(() => {
@@ -131,116 +91,30 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return () => clearTimeout(timeoutId)
   }, [atBats.length]) // Refresh when at-bats change
 
-  // Determine who bats first based on home_team_id and away_team_id from database
-  // Away team always bats first (visiting team)
+  // Check if we need to show home/away modal when scorebook first opens
   useEffect(() => {
-    if (loading || game.game_status === 'completed' || atBats.length > 0) return
+    // Only check once, and only if game is not completed
+    if (homeAwayChecked || game.game_status === 'completed' || loading) return
     
-    // Fetch home_team_id and away_team_id to determine batting order
-    async function determineBattingOrder() {
-      try {
-        const { data: gameData } = await supabase
-          .from('games')
-          .select('home_team_id, away_team_id, lineup_template_id')
-          .eq('id', game.id)
-          .single()
-        
-        if (gameData) {
-          const typedGameData = gameData as { home_team_id?: string; away_team_id?: string; lineup_template_id?: string }
-          
-          // Away team always bats first (visiting team)
-          if (typedGameData.away_team_id && typedGameData.home_team_id && typedGameData.lineup_template_id) {
-            // Get the team_id from the lineup template to determine if our team is home or away
-            const { data: templateData } = await supabase
-              .from('lineup_templates')
-              .select('team_id')
-              .eq('id', typedGameData.lineup_template_id)
-              .single()
-            
-            if (templateData) {
-              const ourTeamId = (templateData as { team_id?: string }).team_id
-              // If our team is away, opponent bats first (we show opponent side)
-              // If our team is home, opponent bats first (we show opponent side)
-              // Away team always bats first, so we always start with opponent side
-              setCurrentTeamSide('opponent')
-            }
-          } else {
-            // Fallback: opponent always bats first by default
-            setCurrentTeamSide('opponent')
-          }
-        }
-      } catch (err) {
-        console.error('Error determining batting order:', err)
-        // Default: opponent bats first
-        setCurrentTeamSide('opponent')
-      }
+    // If there are no at-bats and opponent lineup exists, show home/away modal
+    // This determines who bats first
+    if (atBats.length === 0 && opponentPlayers.length > 0 && !showOpponentLineupModal) {
+      setHomeAwayChecked(true)
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        setShowHomeAwayModal(true)
+      }, 300)
     }
-    
-    if (opponentPlayers.length > 0 && !showOpponentLineupModal) {
-      determineBattingOrder()
-    }
-  }, [atBats.length, opponentPlayers.length, showOpponentLineupModal, game.game_status, loading, game.id])
+  }, [atBats.length, opponentPlayers.length, showOpponentLineupModal, homeAwayChecked, game.game_status, loading])
 
   async function fetchPlayers() {
     try {
-      setLoading(true)
-      // Fetch game data including home_team_id and away_team_id to determine correct lineup assignment
-      // Try to fetch with home_team_id and away_team_id first, fallback to basic fields if columns don't exist
-      let gameData: { 
-        lineup_template_id?: string
-        opponent_lineup_template_id?: string
-        team_id?: string
-        home_team_id?: string
-        away_team_id?: string
-      } | null = null
-      let gameError: Error | null = null
-
-      // First try with home_team_id and away_team_id
-      const { data: fullGameData, error: fullError } = await supabase
+      // Fetch our team's lineup from lineup template
+      const { data: gameData } = await supabase
         .from('games')
-        .select('lineup_template_id, opponent_lineup_template_id, team_id, home_team_id, away_team_id')
+        .select('lineup_template_id, opponent_lineup_template_id')
         .eq('id', game.id)
         .single()
-      
-      if (fullError) {
-        // If error is about missing columns, try without them
-        if (fullError.message?.includes('column') || fullError.message?.includes('home_team_id') || fullError.message?.includes('away_team_id')) {
-          console.log('home_team_id/away_team_id columns not found, using fallback query')
-          const { data: basicGameData, error: basicError } = await supabase
-            .from('games')
-            .select('lineup_template_id, opponent_lineup_template_id, team_id')
-            .eq('id', game.id)
-            .single()
-          
-          if (basicError) {
-            gameError = basicError
-          } else {
-            gameData = basicGameData
-          }
-        } else {
-          gameError = fullError
-        }
-      } else {
-        gameData = fullGameData
-      }
-      
-      console.log('=== FETCHING PLAYERS ===')
-      console.log('Game data:', gameData)
-      console.log('Game error:', gameError)
-      console.log('Current team side:', currentTeamSide)
-
-      // Check if there was an error or no game data
-      if (gameError) {
-        console.error('Error fetching game data:', gameError)
-        setLoading(false)
-        return
-      }
-
-      if (!gameData) {
-        console.error('No game data found for game ID:', game.id)
-        setLoading(false)
-        return
-      }
 
       // Check if opponent lineup exists, if not show modal to create it
       // Only check once to prevent loops
@@ -276,76 +150,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         }
       }
 
-      // Determine which lineup belongs to home team and which to away team
-      const typedGameData = gameData as { 
-        lineup_template_id?: string
-        opponent_lineup_template_id?: string
-        team_id?: string
-        home_team_id?: string
-        away_team_id?: string
-      }
-
-      let homeTeamLineupId: string | null = null
-      let awayTeamLineupId: string | null = null
-      let homeTeamId: string | null = null
-      let awayTeamId: string | null = null
-
-      // If we have home_team_id and away_team_id, use them to determine lineup assignment
-      if (typedGameData?.home_team_id && typedGameData?.away_team_id) {
-        homeTeamId = typedGameData.home_team_id
-        awayTeamId = typedGameData.away_team_id
-
-        // Determine which lineup template belongs to home team and which to away team
-        if (typedGameData.lineup_template_id) {
-          const { data: homeLineupTemplate } = await supabase
-            .from('lineup_templates')
-            .select('team_id')
-            .eq('id', typedGameData.lineup_template_id)
-            .single()
-          
-          if (homeLineupTemplate) {
-            const templateTeamId = (homeLineupTemplate as { team_id?: string }).team_id
-            if (templateTeamId === homeTeamId) {
-              homeTeamLineupId = typedGameData.lineup_template_id
-            } else if (templateTeamId === awayTeamId) {
-              awayTeamLineupId = typedGameData.lineup_template_id
-            }
-          }
-        }
-
-        if (typedGameData.opponent_lineup_template_id) {
-          const { data: awayLineupTemplate } = await supabase
-            .from('lineup_templates')
-            .select('team_id')
-            .eq('id', typedGameData.opponent_lineup_template_id)
-            .single()
-          
-          if (awayLineupTemplate) {
-            const templateTeamId = (awayLineupTemplate as { team_id?: string }).team_id
-            if (templateTeamId === homeTeamId) {
-              homeTeamLineupId = typedGameData.opponent_lineup_template_id
-            } else if (templateTeamId === awayTeamId) {
-              awayTeamLineupId = typedGameData.opponent_lineup_template_id
-            }
-          }
-        }
-      } else {
-        // Fallback: use old logic if home_team_id/away_team_id not set
-        // lineup_template_id = home team, opponent_lineup_template_id = away team
-        homeTeamLineupId = typedGameData.lineup_template_id || null
-        awayTeamLineupId = typedGameData.opponent_lineup_template_id || null
-      }
-
-      console.log('Lineup assignment:', {
-        homeTeamLineupId,
-        awayTeamLineupId,
-        homeTeamId,
-        awayTeamId
-      })
-
-      // Fetch home team lineup
-      if (homeTeamLineupId) {
-        const { data: homeLineupTemplate, error: templateError } = await supabase
+      if (gameData?.lineup_template_id) {
+        // Fetch our team's players from lineup template and get team name
+        const { data: ourLineupTemplate, error: templateError } = await supabase
           .from('lineup_templates')
           .select(`
             id,
@@ -355,39 +162,39 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               name
             )
           `)
-          .eq('id', homeTeamLineupId)
+          .eq('id', gameData.lineup_template_id)
           .single()
 
-        console.log('Home lineup template data:', homeLineupTemplate)
+        console.log('Lineup template data:', ourLineupTemplate)
         console.log('Template error:', templateError)
 
-        if (homeLineupTemplate?.teams) {
-          const team = Array.isArray(homeLineupTemplate.teams) 
-            ? homeLineupTemplate.teams[0] 
-            : homeLineupTemplate.teams
+        if (ourLineupTemplate?.teams) {
+          const team = Array.isArray(ourLineupTemplate.teams) 
+            ? ourLineupTemplate.teams[0] 
+            : ourLineupTemplate.teams
           if (team && typeof team === 'object' && 'name' in team) {
             const teamName = (team as { name: string }).name
             console.log('Setting home team name to:', teamName)
             setHomeTeamName(teamName || 'Dodgers')
           }
         } else {
-          console.log('No teams data found in home lineup template')
+          console.log('No teams data found in lineup template')
           // Try to get team name directly from team_id if available
-          if (homeLineupTemplate?.team_id) {
+          if (ourLineupTemplate?.team_id) {
             const { data: teamData } = await supabase
               .from('teams')
               .select('name')
-              .eq('id', homeLineupTemplate.team_id)
+              .eq('id', ourLineupTemplate.team_id)
               .single()
             
             if (teamData?.name) {
-              console.log('Found home team name from team_id:', teamData.name)
+              console.log('Found team name from team_id:', teamData.name)
               setHomeTeamName(teamData.name)
             }
           }
         }
 
-        const { data: homeLineupPlayers } = await supabase
+        const { data: ourLineupPlayers } = await supabase
           .from('lineup_template_players')
           .select(`
             player_id,
@@ -400,80 +207,40 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               positions
             )
           `)
-          .eq('template_id', homeTeamLineupId)
+          .eq('template_id', gameData.lineup_template_id)
           .order('batting_order')
 
-        if (homeLineupPlayers) {
-          const homePlayers: Player[] = homeLineupPlayers
+        if (ourLineupPlayers) {
+          const ourPlayers: Player[] = ourLineupPlayers
             .map(lp => {
               const player = lp.players
               if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
-                return {
-                  ...(player as Player),
-                  batting_order: lp.batting_order // Preserve batting order
-                } as Player & { batting_order: number }
+                return player as Player
               }
               return null
             })
-            .filter((p): p is Player & { batting_order: number } => p !== null)
-            // Remove duplicates by player ID (in case same player appears multiple times)
-            .filter((p, index, self) => index === self.findIndex((pl) => pl.id === p.id))
-            .sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0)) // Sort by batting order to ensure correct sequence
-            .slice(0, 9) // Limit to first 9 batters
-          setPlayers(homePlayers)
-          console.log('Home team players loaded in batting order:', homePlayers.map((p, idx) => `${idx + 1}. ${p.first_name} ${p.last_name} (order: ${(p as Player & { batting_order?: number }).batting_order})`))
-        } else {
-          console.log('No home team lineup players found')
-          setPlayers([])
+            .filter((p): p is Player => p !== null)
+          setPlayers(ourPlayers)
         }
       } else {
-        console.log('No home team lineup template found')
-        setPlayers([])
+        // Fallback: fetch all players (limit to 9)
+        const { data, error } = await supabase
+          .from('players')
+          .select('id, first_name, last_name, jersey_number, positions')
+          .order('jersey_number')
+          .limit(9)
+
+        if (!error && data) {
+          setPlayers(data)
+        }
       }
 
-      // Fetch away team (opponent) lineup
-      if (awayTeamLineupId) {
-        const { data: awayLineupPlayers } = await supabase
-          .from('lineup_template_players')
-          .select(`
-            player_id,
-            batting_order,
-            players (
-              id,
-              first_name,
-              last_name,
-              jersey_number,
-              positions
-            )
-          `)
-          .eq('template_id', awayTeamLineupId)
-          .order('batting_order')
-
-        if (awayLineupPlayers) {
-          const awayPlayers: Player[] = awayLineupPlayers
-            .map(lp => {
-              const player = lp.players
-              if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
-                return {
-                  ...(player as Player),
-                  batting_order: lp.batting_order // Preserve batting order
-                } as Player & { batting_order: number }
-              }
-              return null
-            })
-            .filter((p): p is Player & { batting_order: number } => p !== null)
-            // Remove duplicates by player ID (in case same player appears multiple times)
-            .filter((p, index, self) => index === self.findIndex((pl) => pl.id === p.id))
-            .sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0)) // Sort by batting order to ensure correct sequence
-            .slice(0, 9) // Limit to first 9 batters
-          setOpponentPlayers(awayPlayers)
-          console.log('Away team (opponent) players loaded in batting order:', awayPlayers.map((p, idx) => `${idx + 1}. ${p.first_name} ${p.last_name} (order: ${(p as Player & { batting_order?: number }).batting_order})`))
-        } else {
-          console.log('No away team lineup players found for template:', awayTeamLineupId)
-          setOpponentPlayers([])
-        }
-      } else {
-        // Fallback: try to find opponent lineup by team name if not linked
+      // Fetch opponent's lineup from lineup template
+      // First try using opponent_lineup_template_id from game
+      let opponentTemplateId = gameData?.opponent_lineup_template_id
+      
+      // If not linked to game, try to find it by opponent team name
+      if (!opponentTemplateId) {
         const { data: opponentTeam } = await supabase
           .from('teams')
           .select('id')
@@ -491,55 +258,48 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             .maybeSingle()
           
           if (opponentTemplate?.id) {
-            const { data: fallbackOpponentPlayers } = await supabase
-              .from('lineup_template_players')
-              .select(`
-                player_id,
-                batting_order,
-                players (
-                  id,
-                  first_name,
-                  last_name,
-                  jersey_number,
-                  positions
-                )
-              `)
-              .eq('template_id', opponentTemplate.id)
-              .order('batting_order')
-
-            if (fallbackOpponentPlayers) {
-              const fallbackPlayers: Player[] = fallbackOpponentPlayers
-                .map(lp => {
-                  const player = lp.players
-                  if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
-                    return {
-                      ...(player as Player),
-                      batting_order: lp.batting_order
-                    } as Player & { batting_order: number }
-                  }
-                  return null
-                })
-                .filter((p): p is Player & { batting_order: number } => p !== null)
-                .filter((p, index, self) => index === self.findIndex((pl) => pl.id === p.id))
-                .sort((a, b) => (a.batting_order || 0) - (b.batting_order || 0))
-                .slice(0, 9)
-              setOpponentPlayers(fallbackPlayers)
-              console.log('Fallback: Opponent players loaded from team name lookup')
-            }
+            opponentTemplateId = opponentTemplate.id
           }
-        }
-        
-        if (opponentPlayers.length === 0) {
-          console.log('No away team lineup template found')
-          setOpponentPlayers([])
         }
       }
       
-      setLoading(false)
-      console.log('=== PLAYERS FETCH COMPLETE ===')
+      if (opponentTemplateId) {
+        const { data: opponentLineupPlayers } = await supabase
+          .from('lineup_template_players')
+          .select(`
+            player_id,
+            batting_order,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number,
+              positions
+            )
+          `)
+          .eq('template_id', opponentTemplateId)
+          .order('batting_order')
+
+        if (opponentLineupPlayers) {
+          const oppPlayers: Player[] = opponentLineupPlayers
+            .map(lp => {
+              const player = lp.players
+              if (player && typeof player === 'object' && !Array.isArray(player) && 'id' in player) {
+                return player as Player
+              }
+              return null
+            })
+            .filter((p): p is Player => p !== null)
+          setOpponentPlayers(oppPlayers)
+          console.log('Opponent players loaded:', oppPlayers.length, 'players')
+        } else {
+          console.log('No opponent lineup players found for template:', opponentTemplateId)
+        }
+      } else {
+        console.log('No opponent lineup template found')
+      }
     } catch (err) {
       console.error('Failed to fetch players:', err)
-      setLoading(false)
     }
   }
 
@@ -1191,29 +951,6 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     )
   }
 
-  // Show validation message if both lineups are not saved
-  if (!bothLineupsValid) {
-    return (
-      <div className="bg-white p-6 max-w-2xl mx-auto">
-        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6 text-center">
-          <div className="text-red-600 mb-4">
-            <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-          </div>
-          <h3 className="text-xl font-semibold text-red-800 mb-2">Lineups Required</h3>
-          <p className="text-red-700 mb-4">{lineupValidationMessage}</p>
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="bg-white p-6 max-w-7xl mx-auto">
       {/* Game Information Header */}
@@ -1334,22 +1071,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               const player = activePlayers[rowIndex]
               const stats = player ? getPlayerStats(player.id) : { hits: 0, walks: 0, runs: 0, rbi: 0, errors: 0 }
               
-              // Debug logging for first row only
-              if (rowIndex === 0) {
-                console.log('Displaying scorebook:', {
-                  currentTeamSide,
-                  homePlayersCount: players.length,
-                  opponentPlayersCount: opponentPlayers.length,
-                  activePlayersCount: activePlayers.length,
-                  firstPlayer: activePlayers[0] ? `${activePlayers[0].first_name} ${activePlayers[0].last_name}` : 'none'
-                })
-              }
-              
               return (
                 <tr key={rowIndex} className="h-12">
-                  {/* Batting Order Number */}
-                  <td className="border border-gray-400 px-2 py-1 text-center font-bold">
-                    {player ? (rowIndex + 1) : ''}
+                  {/* Jersey Number */}
+                  <td className="border border-gray-400 px-2 py-1 text-center">
+                    {player ? player.jersey_number : ''}
                   </td>
                   
                   {/* Player Name */}
@@ -1568,10 +1294,53 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             setShowOpponentLineupModal(false)
             // Refresh players to get opponent lineup (but don't check for opponent lineup again)
             await fetchPlayers()
+            // After saving opponent lineup, ask about home/away team
+            // Use a small delay to ensure state is updated
+            setTimeout(() => {
+              setHomeAwayChecked(true)
+              setShowHomeAwayModal(true)
+            }, 300)
           }}
         />
       )}
 
+      {/* Home/Away Team Selection Modal */}
+      {showHomeAwayModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
+              ¿Quién batea primero?
+            </h3>
+            <p className="text-sm text-gray-600 mb-6 text-center">
+              Selecciona el equipo que batea primero
+            </p>
+            <div className="flex flex-col space-y-3">
+              <button
+                onClick={() => {
+                  // Opponent bats first
+                  setCurrentTeamSide('opponent')
+                  setHomeAwayChecked(true)
+                  setShowHomeAwayModal(false)
+                }}
+                className="px-6 py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors"
+              >
+                {game.opponent}
+              </button>
+              <button
+                onClick={() => {
+                  // Home team (Dodgers) bats first
+                  setCurrentTeamSide('home')
+                  setHomeAwayChecked(true)
+                  setShowHomeAwayModal(false)
+                }}
+                className="px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors"
+              >
+                {homeTeamName}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

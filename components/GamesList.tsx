@@ -50,27 +50,11 @@ export default function GamesList() {
     weather_conditions: ''
   })
   const [submitting, setSubmitting] = useState(false)
-  const [gamesLineupStatus, setGamesLineupStatus] = useState<Record<string, {
-    homeTeamSaved: boolean
-    opponentTeamSaved: boolean
-    homeTeamName: string
-    opponentTeamName: string
-  }>>({}) // Track lineup status for each game with team details
 
   useEffect(() => {
     fetchGames()
     fetchTeams()
   }, [])
-
-  // Check lineup status for all games
-  useEffect(() => {
-    async function checkStatus() {
-      if (games.length > 0) {
-        await updateLineupStatusForAllGames()
-      }
-    }
-    checkStatus()
-  }, [games.length])
 
   async function fetchGames() {
     try {
@@ -109,415 +93,30 @@ export default function GamesList() {
     }
   }
 
-  // Check lineup status for each team in a game
-  async function checkLineupStatus(gameId: string): Promise<{
-    homeTeamSaved: boolean
-    opponentTeamSaved: boolean
-    homeTeamName: string
-    opponentTeamName: string
-  }> {
-    const defaultStatus = {
-      homeTeamSaved: false,
-      opponentTeamSaved: false,
-      homeTeamName: 'Dodgers',
-      opponentTeamName: 'Oponente'
-    }
-
-    try {
-      // First try to get all fields
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single()
-
-      if (error) {
-        // Check if it's a column error (columns don't exist)
-        const errorMessage = error?.message || ''
-        const errorCode = error?.code || ''
-        
-        if (errorMessage.includes('column') || errorCode === '42703') {
-          // Columns don't exist, try alternative approach
-          const { data: gameData } = await supabase
-            .from('games')
-            .select('opponent, team_id')
-            .eq('id', gameId)
-            .single()
-          
-          if (!gameData) return defaultStatus
-          
-          // Get team names
-          const { data: dodgersTeam } = await supabase
-            .from('teams')
-            .select('id, name')
-            .eq('name', 'Dodgers')
-            .maybeSingle()
-          
-          const homeTeamId = gameData.team_id || dodgersTeam?.id
-          let opponentTeamId: string | undefined
-          let opponentTeamName = gameData.opponent || 'Oponente'
-          
-          if (gameData.opponent) {
-            const { data: opponentTeam } = await supabase
-              .from('teams')
-              .select('id, name')
-              .eq('name', gameData.opponent)
-              .maybeSingle()
-            opponentTeamId = opponentTeam?.id
-            opponentTeamName = opponentTeam?.name || gameData.opponent
-          }
-          
-          // Check if templates exist for both teams
-          let hasHomeLineup = false
-          let hasOpponentLineup = false
-          
-          if (homeTeamId) {
-            const { data: homeTemplate } = await supabase
-              .from('lineup_templates')
-              .select('id')
-              .eq('team_id', homeTeamId)
-              .limit(1)
-            hasHomeLineup = !!homeTemplate && homeTemplate.length > 0
-          }
-          
-          if (opponentTeamId) {
-            const { data: opponentTemplate } = await supabase
-              .from('lineup_templates')
-              .select('id')
-              .eq('team_id', opponentTeamId)
-              .limit(1)
-            hasOpponentLineup = !!opponentTemplate && opponentTemplate.length > 0
-          }
-          
-          return {
-            homeTeamSaved: hasHomeLineup,
-            opponentTeamSaved: hasOpponentLineup,
-            homeTeamName: 'Dodgers',
-            opponentTeamName: opponentTeamName
-          }
-        } else {
-          console.error('Error checking lineups:', error)
-          return defaultStatus
-        }
-      }
-
-      // Check if columns exist in the data
-      const gameData = data as { lineup_template_id?: string; opponent_lineup_template_id?: string; opponent?: string }
-      const homeLineupId = gameData?.lineup_template_id
-      const opponentLineupId = gameData?.opponent_lineup_template_id
-      
-      // Get team names
-      const homeTeamName = 'Dodgers'
-      let opponentTeamName = gameData?.opponent || 'Oponente'
-      
-      if (opponentTeamName && opponentTeamName !== 'Oponente') {
-        const { data: opponentTeam } = await supabase
-          .from('teams')
-          .select('name')
-          .eq('name', opponentTeamName)
-          .maybeSingle()
-        if (opponentTeam) {
-          opponentTeamName = opponentTeam.name
-        }
-      }
-
-      return {
-        homeTeamSaved: !!homeLineupId,
-        opponentTeamSaved: !!opponentLineupId,
-        homeTeamName: homeTeamName,
-        opponentTeamName: opponentTeamName
-      }
-    } catch (err) {
-      console.error('Failed to check lineups:', err)
-      return defaultStatus
-    }
-  }
-
-  // Check if both lineups are saved for a game (for backward compatibility)
-  async function checkBothLineupsSaved(gameId: string): Promise<boolean> {
-    try {
-      // First try to get all fields
-      const { data, error } = await supabase
-        .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single()
-
-      if (error) {
-        // Check if it's a column error (columns don't exist)
-        const errorMessage = error?.message || ''
-        const errorCode = error?.code || ''
-        
-        if (errorMessage.includes('column') || errorCode === '42703') {
-          // Columns don't exist, try alternative approach
-          console.log('Lineup template columns not found, checking via lineup_templates table...')
-          
-          // Try to find lineups by checking if templates exist for the game's teams
-          const { data: gameData } = await supabase
-            .from('games')
-            .select('opponent, team_id')
-            .eq('id', gameId)
-            .single()
-          
-          if (!gameData) return false
-          
-          // Check for Dodgers lineup (home team)
-          const { data: dodgersTeam } = await supabase
-            .from('teams')
-            .select('id')
-            .eq('name', 'Dodgers')
-            .maybeSingle()
-          
-          const homeTeamId = gameData.team_id || dodgersTeam?.id
-          
-          // Check for opponent lineup
-          let opponentTeamId: string | undefined
-          if (gameData.opponent) {
-            const { data: opponentTeam } = await supabase
-              .from('teams')
-              .select('id')
-              .eq('name', gameData.opponent)
-              .maybeSingle()
-            opponentTeamId = opponentTeam?.id
-          }
-          
-          // Check if templates exist for both teams
-          let hasHomeLineup = false
-          let hasOpponentLineup = false
-          
-          if (homeTeamId) {
-            const { data: homeTemplate } = await supabase
-              .from('lineup_templates')
-              .select('id')
-              .eq('team_id', homeTeamId)
-              .limit(1)
-            hasHomeLineup = !!homeTemplate && homeTemplate.length > 0
-          }
-          
-          if (opponentTeamId) {
-            const { data: opponentTemplate } = await supabase
-              .from('lineup_templates')
-              .select('id')
-              .eq('team_id', opponentTeamId)
-              .limit(1)
-            hasOpponentLineup = !!opponentTemplate && opponentTemplate.length > 0
-          }
-          
-          return hasHomeLineup && hasOpponentLineup
-        } else {
-          console.error('Error checking lineups:', error)
-          return false
-        }
-      }
-
-      // Check if columns exist in the data
-      const gameData = data as { lineup_template_id?: string; opponent_lineup_template_id?: string }
-      const hasHomeLineup = !!gameData?.lineup_template_id
-      const hasOpponentLineup = !!gameData?.opponent_lineup_template_id
-
-      // If columns don't exist in response, try alternative check
-      if (hasHomeLineup === undefined && hasOpponentLineup === undefined) {
-        // Fallback: check via lineup_templates table
-        const { data: gameData } = await supabase
-          .from('games')
-          .select('opponent, team_id')
-          .eq('id', gameId)
-          .single()
-        
-        if (!gameData) return false
-        
-        const { data: dodgersTeam } = await supabase
-          .from('teams')
-          .select('id')
-          .eq('name', 'Dodgers')
-          .maybeSingle()
-        
-        const homeTeamId = gameData.team_id || dodgersTeam?.id
-        
-        let opponentTeamId: string | undefined
-        if (gameData.opponent) {
-          const { data: opponentTeam } = await supabase
-            .from('teams')
-            .select('id')
-            .eq('name', gameData.opponent)
-            .maybeSingle()
-          opponentTeamId = opponentTeam?.id
-        }
-        
-        let hasHome = false
-        let hasOpponent = false
-        
-        if (homeTeamId) {
-          const { data: homeTemplate } = await supabase
-            .from('lineup_templates')
-            .select('id')
-            .eq('team_id', homeTeamId)
-            .limit(1)
-          hasHome = !!homeTemplate && homeTemplate.length > 0
-        }
-        
-        if (opponentTeamId) {
-          const { data: opponentTemplate } = await supabase
-            .from('lineup_templates')
-            .select('id')
-            .eq('team_id', opponentTeamId)
-            .limit(1)
-          hasOpponent = !!opponentTemplate && opponentTemplate.length > 0
-        }
-        
-        return hasHome && hasOpponent
-      }
-
-      // Both lineups must exist
-      return hasHomeLineup && hasOpponentLineup
-    } catch (err) {
-      console.error('Failed to check lineups:', err)
-      return false
-    }
-  }
-  
-  // Check lineup status for all games
-  async function updateLineupStatusForAllGames() {
-    if (games.length > 0) {
-      const statusPromises = games.map(async (game) => {
-        const status = await checkLineupStatus(game.id)
-        return { gameId: game.id, status }
-      })
-      
-      const results = await Promise.all(statusPromises)
-      const newStatus: Record<string, {
-        homeTeamSaved: boolean
-        opponentTeamSaved: boolean
-        homeTeamName: string
-        opponentTeamName: string
-      }> = {}
-      
-      results.forEach(({ gameId, status }) => {
-        newStatus[gameId] = status
-      })
-      
-      setGamesLineupStatus(newStatus)
-    }
-  }
-
-  // Handle scorebook access with validation
-  async function handleScorebookAccess(gameId: string) {
-    const bothLineupsSaved = await checkBothLineupsSaved(gameId)
-    
-    if (!bothLineupsSaved) {
-      alert('Both team lineups must be saved before starting the scorebook. Please select lineups for Dodgers (home team) and the opponent team first.')
-      return
-    }
-
-    setShowScorebook(gameId)
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     
     try {
-      // Find or get Dodgers team ID
-      let dodgersTeamId: string | null = null
-      
-      // First, try to find Dodgers team
-      const { data: dodgersTeam, error: teamError } = await supabase
-        .from('teams')
-        .select('id')
-        .eq('name', 'Dodgers')
-        .maybeSingle()
-
-      if (teamError) {
-        console.error('Error finding Dodgers team:', teamError)
-      } else if (dodgersTeam) {
-        dodgersTeamId = dodgersTeam.id
-      } else {
-        // Create Dodgers team if it doesn't exist
-        const { data: newDodgersTeam, error: createError } = await supabase
-          .from('teams')
-          .insert([{
-            name: 'Dodgers',
-            city: 'Los Angeles'
-          }])
-          .select('id')
-          .single()
-
-        if (createError) {
-          console.error('Error creating Dodgers team:', createError)
-          setError('Failed to create Dodgers team. Please ensure Dodgers team exists.')
-          setSubmitting(false)
-          return
-        } else if (newDodgersTeam) {
-          dodgersTeamId = newDodgersTeam.id
-        }
-      }
-
-      // Create game with Dodgers as the home team
-      const gameData: {
-        opponent: string
-        game_date: string
-        game_time: string
-        stadium: string
-        weather_conditions: string
-        our_score: number
-        opponent_score: number
-        innings_played: number
-        game_status: string
-        team_id?: string
-      } = {
-        ...formData,
-        our_score: 0,
-        opponent_score: 0,
-        innings_played: 0,
-        game_status: 'scheduled'
-      }
-
-      // Add team_id if the column exists
-      if (dodgersTeamId) {
-        gameData.team_id = dodgersTeamId
-      }
-
       const { data, error } = await supabase
         .from('games')
-        .insert([gameData])
+        .insert([{
+          ...formData,
+          our_score: 0,
+          opponent_score: 0,
+          innings_played: 0,
+          game_status: 'scheduled'
+        }])
         .select('*')
 
       if (error) {
-        // If team_id column doesn't exist, try without it
-        if (error.message.includes('column') || error.code === '42703') {
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('games')
-            .insert([{
-              ...formData,
-              our_score: 0,
-              opponent_score: 0,
-              innings_played: 0,
-              game_status: 'scheduled'
-            }])
-            .select('*')
-
-          if (fallbackError) {
-            setError(fallbackError.message)
-            setSubmitting(false)
-            return
-          } else {
-            setNewGameId(fallbackData[0].id)
-            setGameCreationStep('ourLineup')
-            setShowLineupSelection(fallbackData[0].id)
-            setSubmitting(false)
-            return
-          }
-        } else {
-          setError(error.message)
-          setSubmitting(false)
-          return
-        }
+        setError(error.message)
+        setSubmitting(false)
       } else {
         // Store the new game ID and move to lineup selection step
         setNewGameId(data[0].id)
         setGameCreationStep('ourLineup')
         setShowLineupSelection(data[0].id)
-        setSubmitting(false)
         // Don't close the form yet - wait for lineups to be selected
       }
     } catch (err) {
@@ -589,18 +188,14 @@ export default function GamesList() {
         return
       }
 
-      // Reset game scores, status, lineups, and home/away assignment
+      // Reset game scores and status
       const { error: gameError } = await supabase
         .from('games')
         .update({
           our_score: 0,
           opponent_score: 0,
           innings_played: 0,
-          game_status: 'scheduled',
-          lineup_template_id: null,
-          opponent_lineup_template_id: null,
-          home_team_id: null,
-          away_team_id: null
+          game_status: 'scheduled'
         })
         .eq('id', gameId)
 
@@ -808,22 +403,11 @@ export default function GamesList() {
                     {game.game_status === 'scheduled' && (
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button
-                        onClick={async () => {
-                          const bothLineupsSaved = await checkBothLineupsSaved(game.id)
-                          if (!bothLineupsSaved) {
-                            alert('Ambas alineaciones deben estar guardadas antes de iniciar la anotación. Por favor selecciona las alineaciones para Dodgers (equipo local) y el equipo visitante primero.')
-                            return
-                          }
+                        onClick={() => {
                           updateGameStatus(game.id, 'in_progress')
                           setShowScorebook(game.id)
                         }}
-                        disabled={!gamesLineupStatus[game.id]?.homeTeamSaved || !gamesLineupStatus[game.id]?.opponentTeamSaved}
-                        className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs w-full sm:w-auto"
-                        title={
-                          !gamesLineupStatus[game.id]?.homeTeamSaved || !gamesLineupStatus[game.id]?.opponentTeamSaved
-                            ? "Ambas alineaciones deben estar guardadas"
-                            : "Iniciar anotación"
-                        }
+                        className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
                       >
                         {t.startScoring}
                       </button>
@@ -835,49 +419,10 @@ export default function GamesList() {
                       </button>
                     </div>
                   )}
-                  
-                  {/* Lineup Status Section - Compact - Below buttons */}
-                  {game.game_status === 'scheduled' && gamesLineupStatus[game.id] && (
-                    <div className="mt-2 flex justify-center sm:justify-end">
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
-                          gamesLineupStatus[game.id]?.homeTeamSaved 
-                            ? 'bg-green-50 text-green-700' 
-                            : 'bg-red-50 text-red-700'
-                        }`}>
-                          <span className="text-xs font-bold">
-                            {gamesLineupStatus[game.id]?.homeTeamSaved ? '✓' : '✗'}
-                          </span>
-                          <span className="font-medium">
-                            {gamesLineupStatus[game.id]?.homeTeamName || 'Dodgers'}
-                          </span>
-                        </div>
-                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${
-                          gamesLineupStatus[game.id]?.opponentTeamSaved 
-                            ? 'bg-green-50 text-green-700' 
-                            : 'bg-red-50 text-red-700'
-                        }`}>
-                          <span className="text-xs font-bold">
-                            {gamesLineupStatus[game.id]?.opponentTeamSaved ? '✓' : '✗'}
-                          </span>
-                          <span className="font-medium">
-                            {gamesLineupStatus[game.id]?.opponentTeamName || 'Oponente'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                   {game.game_status === 'in_progress' && (
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button
-                        onClick={async () => {
-                          const bothLineupsSaved = await checkBothLineupsSaved(game.id)
-                          if (!bothLineupsSaved) {
-                            alert('Both team lineups must be saved before accessing the scorebook. Please select lineups for Dodgers (home team) and the opponent team first.')
-                            return
-                          }
-                          setShowScorebook(game.id)
-                        }}
+                        onClick={() => setShowScorebook(game.id)}
                         className="bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 text-xs w-full sm:w-auto"
                       >
                         {t.continueScoring}
@@ -899,14 +444,7 @@ export default function GamesList() {
                   {game.game_status === 'completed' && (
                     <div className="flex flex-col sm:flex-row gap-2">
                       <button
-                        onClick={async () => {
-                          const bothLineupsSaved = await checkBothLineupsSaved(game.id)
-                          if (!bothLineupsSaved) {
-                            alert('Both team lineups must be saved before viewing the scorebook. Please select lineups for both teams first.')
-                            return
-                          }
-                          setShowScorebook(game.id)
-                        }}
+                        onClick={() => setShowScorebook(game.id)}
                         className="bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 text-xs w-full sm:w-auto"
                       >
                         {t.viewScorebook}
@@ -984,28 +522,12 @@ export default function GamesList() {
               <LineupSelection 
                 gameId={showLineupSelection}
                 onClose={() => {
-                  // When lineup is saved, move to opponent lineup (only for new games)
+                  // When lineup is saved, move to opponent lineup
                   if (newGameId === showLineupSelection) {
                     handleLineupSelected(showLineupSelection, false)
                   } else {
                     setShowLineupSelection(null)
                   }
-                }}
-                onStartScoring={() => {
-                  // Start scoring when both lineups are saved
-                  if (showLineupSelection) {
-                    setShowLineupSelection(null)
-                    setShowScorebook(showLineupSelection)
-                  }
-                }}
-                onLineupSaved={async () => {
-                  // Refresh lineup status when a lineup is saved
-                  if (showLineupSelection) {
-                    const status = await checkLineupStatus(showLineupSelection)
-                    setGamesLineupStatus(prev => ({ ...prev, [showLineupSelection]: status }))
-                  }
-                  // Also refresh all games status
-                  await updateLineupStatusForAllGames()
                 }}
               />
             </div>

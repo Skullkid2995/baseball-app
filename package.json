@@ -4,9 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "dev:mobile": "next dev --turbopack -H 0.0.0.0 -p 3001",
+    "dev:3000": "next dev --turbopack -p 3000",
+    "dev:3001": "next dev --turbopack -p 3001",
+    "dev:8080": "next dev --turbopack -p 8080",
+    "dev:mobile": "next dev --turbopack -H 0.0.0.0 -p 3000",
+    "dev:mobile:3001": "next dev --turbopack -H 0.0.0.0 -p 3001",
     "build": "next build --turbopack",
     "start": "next start",
+    "start:3001": "next start -p 3001",
     "lint": "eslint"
   },
   "dependencies": {
@@ -16,7 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.544.0",
-    "next": "15.5.7",
+    "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tailwind-merge": "^3.3.1"
@@ -28,7 +33,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.7",
+    "eslint-config-next": "15.5.4",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.8",
     "typescript": "^5"
