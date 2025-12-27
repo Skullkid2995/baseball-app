@@ -20,6 +20,9 @@ interface Game {
   innings_played: number
   game_status: string
   team_id?: string
+  lineup_template_id?: string | null
+  opponent_lineup_template_id?: string | null
+  batting_first?: 'home' | 'opponent' | null
   created_at: string
 }
 
@@ -61,7 +64,7 @@ export default function GamesList() {
       setLoading(true)
       const { data, error } = await supabase
         .from('games')
-        .select('*')
+        .select('*, lineup_template_id, opponent_lineup_template_id, batting_first')
         .order('game_date', { ascending: false })
 
       if (error) {
@@ -402,15 +405,32 @@ export default function GamesList() {
                     </div>
                     {game.game_status === 'scheduled' && (
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        onClick={() => {
-                          updateGameStatus(game.id, 'in_progress')
-                          setShowScorebook(game.id)
-                        }}
-                        className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.startScoring}
-                      </button>
+                      {/* Only show Start Scoring if both lineups are selected and home/away is selected */}
+                      {game.lineup_template_id && game.opponent_lineup_template_id && game.batting_first ? (
+                        <button
+                          onClick={() => {
+                            updateGameStatus(game.id, 'in_progress')
+                            setShowScorebook(game.id)
+                          }}
+                          className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
+                        >
+                          {t.startScoring}
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="bg-gray-400 text-white px-3 py-1.5 rounded-lg cursor-not-allowed text-xs w-full sm:w-auto"
+                          title={
+                            !game.lineup_template_id 
+                              ? 'Select our team lineup first' 
+                              : !game.opponent_lineup_template_id 
+                              ? 'Select opponent lineup first'
+                              : 'Select which team bats first'
+                          }
+                        >
+                          {t.startScoring}
+                        </button>
+                      )}
                       <button
                         onClick={() => setShowLineupSelection(game.id)}
                         className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"

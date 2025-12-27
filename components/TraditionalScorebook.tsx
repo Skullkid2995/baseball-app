@@ -96,23 +96,41 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     // Only check once, and only if game is not completed
     if (homeAwayChecked || game.game_status === 'completed' || loading) return
     
-    // If there are no at-bats and opponent lineup exists, show home/away modal
-    // This determines who bats first
-    if (atBats.length === 0 && opponentPlayers.length > 0 && !showOpponentLineupModal) {
-      setHomeAwayChecked(true)
-      // Small delay to ensure UI is ready
-      setTimeout(() => {
-        setShowHomeAwayModal(true)
-      }, 300)
+    // Fetch batting_first from database
+    async function checkBattingFirst() {
+      const { data: gameData } = await supabase
+        .from('games')
+        .select('batting_first')
+        .eq('id', game.id)
+        .single()
+      
+      if (gameData?.batting_first) {
+        // Already selected, set the current team side and mark as checked
+        setCurrentTeamSide(gameData.batting_first === 'home' ? 'home' : 'opponent')
+        setHomeAwayChecked(true)
+        return
+      }
+      
+      // If there are no at-bats and opponent lineup exists, show home/away modal
+      // This determines who bats first
+      if (atBats.length === 0 && opponentPlayers.length > 0 && !showOpponentLineupModal) {
+        setHomeAwayChecked(true)
+        // Small delay to ensure UI is ready
+        setTimeout(() => {
+          setShowHomeAwayModal(true)
+        }, 300)
+      }
     }
-  }, [atBats.length, opponentPlayers.length, showOpponentLineupModal, homeAwayChecked, game.game_status, loading])
+    
+    checkBattingFirst()
+  }, [atBats.length, opponentPlayers.length, showOpponentLineupModal, homeAwayChecked, game.game_status, loading, game.id])
 
   async function fetchPlayers() {
     try {
-      // Fetch our team's lineup from lineup template
+      // Fetch our team's lineup from lineup template and batting_first
       const { data: gameData } = await supabase
         .from('games')
-        .select('lineup_template_id, opponent_lineup_template_id')
+        .select('lineup_template_id, opponent_lineup_template_id, batting_first')
         .eq('id', game.id)
         .single()
 
@@ -1316,22 +1334,42 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             </p>
             <div className="flex flex-col space-y-3">
               <button
-                onClick={() => {
+                onClick={async () => {
                   // Opponent bats first
                   setCurrentTeamSide('opponent')
                   setHomeAwayChecked(true)
                   setShowHomeAwayModal(false)
+                  
+                  // Save to database
+                  const { error } = await supabase
+                    .from('games')
+                    .update({ batting_first: 'opponent' })
+                    .eq('id', game.id)
+                  
+                  if (error) {
+                    console.error('Error saving batting_first selection:', error)
+                  }
                 }}
                 className="px-6 py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors"
               >
                 {game.opponent}
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   // Home team (Dodgers) bats first
                   setCurrentTeamSide('home')
                   setHomeAwayChecked(true)
                   setShowHomeAwayModal(false)
+                  
+                  // Save to database
+                  const { error } = await supabase
+                    .from('games')
+                    .update({ batting_first: 'home' })
+                    .eq('id', game.id)
+                  
+                  if (error) {
+                    console.error('Error saving batting_first selection:', error)
+                  }
                 }}
                 className="px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors"
               >
