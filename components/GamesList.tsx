@@ -108,7 +108,10 @@ export default function GamesList() {
           our_score: 0,
           opponent_score: 0,
           innings_played: 0,
-          game_status: 'scheduled'
+          game_status: 'scheduled',
+          lineup_template_id: null,
+          opponent_lineup_template_id: null,
+          batting_first: null
         }])
         .select('*')
 
@@ -191,14 +194,17 @@ export default function GamesList() {
         return
       }
 
-      // Reset game scores and status
+      // Reset game scores, status, and lineup selections
       const { error: gameError } = await supabase
         .from('games')
         .update({
           our_score: 0,
           opponent_score: 0,
           innings_played: 0,
-          game_status: 'scheduled'
+          game_status: 'scheduled',
+          lineup_template_id: null,
+          opponent_lineup_template_id: null,
+          batting_first: null
         })
         .eq('id', gameId)
 
@@ -404,85 +410,132 @@ export default function GamesList() {
                       {game.our_score} - {game.opponent_score}
                     </div>
                     {game.game_status === 'scheduled' && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      {/* Only show Start Scoring if both lineups are selected and home/away is selected */}
-                      {game.lineup_template_id && game.opponent_lineup_template_id && game.batting_first ? (
+                      <>
+                        <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                          {/* Only show Start Scoring if both lineups are selected and home/away is selected */}
+                          {game.lineup_template_id && game.opponent_lineup_template_id && game.batting_first ? (
+                            <button
+                              onClick={() => {
+                                updateGameStatus(game.id, 'in_progress')
+                                setShowScorebook(game.id)
+                              }}
+                              className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
+                            >
+                              {t.startScoring}
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="bg-gray-400 text-white px-3 py-1.5 rounded-lg cursor-not-allowed text-xs w-full sm:w-auto"
+                              title={
+                                !game.lineup_template_id 
+                                  ? 'Select our team lineup first' 
+                                  : !game.opponent_lineup_template_id 
+                                  ? 'Select opponent lineup first'
+                                  : 'Select which team bats first'
+                              }
+                            >
+                              {t.startScoring}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setShowLineupSelection(game.id)}
+                            className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
+                          >
+                            {t.selectLineup}
+                          </button>
+                        </div>
+                        {/* Lineup Selection Status */}
+                        <div className="pt-3 border-t border-gray-200">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">Estado de Alineaciones:</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              {game.lineup_template_id ? (
+                                <>
+                                  <span className="text-green-600">✓</span>
+                                  <span className="text-xs text-gray-700">Nuestro Equipo: Alineación elegida</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-yellow-600">⚠</span>
+                                  <span className="text-xs text-gray-700">Nuestro Equipo: Pendiente</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {game.opponent_lineup_template_id ? (
+                                <>
+                                  <span className="text-green-600">✓</span>
+                                  <span className="text-xs text-gray-700">Oponente ({game.opponent}): Alineación elegida</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-yellow-600">⚠</span>
+                                  <span className="text-xs text-gray-700">Oponente ({game.opponent}): Pendiente</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {game.batting_first ? (
+                                <>
+                                  <span className="text-green-600">✓</span>
+                                  <span className="text-xs text-gray-700">Local/Visitante: Seleccionado</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-yellow-600">⚠</span>
+                                  <span className="text-xs text-gray-700">Local/Visitante: Pendiente</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {game.game_status === 'in_progress' && (
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <button
-                          onClick={() => {
-                            updateGameStatus(game.id, 'in_progress')
-                            setShowScorebook(game.id)
-                          }}
-                          className="bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 text-xs w-full sm:w-auto"
+                          onClick={() => setShowScorebook(game.id)}
+                          className="bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 text-xs w-full sm:w-auto"
                         >
-                          {t.startScoring}
+                          {t.continueScoring}
                         </button>
-                      ) : (
                         <button
-                          disabled
-                          className="bg-gray-400 text-white px-3 py-1.5 rounded-lg cursor-not-allowed text-xs w-full sm:w-auto"
-                          title={
-                            !game.lineup_template_id 
-                              ? 'Select our team lineup first' 
-                              : !game.opponent_lineup_template_id 
-                              ? 'Select opponent lineup first'
-                              : 'Select which team bats first'
-                          }
+                          onClick={() => setShowStatistics(game.id)}
+                          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-xs w-full sm:w-auto"
                         >
-                          {t.startScoring}
+                          {t.viewStatistics}
                         </button>
-                      )}
-                      <button
-                        onClick={() => setShowLineupSelection(game.id)}
-                        className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.selectLineup}
-                      </button>
-                    </div>
-                  )}
-                  {game.game_status === 'in_progress' && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        onClick={() => setShowScorebook(game.id)}
-                        className="bg-orange-600 text-white px-3 py-1.5 rounded-lg hover:bg-orange-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.continueScoring}
-                      </button>
-                      <button
-                        onClick={() => setShowStatistics(game.id)}
-                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.viewStatistics}
-                      </button>
-                      <button
-                        onClick={() => clearGameData(game.id)}
-                        className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.clearGameData}
-                      </button>
-                    </div>
-                  )}
-                  {game.game_status === 'completed' && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        onClick={() => setShowScorebook(game.id)}
-                        className="bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.viewScorebook}
-                      </button>
-                      <button
-                        onClick={() => setShowStatistics(game.id)}
-                        className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.viewStatistics}
-                      </button>
-                      <button
-                        onClick={() => clearGameData(game.id)}
-                        className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
-                      >
-                        {t.clearData}
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          onClick={() => clearGameData(game.id)}
+                          className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
+                        >
+                          {t.clearGameData}
+                        </button>
+                      </div>
+                    )}
+                    {game.game_status === 'completed' && (
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          onClick={() => setShowScorebook(game.id)}
+                          className="bg-gray-600 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 text-xs w-full sm:w-auto"
+                        >
+                          {t.viewScorebook}
+                        </button>
+                        <button
+                          onClick={() => setShowStatistics(game.id)}
+                          className="bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 text-xs w-full sm:w-auto"
+                        >
+                          {t.viewStatistics}
+                        </button>
+                        <button
+                          onClick={() => clearGameData(game.id)}
+                          className="bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-xs w-full sm:w-auto"
+                        >
+                          {t.clearData}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -548,6 +601,10 @@ export default function GamesList() {
                   } else {
                     setShowLineupSelection(null)
                   }
+                }}
+                onStartScoring={(gameId) => {
+                  updateGameStatus(gameId, 'in_progress')
+                  setShowScorebook(gameId)
                 }}
               />
             </div>

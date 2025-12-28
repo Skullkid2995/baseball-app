@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getBaseballPositions } from '@/lib/translations'
+import LineupTemplates from './LineupTemplates'
 
 interface Team {
   id: string
@@ -79,6 +80,8 @@ export default function TeamsList() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set())
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null)
+  const [showTemplateManagement, setShowTemplateManagement] = useState(false)
+  const [selectedTeamForTemplates, setSelectedTeamForTemplates] = useState<string | null>(null)
   const { t, language } = useLanguage()
 
   // Get baseball positions based on current language
@@ -843,6 +846,15 @@ export default function TeamsList() {
                     >
                       {t.addPlayer}
                     </button>
+                    <button
+                      onClick={() => {
+                        setSelectedTeamForTemplates(team.id)
+                        setShowTemplateManagement(true)
+                      }}
+                      className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
+                    >
+                      Edit Templates
+                    </button>
                   </div>
                 </div>
                 
@@ -1449,6 +1461,41 @@ export default function TeamsList() {
         </div>
       )}
 
+      {/* Template Management Modal */}
+      {showTemplateManagement && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
+              <h2 className="text-2xl font-bold text-gray-800">
+                Manage Lineup Templates
+                {selectedTeamForTemplates && (
+                  <span className="text-lg font-normal text-gray-600 ml-2">
+                    - {teams.find(t => t.id === selectedTeamForTemplates)?.name}
+                  </span>
+                )}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowTemplateManagement(false)
+                  setSelectedTeamForTemplates(null)
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <LineupTemplates 
+                onClose={() => {
+                  setShowTemplateManagement(false)
+                  setSelectedTeamForTemplates(null)
+                }}
+                teamId={selectedTeamForTemplates || undefined}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -28,6 +28,7 @@ interface LineupSelectionProps {
   teamId?: string
   gameId?: string
   onClose: () => void
+  onStartScoring?: (gameId: string) => void
 }
 
 interface GameInfo {
@@ -39,7 +40,7 @@ interface GameInfo {
   batting_first?: 'home' | 'opponent' | null
 }
 
-export default function LineupSelection({ teamId, gameId, onClose }: LineupSelectionProps) {
+export default function LineupSelection({ teamId, gameId, onClose, onStartScoring }: LineupSelectionProps) {
   const [teams, setTeams] = useState<Team[]>([])
   const [gameTeams, setGameTeams] = useState<{ ourTeam: Team | null, opponentTeam: Team | null }>({ ourTeam: null, opponentTeam: null })
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null)
@@ -90,6 +91,17 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       fetchSavedTemplates()
     }
   }, [selectedTeam, gameId])
+  
+  // Debug: Log when gameInfo changes
+  useEffect(() => {
+    if (gameInfo) {
+      console.log('🔄 gameInfo state changed:', {
+        lineup_template_id: gameInfo.lineup_template_id,
+        opponent_lineup_template_id: gameInfo.opponent_lineup_template_id,
+        batting_first: gameInfo.batting_first
+      })
+    }
+  }, [gameInfo])
 
   useEffect(() => {
     if (teamId && teams.length > 0) {
@@ -114,7 +126,7 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       
       const { data, error } = await supabase
         .from('games')
-        .select('id, opponent, team_id, lineup_template_id, opponent_lineup_template_id, batting_first')
+        .select('id, opponent, lineup_template_id, opponent_lineup_template_id, batting_first')
         .eq('id', gameId)
         .single()
       
@@ -134,10 +146,9 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
           return
         }
         
-        // Set basic data and add null for optional fields
+        // Set basic data and explicitly set optional fields to null
         gameData = {
           ...basicData,
-          team_id: null,
           lineup_template_id: null,
           opponent_lineup_template_id: null,
           batting_first: null
@@ -678,16 +689,63 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
         throw new Error('Failed to save lineup template players')
       }
 
-      // Link game to our team's lineup template (only if gameId is provided)
-      if (gameId) {
+      // Link game to team's lineup template (only if gameId is provided)
+      if (gameId && gameInfo) {
+        // Determine if this is our team or opponent team
+        const isOurTeam = selectedTeam === gameTeams.ourTeam?.id
+        const isOpponentTeam = selectedTeam === gameTeams.opponentTeam?.id
+        
+        console.log('🔍 Determining team type:', {
+          selectedTeam,
+          ourTeamId: gameTeams.ourTeam?.id,
+          opponentTeamId: gameTeams.opponentTeam?.id,
+          isOurTeam,
+          isOpponentTeam
+        })
+        
+        let updateData: any = {}
+        if (isOurTeam) {
+          updateData.lineup_template_id = templateId
+          console.log('📌 This is OUR team - will update lineup_template_id')
+        } else if (isOpponentTeam) {
+          updateData.opponent_lineup_template_id = templateId
+          console.log('📌 This is OPPONENT team - will update opponent_lineup_template_id')
+        } else {
+          // Default to our team if we can't determine
+          updateData.lineup_template_id = templateId
+          console.log('⚠️ Could not determine team type - defaulting to our team')
+        }
+        
+        console.log('💾 Updating game in database with:', updateData)
         const { error: gameError } = await supabase
           .from('games')
-          .update({ lineup_template_id: templateId })
+          .update(updateData)
           .eq('id', gameId)
 
         if (gameError) {
-          console.error('Error linking game to lineup template:', gameError)
+          console.error('❌ Error linking game to lineup template:', gameError)
+          alert(`Error al guardar: ${gameError.message}`)
           // Continue anyway - the template is saved
+        } else {
+          console.log('✅ Database update successful')
+          // Update local gameInfo state immediately for instant UI update
+          // This ensures the UI reflects the change before database refresh
+          if (gameInfo) {
+            const updatedGameInfo = { ...gameInfo }
+            if (isOurTeam) {
+              updatedGameInfo.lineup_template_id = templateId
+              console.log('✅ Setting lineup_template_id for our team:', templateId)
+            } else if (isOpponentTeam) {
+              updatedGameInfo.opponent_lineup_template_id = templateId
+              console.log('✅ Setting opponent_lineup_template_id for opponent team:', templateId)
+            }
+            console.log('📝 Updating gameInfo state from:', gameInfo)
+            console.log('📝 Updating gameInfo state to:', updatedGameInfo)
+            setGameInfo(updatedGameInfo)
+            console.log('✅ gameInfo state updated - component should re-render now')
+          } else {
+            console.warn('⚠️ gameInfo is null, cannot update state')
+          }
         }
       }
 
@@ -696,13 +754,15 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
       
       // If gameId is provided, refresh game info and return to team selection
       if (gameId) {
-        // Refresh game info to update lineup status
-        await fetchGameInfo()
-        
-        // Reset to team selection mode
+        // Reset to team selection mode (this will trigger re-render with updated gameInfo)
+        // The gameInfo state was already updated above, so the UI should reflect the change
         setSelectedTeam(null)
         setMode('select')
         setLineupEntries([])
+        
+        // Don't call fetchGameInfo() immediately - it would overwrite our state update
+        // The state is already updated correctly above, so the UI should show the correct status
+        // We can refresh from database later if needed, but not immediately
         
         alert('Alineación guardada exitosamente')
         // Don't close - stay in modal to select other team's lineup
@@ -758,86 +818,131 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
 
   return (
     <div className="space-y-6">
-      {/* Home/Away Selection - Show if gameId provided and batting_first not set */}
-      {gameId && gameInfo && !gameInfo.batting_first && (
+      {/* Home/Away Selection - Show if gameId provided */}
+      {gameId && gameInfo && gameTeams.ourTeam && gameTeams.opponentTeam && (
         <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-4">
-          <h4 className="text-md font-semibold text-gray-800 mb-3">Seleccionar Equipo Local y Visitante:</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {gameTeams.ourTeam && (
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-md font-semibold text-gray-800">Equipo Local y Visitante:</h4>
+            {/* Toggle Switch */}
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-medium ${gameInfo.batting_first === 'home' ? 'text-blue-600' : 'text-gray-600'}`}>
+                {gameTeams.ourTeam.name}
+              </span>
               <button
                 onClick={async () => {
-                  setHomeTeam('our')
+                  const newBattingFirst = gameInfo.batting_first === 'home' ? 'opponent' : 'home'
                   const { error } = await supabase
                     .from('games')
-                    .update({ batting_first: 'home' })
+                    .update({ batting_first: newBattingFirst })
                     .eq('id', gameId)
                   if (!error && gameInfo) {
-                    setGameInfo({ ...gameInfo, batting_first: 'home' })
+                    setGameInfo({ ...gameInfo, batting_first: newBattingFirst })
+                    setHomeTeam(newBattingFirst === 'home' ? 'our' : 'opponent')
                   }
                 }}
-                className={`p-4 border-2 rounded-lg text-left transition-colors ${
-                  homeTeam === 'our' 
-                    ? 'border-blue-500 bg-blue-100' 
-                    : 'border-gray-300 bg-white hover:border-blue-300'
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  gameInfo.batting_first === 'home' ? 'bg-blue-600' : 'bg-gray-300'
                 }`}
               >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    gameInfo.batting_first === 'home' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <span className={`text-sm font-medium ${gameInfo.batting_first === 'opponent' ? 'text-blue-600' : 'text-gray-600'}`}>
+                {gameTeams.opponentTeam.name}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {gameTeams.ourTeam && (
+              <div className={`p-4 border-2 rounded-lg ${
+                gameInfo.batting_first === 'home' 
+                  ? 'border-blue-500 bg-blue-100' 
+                  : 'border-gray-300 bg-white'
+              }`}>
                 <div className="flex items-center justify-between mb-2">
                   <h5 className="font-semibold text-gray-900">{gameTeams.ourTeam.name}</h5>
-                  {homeTeam === 'our' && (
+                  {gameInfo.batting_first === 'home' ? (
                     <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Local</span>
+                  ) : (
+                    <span className="text-xs bg-gray-500 text-white px-2 py-1 rounded">Visitante</span>
                   )}
                 </div>
                 <p className="text-sm text-gray-600">{gameTeams.ourTeam.city}</p>
                 <p className="text-xs text-gray-500 mt-1">
                   {gameTeams.ourTeam.players?.length || 0} jugadores
                 </p>
-                {gameInfo.lineup_template_id && (
+                {gameInfo.lineup_template_id && gameInfo.lineup_template_id !== null && gameInfo.lineup_template_id !== '' && gameInfo.lineup_template_id.length > 0 && (
                   <div className="mt-2 space-y-1">
                     <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                       ✓ Alineación elegida
                     </span>
                   </div>
                 )}
-              </button>
+              </div>
             )}
             {gameTeams.opponentTeam && (
-              <button
-                onClick={async () => {
-                  setHomeTeam('opponent')
-                  const { error } = await supabase
-                    .from('games')
-                    .update({ batting_first: 'opponent' })
-                    .eq('id', gameId)
-                  if (!error && gameInfo) {
-                    setGameInfo({ ...gameInfo, batting_first: 'opponent' })
-                  }
-                }}
-                className={`p-4 border-2 rounded-lg text-left transition-colors ${
-                  homeTeam === 'opponent' 
-                    ? 'border-blue-500 bg-blue-100' 
-                    : 'border-gray-300 bg-white hover:border-blue-300'
-                }`}
-              >
+              <div className={`p-4 border-2 rounded-lg ${
+                gameInfo.batting_first === 'opponent' 
+                  ? 'border-blue-500 bg-blue-100' 
+                  : 'border-gray-300 bg-white'
+              }`}>
                 <div className="flex items-center justify-between mb-2">
                   <h5 className="font-semibold text-gray-900">{gameTeams.opponentTeam.name}</h5>
-                  {homeTeam === 'opponent' && (
+                  {gameInfo.batting_first === 'opponent' ? (
                     <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Local</span>
+                  ) : (
+                    <span className="text-xs bg-gray-500 text-white px-2 py-1 rounded">Visitante</span>
                   )}
                 </div>
                 <p className="text-sm text-gray-600">{gameTeams.opponentTeam.city}</p>
                 <p className="text-xs text-gray-500 mt-1">
                   {gameTeams.opponentTeam.players?.length || 0} jugadores
                 </p>
-                {gameInfo.opponent_lineup_template_id && (
+                {gameInfo.opponent_lineup_template_id && gameInfo.opponent_lineup_template_id !== null && gameInfo.opponent_lineup_template_id !== '' && gameInfo.opponent_lineup_template_id.length > 0 && (
                   <div className="mt-2 space-y-1">
                     <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                       ✓ Alineación elegida
                     </span>
                   </div>
                 )}
-              </button>
+              </div>
             )}
           </div>
+          
+          {/* Start Scoring Button - Show when all conditions are met */}
+          {gameInfo.lineup_template_id && 
+           gameInfo.opponent_lineup_template_id && 
+           gameInfo.batting_first && (
+            <div className="mt-4 pt-4 border-t border-blue-300">
+              <button
+                onClick={async () => {
+                  if (!gameId || !onStartScoring) return
+                  
+                  // Update game status to in_progress
+                  const { error } = await supabase
+                    .from('games')
+                    .update({ game_status: 'in_progress' })
+                    .eq('id', gameId)
+                  
+                  if (error) {
+                    console.error('Error updating game status:', error)
+                    alert('Error al iniciar la anotación')
+                    return
+                  }
+                  
+                  // Call the callback to start scoring (this will open the scorebook)
+                  onStartScoring(gameId)
+                  onClose()
+                }}
+                className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold text-lg transition-colors shadow-md"
+              >
+                ✓ Iniciar Anotación
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -850,12 +955,32 @@ export default function LineupSelection({ teamId, gameId, onClose }: LineupSelec
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {teams.map((team) => {
               // Check if this team has lineup saved
-              const hasLineupSaved = gameId && gameInfo && (
-                (team.id === gameTeams.ourTeam?.id && gameInfo.lineup_template_id) ||
-                (team.id === gameTeams.opponentTeam?.id && gameInfo.opponent_lineup_template_id)
-              )
               const isOurTeam = team.id === gameTeams.ourTeam?.id
               const isOpponentTeam = team.id === gameTeams.opponentTeam?.id
+              
+              // Debug logging
+              if (gameId && gameInfo) {
+                console.log(`🔍 Checking lineup for team ${team.name}:`, {
+                  isOurTeam,
+                  isOpponentTeam,
+                  lineup_template_id: gameInfo.lineup_template_id,
+                  opponent_lineup_template_id: gameInfo.opponent_lineup_template_id,
+                  ourTeamId: gameTeams.ourTeam?.id,
+                  opponentTeamId: gameTeams.opponentTeam?.id
+                })
+              }
+              
+              // Helper function to check if a template ID is valid
+              const isValidTemplateId = (templateId: string | null | undefined): boolean => {
+                return !!templateId && templateId !== null && templateId !== '' && templateId.length > 0
+              }
+              
+              // Only show as saved if there's a valid (non-null, non-empty) template ID
+              const hasLineupSaved = gameId && gameInfo && (
+                (isOurTeam && isValidTemplateId(gameInfo.lineup_template_id)) ||
+                (isOpponentTeam && isValidTemplateId(gameInfo.opponent_lineup_template_id))
+              )
+              
               const isHomeTeam = gameInfo?.batting_first === 'home' && isOurTeam ||
                                 gameInfo?.batting_first === 'opponent' && isOpponentTeam
               

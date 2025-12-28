@@ -29,6 +29,7 @@ interface LineupTemplatePlayer {
 
 interface LineupTemplatesProps {
   onClose: () => void
+  teamId?: string
 }
 
 const POSITIONS = [
@@ -44,11 +45,12 @@ const POSITIONS = [
   { value: 'DH', label: 'Designated Hitter' }
 ]
 
-export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
+export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProps) {
   const [templates, setTemplates] = useState<LineupTemplate[]>([])
   const [players, setPlayers] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [templatePlayers, setTemplatePlayers] = useState<LineupTemplatePlayer[]>([])
   const [formData, setFormData] = useState({
@@ -68,12 +70,48 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
     }
   }, [selectedTemplate])
 
+  useEffect(() => {
+    if (editingTemplate) {
+      const template = templates.find(t => t.id === editingTemplate)
+      if (template) {
+        setFormData({
+          name: template.name,
+          description: template.description || ''
+        })
+        fetchTemplatePlayers(editingTemplate)
+      }
+    } else {
+      setFormData({ name: '', description: '' })
+      setLineup({})
+    }
+  }, [editingTemplate, templates])
+
+  useEffect(() => {
+    if (editingTemplate && templatePlayers.length > 0) {
+      // Populate lineup from template players
+      const lineupData: {[key: number]: {playerId: string, position: string}} = {}
+      templatePlayers.forEach(tp => {
+        lineupData[tp.batting_order] = {
+          playerId: tp.player_id,
+          position: tp.position
+        }
+      })
+      setLineup(lineupData)
+    }
+  }, [editingTemplate, templatePlayers])
+
   async function fetchTemplates() {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('lineup_templates')
         .select('*')
-        .order('created_at', { ascending: false })
+      
+      // Filter by team if teamId is provided
+      if (teamId) {
+        query = query.eq('team_id', teamId)
+      }
+      
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) {
         console.error('Error fetching templates:', error)
@@ -104,7 +142,7 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
     }
   }
 
-  async function fetchTemplatePlayers(templateId: string) {
+  async function fetchTemplatePlayers(templateId: string): Promise<void> {
     try {
       const { data, error } = await supabase
         .from('lineup_template_players')
@@ -122,11 +160,13 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
 
       if (error) {
         console.error('Error fetching template players:', error)
+        setTemplatePlayers([])
       } else {
         setTemplatePlayers(data || [])
       }
     } catch (err) {
       console.error('Failed to fetch template players:', err)
+      setTemplatePlayers([])
     }
   }
 
@@ -144,50 +184,128 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
     }
 
     try {
-      // Create the template
-      const { data: templateData, error: templateError } = await supabase
-        .from('lineup_templates')
-        .insert([{
+      if (editingTemplate) {
+        // Update existing template
+        const updateData: { name: string; description?: string; team_id?: string } = {
           name: formData.name,
           description: formData.description
-        }])
-        .select()
+        }
+        
+        // Only update team_id if it's not already set (to preserve existing team associations)
+        if (teamId) {
+          updateData.team_id = teamId
+        }
+        
+        const { error: templateError } = await supabase
+          .from('lineup_templates')
+          .update(updateData)
+          .eq('id', editingTemplate)
 
-      if (templateError) {
-        console.error('Error creating template:', templateError)
-        alert('Failed to create template')
-        return
+        if (templateError) {
+          console.error('Error updating template:', templateError)
+          alert('Failed to update template')
+          return
+        }
+
+        // Delete existing lineup template players
+        const { error: deleteError } = await supabase
+          .from('lineup_template_players')
+          .delete()
+          .eq('template_id', editingTemplate)
+
+        if (deleteError) {
+          console.error('Error deleting template players:', deleteError)
+          alert('Failed to update lineup positions')
+          return
+        }
+
+        // Create the lineup template players
+        const lineupPlayers = Object.entries(lineup).map(([order, data]) => ({
+          template_id: editingTemplate,
+          player_id: data.playerId,
+          batting_order: parseInt(order),
+          position: data.position
+        }))
+
+        const { error: playersError } = await supabase
+          .from('lineup_template_players')
+          .insert(lineupPlayers)
+
+        if (playersError) {
+          console.error('Error creating template players:', playersError)
+          alert('Failed to update lineup positions')
+          return
+        }
+
+        alert('Lineup template updated successfully!')
+        setEditingTemplate(null)
+      } else {
+        // Create new template
+        const insertData: { name: string; description?: string; team_id?: string } = {
+          name: formData.name,
+          description: formData.description
+        }
+        
+        // Associate template with team if teamId is provided
+        if (teamId) {
+          insertData.team_id = teamId
+        }
+        
+        const { data: templateData, error: templateError } = await supabase
+          .from('lineup_templates')
+          .insert([insertData])
+          .select()
+
+        if (templateError) {
+          console.error('Error creating template:', templateError)
+          alert('Failed to create template')
+          return
+        }
+
+        const templateId = templateData[0].id
+
+        // Create the lineup template players
+        const lineupPlayers = Object.entries(lineup).map(([order, data]) => ({
+          template_id: templateId,
+          player_id: data.playerId,
+          batting_order: parseInt(order),
+          position: data.position
+        }))
+
+        const { error: playersError } = await supabase
+          .from('lineup_template_players')
+          .insert(lineupPlayers)
+
+        if (playersError) {
+          console.error('Error creating template players:', playersError)
+          alert('Failed to create lineup positions')
+          return
+        }
+
+        alert('Lineup template created successfully!')
       }
 
-      const templateId = templateData[0].id
-
-      // Create the lineup template players
-      const lineupPlayers = Object.entries(lineup).map(([order, data]) => ({
-        template_id: templateId,
-        player_id: data.playerId,
-        batting_order: parseInt(order),
-        position: data.position
-      }))
-
-      const { error: playersError } = await supabase
-        .from('lineup_template_players')
-        .insert(lineupPlayers)
-
-      if (playersError) {
-        console.error('Error creating template players:', playersError)
-        alert('Failed to create lineup positions')
-        return
-      }
-
-      alert('Lineup template created successfully!')
       setFormData({ name: '', description: '' })
       setLineup({})
       setShowCreateForm(false)
       fetchTemplates()
     } catch (err) {
-      console.error('Failed to create template:', err)
-      alert('Failed to create template')
+      console.error('Failed to save template:', err)
+      alert('Failed to save template')
     }
+  }
+
+  function startEditTemplate(templateId: string) {
+    setEditingTemplate(templateId)
+    setShowCreateForm(true)
+    fetchTemplatePlayers(templateId)
+  }
+
+  function cancelEdit() {
+    setEditingTemplate(null)
+    setFormData({ name: '', description: '' })
+    setLineup({})
+    setShowCreateForm(false)
   }
 
   async function deleteTemplate(templateId: string) {
@@ -246,7 +364,13 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
         <h3 className="text-xl font-bold text-gray-800">Lineup Templates</h3>
         <div className="flex space-x-3">
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
+            onClick={() => {
+              if (showCreateForm) {
+                cancelEdit()
+              } else {
+                setShowCreateForm(true)
+              }
+            }}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             {showCreateForm ? 'Cancel' : 'New Template'}
@@ -260,10 +384,12 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
         </div>
       </div>
 
-      {/* Create Template Form */}
+      {/* Create/Edit Template Form */}
       {showCreateForm && (
         <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h4 className="text-lg font-semibold text-gray-800 mb-4">Create New Lineup Template</h4>
+          <h4 className="text-lg font-semibold text-gray-800 mb-4">
+            {editingTemplate ? 'Edit Lineup Template' : 'Create New Lineup Template'}
+          </h4>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
@@ -333,7 +459,7 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
               onClick={createTemplate}
               className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
             >
-              Create Template
+              {editingTemplate ? 'Update Template' : 'Create Template'}
             </button>
           </div>
         </div>
@@ -364,6 +490,12 @@ export default function LineupTemplates({ onClose }: LineupTemplatesProps) {
                     className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
                   >
                     View Lineup
+                  </button>
+                  <button
+                    onClick={() => startEditTemplate(template.id)}
+                    className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+                  >
+                    Edit
                   </button>
                   <button
                     onClick={() => deleteTemplate(template.id)}
