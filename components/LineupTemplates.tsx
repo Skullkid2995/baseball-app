@@ -314,6 +314,55 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
     }
 
     try {
+      // First, check if this template is being used in any games
+      const { data: gamesUsingTemplate, error: checkError } = await supabase
+        .from('games')
+        .select('id, opponent, game_date')
+        .or(`lineup_template_id.eq.${templateId},opponent_lineup_template_id.eq.${templateId}`)
+
+      if (checkError) {
+        console.error('Error checking template usage:', checkError)
+      }
+
+      // If template is being used in games, remove the references first
+      if (gamesUsingTemplate && gamesUsingTemplate.length > 0) {
+        const shouldContinue = confirm(
+          `This template is being used in ${gamesUsingTemplate.length} game(s). ` +
+          `The template references will be removed from those games. Continue?`
+        )
+        
+        if (!shouldContinue) {
+          return
+        }
+
+        // Remove template references from games
+        const { error: updateError } = await supabase
+          .from('games')
+          .update({
+            lineup_template_id: null,
+            opponent_lineup_template_id: null
+          })
+          .or(`lineup_template_id.eq.${templateId},opponent_lineup_template_id.eq.${templateId}`)
+
+        if (updateError) {
+          console.error('Error removing template references from games:', updateError)
+          alert(`Failed to remove template references from games: ${updateError.message || 'Unknown error'}`)
+          return
+        }
+      }
+
+      // Delete the template players first (cascade delete should handle this, but being explicit)
+      const { error: deletePlayersError } = await supabase
+        .from('lineup_template_players')
+        .delete()
+        .eq('template_id', templateId)
+
+      if (deletePlayersError) {
+        console.error('Error deleting template players:', deletePlayersError)
+        // Continue anyway, as cascade delete might handle it
+      }
+
+      // Now delete the template
       const { error } = await supabase
         .from('lineup_templates')
         .delete()
@@ -321,7 +370,8 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
 
       if (error) {
         console.error('Error deleting template:', error)
-        alert('Failed to delete template')
+        const errorMessage = error.message || JSON.stringify(error) || 'Unknown error'
+        alert(`Failed to delete template: ${errorMessage}`)
       } else {
         alert('Template deleted successfully!')
         fetchTemplates()
@@ -329,10 +379,17 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
           setSelectedTemplate(null)
           setTemplatePlayers([])
         }
+        if (editingTemplate === templateId) {
+          setEditingTemplate(null)
+          setFormData({ name: '', description: '' })
+          setLineup({})
+          setShowCreateForm(false)
+        }
       }
     } catch (err) {
       console.error('Failed to delete template:', err)
-      alert('Failed to delete template')
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      alert(`Failed to delete template: ${errorMessage}`)
     }
   }
 
