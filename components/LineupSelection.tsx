@@ -22,6 +22,7 @@ interface Player {
 interface LineupEntry {
   playerId: string
   position: string
+  battingFor?: string  // Player ID that the DH is batting for (only for 10th row)
 }
 
 interface LineupSelectionProps {
@@ -295,10 +296,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     }
   }
 
-  async function selectTeam(teamId: string) {
+  async function selectTeam(teamId: string, skipLoadingExisting: boolean = false) {
     const team = teams.find(t => t.id === teamId)
     if (team) {
       setSelectedTeam(teamId)
+      
+      // If skipLoadingExisting is true, don't load existing lineups (for new template creation)
+      if (skipLoadingExisting) {
+        return
+      }
       
       // If gameId is provided, check if this team has a saved lineup
       if (gameId && gameInfo) {
@@ -316,6 +322,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                 player_id,
                 position,
                 batting_order,
+                batting_for,
                 players (
                   id,
                   first_name,
@@ -329,15 +336,22 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
             if (!error && templatePlayers) {
               const loadedEntries: LineupEntry[] = templatePlayers.map((tp: any) => ({
                 playerId: tp.player_id,
-                position: getPositionFromDb(tp.position)
+                position: getPositionFromDb(tp.position),
+                battingFor: tp.batting_for || undefined
               }))
-              setLineupEntries(loadedEntries)
               
               // Check if DH is in the lineup
               const hasDHInLineup = loadedEntries.some(entry => 
                 entry.position === 'Bateador Designado (DH)'
               )
               setHasDH(hasDHInLineup)
+              
+              // If DH is in lineup, ensure we have 10 entries
+              if (hasDHInLineup && loadedEntries.length === 9) {
+                loadedEntries.push({ playerId: '', position: '', battingFor: '' })
+              }
+              
+              setLineupEntries(loadedEntries)
               
               // If mode is 'create', we're editing, so stay in create mode
               // Otherwise, switch to select mode to show templates
@@ -375,7 +389,11 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       const initialEntries: LineupEntry[] = []
       const maxEntries = hasDH ? 10 : 9
       for (let i = 0; i < maxEntries; i++) {
-        initialEntries.push({ playerId: '', position: '' })
+        initialEntries.push({ 
+          playerId: '', 
+          position: '',
+          battingFor: i === 9 ? '' : undefined  // Only 10th row has battingFor
+        })
       }
       setLineupEntries(initialEntries)
     }
@@ -390,17 +408,30 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
   function updatePositionInLineup(index: number, position: string) {
     const newEntries = [...lineupEntries]
     newEntries[index] = { ...newEntries[index], position }
-    setLineupEntries(newEntries)
     
     // Check if DH is selected to show/hide 10th row
     const hasDHSelected = position === 'Bateador Designado (DH)'
     setHasDH(hasDHSelected)
     
+    // If DH is selected, ensure 10th row exists
+    if (hasDHSelected && newEntries.length === 9) {
+      newEntries.push({ playerId: '', position: '', battingFor: '' })
+    }
+    
     // If DH is removed, hide 10th row
-    if (!hasDHSelected && lineupEntries.length === 10) {
+    if (!hasDHSelected && newEntries.length === 10) {
       const newEntriesWithoutDH = newEntries.slice(0, 9)
       setLineupEntries(newEntriesWithoutDH)
+      return
     }
+    
+    setLineupEntries(newEntries)
+  }
+
+  function updateBattingFor(index: number, playerId: string) {
+    const newEntries = [...lineupEntries]
+    newEntries[index] = { ...newEntries[index], battingFor: playerId }
+    setLineupEntries(newEntries)
   }
 
   function getAvailablePlayers() {
@@ -678,7 +709,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         template_id: templateId,
         player_id: entry.playerId,
         batting_order: index + 1,
-        position: positionMap[entry.position] || 'DH'
+        position: positionMap[entry.position] || 'DH',
+        batting_for: entry.battingFor || null  // Store which player the DH is batting for (only for 10th row)
       }))
 
       const { error: templatePlayersError } = await supabase
@@ -1078,7 +1110,20 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                 Ver Todas
               </button>
               <button
-                onClick={() => setMode('create')}
+                onClick={() => {
+                  // Clear lineup entries and reset DH when creating new template
+                  setHasDH(false)
+                  const blankEntries: LineupEntry[] = []
+                  for (let i = 0; i < 9; i++) {
+                    blankEntries.push({ 
+                      playerId: '', 
+                      position: '',
+                      battingFor: undefined
+                    })
+                  }
+                  setLineupEntries(blankEntries)
+                  setMode('create')
+                }}
                 className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
               >
                 Crear Nueva Plantilla
@@ -1144,7 +1189,20 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               })}
               <div className="flex justify-center">
                 <button
-                  onClick={() => setMode('create')}
+                  onClick={() => {
+                    // Clear lineup entries and reset DH when creating new template
+                    setHasDH(false)
+                    const blankEntries: LineupEntry[] = []
+                    for (let i = 0; i < 9; i++) {
+                      blankEntries.push({ 
+                        playerId: '', 
+                        position: '',
+                        battingFor: undefined
+                      })
+                    }
+                    setLineupEntries(blankEntries)
+                    setMode('create')
+                  }}
                   className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
                 >
                   Crear Nueva Plantilla
@@ -1164,7 +1222,20 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                   No se encontraron plantillas guardadas para este equipo.
                 </p>
                 <button
-                  onClick={() => setMode('create')}
+                  onClick={() => {
+                    // Clear lineup entries and reset DH when creating new template
+                    setHasDH(false)
+                    const blankEntries: LineupEntry[] = []
+                    for (let i = 0; i < 9; i++) {
+                      blankEntries.push({ 
+                        playerId: '', 
+                        position: '',
+                        battingFor: undefined
+                      })
+                    }
+                    setLineupEntries(blankEntries)
+                    setMode('create')
+                  }}
                   className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium"
                 >
                   Crear Primera Plantilla
@@ -1213,6 +1284,11 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                   <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
                     Posición
                   </th>
+                  {hasDH && (
+                    <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
+                      Bateando por
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1264,6 +1340,34 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                         )}
                       </select>
                     </td>
+                    
+                    {/* Batting For (only for 10th row when DH is selected) */}
+                    {hasDH && index === 9 && (
+                      <td className="border border-gray-300 px-3 py-2">
+                        <select
+                          value={lineupEntries[index]?.battingFor || ''}
+                          onChange={(e) => updateBattingFor(index, e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Seleccionar jugador...</option>
+                          {selectedTeam && teams.find(t => t.id === selectedTeam)?.players?.map((player) => (
+                            <option key={player.id} value={player.id}>
+                              {player.first_name} {player.last_name} #{player.jersey_number}
+                            </option>
+                          ))}
+                          {lineupEntries[index]?.battingFor && (
+                            <option value={lineupEntries[index].battingFor}>
+                              {getPlayerName(lineupEntries[index].battingFor)}
+                            </option>
+                          )}
+                        </select>
+                      </td>
+                    )}
+                    {hasDH && index < 9 && (
+                      <td className="border border-gray-300 px-3 py-2">
+                        {/* Empty cell for non-DH rows */}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1273,8 +1377,11 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
           {/* DH Info */}
           {hasDH && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800">
+              <p className="text-sm text-blue-800 mb-2">
                 <strong>Bateador Designado (DH)</strong> seleccionado. Se habilitó la fila 10.
+              </p>
+              <p className="text-xs text-blue-700">
+                En la fila 10, selecciona el jugador por el cual el DH está bateando (típicamente el lanzador).
               </p>
             </div>
           )}
