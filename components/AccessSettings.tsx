@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { KeyRound, Lock, Pencil, Trash2, UserPlus, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -60,6 +60,12 @@ const TEXT = {
     permissions: 'Permisos por rol',
     permissionsHint:
       'Qué puede ver y editar cada rol. Todo lo nuevo empieza apagado para todos hasta que lo enciendas aquí. Los super admin siempre ven y editan todo.',
+    chooseRole: 'Elige un rol y decide sección por sección',
+    canSee: 'visibles',
+    canEdit: 'editables',
+    allView: 'Ver todo',
+    none: 'Apagar todo',
+    superAdminNote: 'Los super admin siempre ven y editan todo; no se configuran aquí.',
     feature: 'Sección',
     view: 'Ver',
     edit: 'Editar',
@@ -92,6 +98,12 @@ const TEXT = {
     permissions: 'Role permissions',
     permissionsHint:
       'What each role can view and edit. Anything new starts off for everyone until you turn it on here. Super admins always view and edit everything.',
+    chooseRole: 'Pick a role, then decide section by section',
+    canSee: 'visible',
+    canEdit: 'editable',
+    allView: 'View all',
+    none: 'Turn all off',
+    superAdminNote: 'Super admins always view and edit everything; they are not configured here.',
     feature: 'Section',
     view: 'View',
     edit: 'Edit',
@@ -345,6 +357,7 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
 function PermissionsCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
   const { perms: loaded, refresh } = usePermissions()
   const [perms, setPerms] = useState<PermissionMap>(loaded)
+  const [role, setRole] = useState<ConfigurableRole>('coach')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
 
@@ -352,18 +365,19 @@ function PermissionsCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
     setPerms(loaded)
   }, [loaded])
 
-  const get = (role: ConfigurableRole, feature: string) => perms[role]?.[feature] ?? { view: false, edit: false }
+  const get = (r: ConfigurableRole, feature: string) => perms[r]?.[feature] ?? { view: false, edit: false }
 
-  const toggle = async (role: ConfigurableRole, feature: string, action: 'view' | 'edit', checked: boolean) => {
-    const cur = get(role, feature)
-    // edit implies view; removing view removes edit
-    const next = action === 'view' ? { view: checked, edit: checked ? cur.edit : false } : { view: checked ? true : cur.view, edit: checked }
-    setPerms((p) => ({ ...p, [role]: { ...(p[role] ?? {}), [feature]: next } }))
+  const write = async (rows: { role: ConfigurableRole; feature: string; view: boolean; edit: boolean }[]) => {
+    setPerms((p) => {
+      const next: PermissionMap = { ...p }
+      for (const r of rows) next[r.role] = { ...(next[r.role] ?? {}), [r.feature]: { view: r.view, edit: r.edit } }
+      return next
+    })
     setStatus('saving')
     setError(null)
     const { error: err } = await supabase
       .from('role_permissions')
-      .upsert([{ role, feature, can_view: next.view, can_edit: next.edit }], { onConflict: 'role,feature' })
+      .upsert(rows.map((r) => ({ role: r.role, feature: r.feature, can_view: r.view, can_edit: r.edit })), { onConflict: 'role,feature' })
     if (err) {
       setStatus('error')
       setError(err.message)
@@ -373,7 +387,24 @@ function PermissionsCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
     refresh()
   }
 
+  const toggle = (feature: string, action: 'view' | 'edit') => {
+    const cur = get(role, feature)
+    // edit implies view; removing view removes edit
+    const next =
+      action === 'view'
+        ? { view: !cur.view, edit: cur.view ? false : cur.edit }
+        : { view: cur.edit ? cur.view : true, edit: !cur.edit }
+    write([{ role, feature, ...next }])
+  }
+
+  const setAll = (view: boolean) => write(FEATURES.map((f) => ({ role, feature: f.key, view, edit: view ? get(role, f.key).edit : false })))
+
   const groups: Array<keyof Text['group']> = ['main', 'analysis', 'system', 'actions']
+  const counts = (r: ConfigurableRole) => ({
+    view: FEATURES.filter((f) => get(r, f.key).view).length,
+    edit: FEATURES.filter((f) => get(r, f.key).edit).length,
+  })
+  const c = counts(role)
 
   return (
     <Card>
@@ -387,111 +418,104 @@ function PermissionsCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
         </div>
         <span className="text-xs text-muted-foreground">{status === 'saving' ? L.saving : status === 'saved' ? L.saved : ''}</span>
       </CardHeader>
-      <CardContent className="pt-2">
-        {error && (
-          <Alert variant="error" className="mb-3">
-            {error}
-          </Alert>
-        )}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-3 text-left font-semibold">{L.feature}</th>
-                {CONFIGURABLE_ROLES.map((r) => (
-                  <th key={r} colSpan={2} className="px-2 py-2 text-center font-semibold">
-                    {ROLE_LABELS[r][lang]}
-                  </th>
-                ))}
-                <th className="px-2 py-2 text-center font-semibold">{ROLE_LABELS.super_admin[lang]}</th>
-              </tr>
-              <tr className="border-b border-border text-[11px] text-muted-foreground">
-                <th />
-                {CONFIGURABLE_ROLES.map((r) => (
-                  <Fragment key={r}>
-                    <th className="px-1 py-1 text-center font-medium">
-                      {L.view}
-                    </th>
-                    <th className="px-1 py-1 text-center font-medium">
-                      {L.edit}
-                    </th>
-                  </Fragment>
-                ))}
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g) => {
-                const items = FEATURES.filter((f) => f.group === g)
-                if (items.length === 0) return null
-                return (
-                  <FeatureGroupRows key={g} title={L.group[g]} items={items} lang={lang} get={get} toggle={toggle} always={L.always} />
-                )
-              })}
-            </tbody>
-          </table>
+      <CardContent className="space-y-4 pt-2">
+        {error && <Alert variant="error">{error}</Alert>}
+
+        {/* Role picker */}
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.chooseRole}</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {CONFIGURABLE_ROLES.map((r) => {
+              const k = counts(r)
+              const active = r === role
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  aria-pressed={active}
+                  className={
+                    'rounded-xl border px-3 py-2.5 text-left transition-colors ' +
+                    (active ? 'border-primary bg-accent text-accent-foreground shadow-sm' : 'border-border bg-card hover:bg-slate-50')
+                  }
+                >
+                  <div className="text-sm font-semibold">{ROLE_LABELS[r][lang]}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {k.view} {L.canSee} · {k.edit} {L.canEdit}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">{L.superAdminNote}</p>
+        </div>
+
+        {/* Checklist for the chosen role */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">
+            {ROLE_LABELS[role][lang]}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {c.view}/{FEATURES.length} {L.canSee}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            <Button size="xs" variant="outline" onClick={() => setAll(true)}>
+              {L.allView}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => setAll(false)}>
+              {L.none}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {groups.map((g) => {
+            const items = FEATURES.filter((f) => f.group === g)
+            if (items.length === 0) return null
+            return (
+              <div key={g}>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{L.group[g]}</p>
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+                  {items.map((f) => {
+                    const p = get(role, f.key)
+                    return (
+                      <li key={f.key} className={'flex items-center gap-3 px-3 py-2.5 ' + (p.view ? 'bg-card' : 'bg-slate-50/60')}>
+                        <div className="min-w-0 flex-1">
+                          <div className={'text-sm font-medium ' + (p.view ? '' : 'text-slate-500')}>{f.label[lang]}</div>
+                          <div className="text-xs text-muted-foreground">{f.hint[lang]}</div>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggle(f.key, 'view')}
+                            aria-pressed={p.view}
+                            className={
+                              'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ' +
+                              (p.view ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-slate-600 hover:bg-slate-100')
+                            }
+                          >
+                            {L.view}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggle(f.key, 'edit')}
+                            aria-pressed={p.edit}
+                            className={
+                              'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ' +
+                              (p.edit ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-border bg-card text-slate-600 hover:bg-slate-100')
+                            }
+                          >
+                            {L.edit}
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function FeatureGroupRows({
-  title,
-  items,
-  lang,
-  get,
-  toggle,
-  always,
-}: {
-  title: string
-  items: typeof FEATURES
-  lang: 'es' | 'en'
-  get: (role: ConfigurableRole, feature: string) => { view: boolean; edit: boolean }
-  toggle: (role: ConfigurableRole, feature: string, action: 'view' | 'edit', checked: boolean) => void
-  always: string
-}) {
-  return (
-    <>
-      <tr>
-        <td colSpan={2 + CONFIGURABLE_ROLES.length * 2} className="pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {title}
-        </td>
-      </tr>
-      {items.map((f) => (
-        <tr key={f.key} className="border-b border-border/60 last:border-0">
-          <td className="py-2 pr-3">
-            <div className="font-medium">{f.label[lang]}</div>
-            <div className="text-xs text-muted-foreground">{f.hint[lang]}</div>
-          </td>
-          {CONFIGURABLE_ROLES.map((r) => {
-            const p = get(r, f.key)
-            return (
-              <Fragment key={r}>
-                <td className="px-1 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
-                    checked={p.view}
-                    onChange={(e) => toggle(r, f.key, 'view', e.target.checked)}
-                    aria-label={`${ROLE_LABELS[r][lang]} view ${f.label[lang]}`}
-                  />
-                </td>
-                <td className="px-1 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
-                    checked={p.edit}
-                    onChange={(e) => toggle(r, f.key, 'edit', e.target.checked)}
-                    aria-label={`${ROLE_LABELS[r][lang]} edit ${f.label[lang]}`}
-                  />
-                </td>
-              </Fragment>
-            )
-          })}
-          <td className="px-2 py-2 text-center text-xs text-muted-foreground">{always}</td>
-        </tr>
-      ))}
-    </>
   )
 }
