@@ -5,3 +5,4 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, 
 export { Modal } from './modal'
 export { Input, Textarea, Select, Label, FormField, Checkbox, CheckChip } from './field'
 export { Spinner, LoadingState, Alert, EmptyState, PageHeader, Avatar } from './feedback'
+export { InkPad } from './ink-pad'

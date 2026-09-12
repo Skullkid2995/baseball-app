@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  PenTool,
   Settings,
   UserRound,
   Users,
@@ -47,7 +48,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     labelKey: 'navSystem',
-    items: [{ href: '/settings', labelKey: 'settings', Icon: Settings }],
+    items: [
+      { href: '/handwriting', labelKey: 'handwritingLab', Icon: PenTool },
+      { href: '/settings', labelKey: 'settings', Icon: Settings },
+    ],
   },
 ]
 

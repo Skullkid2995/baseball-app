@@ -189,6 +189,7 @@ export interface Translations {
   soon: string
   comingSoon: string
   comingSoonDescription: string
+  handwritingLab: string
 }
 
 const translations: Record<Language, Translations> = {
@@ -381,6 +382,7 @@ const translations: Record<Language, Translations> = {
     soon: 'Soon',
     comingSoon: 'Coming soon',
     comingSoonDescription: 'This section is on the roadmap and will be built in an upcoming iteration.',
+    handwritingLab: 'Handwriting lab',
   },
   es: {
     // Header
@@ -571,6 +573,7 @@ const translations: Record<Language, Translations> = {
     soon: 'Pronto',
     comingSoon: 'Próximamente',
     comingSoonDescription: 'Esta sección está en el plan y se construirá en una próxima iteración.',
+    handwritingLab: 'Laboratorio de escritura',
   },
 }
 
