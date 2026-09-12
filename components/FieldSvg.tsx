@@ -18,6 +18,8 @@ interface FieldSvgProps {
   selectedBase?: BaseName | null
   /** Bases where a runner was put out */
   runnerOuts?: Partial<BaseFlags>
+  /** Bases held by other runners (from other batters' boxes) */
+  occupied?: Partial<BaseFlags>
   /** Run scored: the diamond fills Dodgers blue */
   runScored?: boolean
   /** Where the batted ball landed, in box units */
@@ -47,6 +49,7 @@ export default function FieldSvg({
   runners,
   selectedBase = null,
   runnerOuts,
+  occupied,
   runScored = false,
   landing = null,
   onBaseClick,
@@ -118,6 +121,9 @@ export default function FieldSvg({
                 <rect x={at[0] - 2.2} y={at[1] - 2.2} width="4.4" height="4.4" fill={fill} stroke={stroke} strokeWidth={isSelected ? 0.9 : 0.6} transform={`rotate(45 ${at[0]} ${at[1]})`} />
               )}
               {isSelected && <circle cx={at[0]} cy={at[1]} r="4.2" fill="none" stroke="#1e3a8a" strokeWidth="0.6" strokeDasharray="1.2 1" />}
+              {occupied?.[name] && name !== 'home' && !isOut && (
+                <circle cx={at[0]} cy={at[1]} r="1.7" fill="#1e3a8a" stroke="#ffffff" strokeWidth="0.5" />
+              )}
               {isOut && (
                 <g stroke="#b91c1c" strokeWidth="0.9" strokeLinecap="round">
                   <line x1={at[0] - 1.8} y1={at[1] - 1.8} x2={at[0] + 1.8} y2={at[1] + 1.8} />

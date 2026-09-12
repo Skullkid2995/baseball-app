@@ -5,8 +5,105 @@ import ClassicAtBatPad from './ClassicAtBatPad'
 import FieldSvg, { type BaseName } from './FieldSvg'
 import { fieldAreaAt } from '@/lib/scorecard/geometry'
 
+type BaseFlags = { first: boolean, second: boolean, third: boolean, home: boolean }
+type RunnerBase = 'first' | 'second' | 'third'
+
+/** A runner from another batter's box who is on base when this at-bat starts. */
+export interface ActiveRunner {
+  atBatId: string
+  playerName: string
+  base: RunnerBase
+}
+export type RunnerMove = 'stay' | 'second' | 'third' | 'home' | 'out'
+/** What to write into that runner's own box after this play. */
+export interface RunnerUpdate {
+  atBatId: string
+  playerName: string
+  move: RunnerMove
+  base_runners: BaseFlags
+  base_runner_outs: BaseFlags
+  out_type: string
+  runs_scored: number
+}
+
+const NO_BASES: BaseFlags = { first: false, second: false, third: false, home: false }
+const BASE_ORDER: ('first' | 'second' | 'third' | 'home')[] = ['first', 'second', 'third', 'home']
+const BASE_SHORT: Record<string, string> = { first: '1B', second: '2B', third: '3B', home: 'Home' }
+const RESULT_LABEL: Record<string, string> = {
+  H1: 'Single', H2: 'Double', H3: 'Triple', HR: 'Home run', BB: 'Walk', HBP: 'Hit by pitch', E: 'Error', FC: "Fielder's choice",
+  BUNT: 'Bunt', SAC: 'Sacrifice bunt', SF: 'Sacrifice fly', GO: 'Ground out', FO: 'Fly out', LO: 'Line out', PO: 'Pop out',
+  BUNT_OUT: 'Bunt out', K: 'Strikeout',
+}
+
+function advance(base: RunnerBase, n: number): RunnerMove {
+  if (n <= 0) return 'stay'
+  return BASE_ORDER[Math.min(BASE_ORDER.indexOf(base) + n, 3)] as RunnerMove
+}
+
+/** What usually happens to each runner on this result. The scorer can change every one. */
+export function defaultRunnerMoves(result: string, runners: ActiveRunner[]): Record<string, RunnerMove> {
+  const on = {
+    first: runners.some((r) => r.base === 'first'),
+    second: runners.some((r) => r.base === 'second'),
+  }
+  const moves: Record<string, RunnerMove> = {}
+  for (const r of runners) {
+    let m: RunnerMove = 'stay'
+    switch (result) {
+      case 'HR':
+      case 'H3':
+        m = 'home'
+        break
+      case 'H2':
+        m = r.base === 'first' ? 'third' : 'home'
+        break
+      case 'H1':
+      case 'E':
+      case 'BUNT':
+      case 'FC':
+      case 'SAC':
+        m = advance(r.base, 1)
+        break
+      case 'BB':
+      case 'HBP':
+        // Only forced runners move
+        if (r.base === 'first') m = 'second'
+        else if (r.base === 'second') m = on.first ? 'third' : 'stay'
+        else m = on.first && on.second ? 'home' : 'stay'
+        break
+      case 'SF':
+        m = r.base === 'third' ? 'home' : 'stay'
+        break
+      default:
+        m = 'stay'
+    }
+    moves[r.atBatId] = m
+  }
+  return moves
+}
+
+export function runnerUpdateFor(r: ActiveRunner, move: RunnerMove, result: string): RunnerUpdate {
+  const base_runners: BaseFlags = { ...NO_BASES }
+  const base_runner_outs: BaseFlags = { ...NO_BASES }
+  let out_type = ''
+  let runs_scored = 0
+  if (move === 'stay') base_runners[r.base] = true
+  else if (move === 'out') {
+    base_runner_outs[r.base] = true
+    out_type = ['FC', 'GO', 'BUNT_OUT', 'SAC', 'H1', 'E', 'BUNT'].includes(result) ? 'FORCE_OUT' : 'TAGGED_OUT'
+  } else if (move === 'home') {
+    base_runners.home = true
+    runs_scored = 1
+  } else base_runners[move] = true
+  return { atBatId: r.atBatId, playerName: r.playerName, move, base_runners, base_runner_outs, out_type, runs_scored }
+}
+
+const countScored = (moves: Record<string, RunnerMove>) => Object.values(moves).filter((m) => m === 'home').length
+
 interface DiamondCanvasProps {
-  onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) => void
+  onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) => void
+  /** Runners on base from other boxes of this inning, so the play can move them too */
+  activeRunners?: ActiveRunner[]
   onClose: () => void
   playerName: string
   inning: number
@@ -14,7 +111,7 @@ interface DiamondCanvasProps {
   isLocked?: boolean // Game is locked and view-only
 }
 
-export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false }: DiamondCanvasProps) {
+export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [] }: DiamondCanvasProps) {
   // Classic (paper box, stylus/finger) or Digital (buttons). Remembered per browser.
   const [scoringMode, setScoringMode] = useState<'classic' | 'digital'>(() => {
     try { return localStorage.getItem('scoringMode') === 'digital' ? 'digital' : 'classic' } catch { return 'classic' }
@@ -70,6 +167,11 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   const [selectedRBI, setSelectedRBI] = useState<number>(0)
   const [preHitRunnersCount, setPreHitRunnersCount] = useState<number>(0)
   const [rbiEligibleCount, setRbiEligibleCount] = useState<number>(0)
+  // Other runners on this play: the step after the result, and what gets written to their boxes on save
+  const [showRunnerStep, setShowRunnerStep] = useState(false)
+  const [runnerResult, setRunnerResult] = useState('')
+  const [runnerMoves, setRunnerMoves] = useState<Record<string, RunnerMove>>({})
+  const [pendingRunnerUpdates, setPendingRunnerUpdates] = useState<RunnerUpdate[]>([])
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -253,6 +355,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setBaseRunners(prev => ({ ...prev, first: true }))
     setHandwritingInput('BB')
     setAtBatLocked(true)
+    // Forced runners move on a walk
+    openRunnerStep('BB', false)
   }
 
   const cancelWalk = () => {
@@ -273,6 +377,58 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setShowOutcomeSelection(false)
     setSelectedRBI(0)
   }
+
+  /**
+   * After the batter's result: if other runners are on base, ask what happened to
+   * them (pre-filled with the usual outcome). Otherwise fall back to the RBI question
+   * for hits, or nothing for outs.
+   */
+  const openRunnerStep = (result: string, askRbiWithoutRunners: boolean) => {
+    if (activeRunners.length > 0) {
+      const moves = defaultRunnerMoves(result, activeRunners)
+      setRunnerResult(result)
+      setRunnerMoves(moves)
+      setSelectedRBI(countScored(moves) + (result === 'HR' ? 1 : 0))
+      setShowRunnerStep(true)
+    } else if (askRbiWithoutRunners) {
+      setSelectedRBI(result === 'HR' ? 1 : 0)
+      setRbiEligibleCount(4)
+      setShowRBISelection(true)
+    }
+  }
+
+  const setRunnerMove = (atBatId: string, move: RunnerMove) => {
+    const next = { ...runnerMoves, [atBatId]: move }
+    setRunnerMoves(next)
+    setSelectedRBI(countScored(next) + (runnerResult === 'HR' ? 1 : 0))
+  }
+
+  const confirmRunnerStep = () => {
+    setPendingRunnerUpdates(activeRunners.map((r) => runnerUpdateFor(r, runnerMoves[r.atBatId] ?? 'stay', runnerResult)))
+    setShowRunnerStep(false)
+    setShowOutcomeSelection(false)
+  }
+
+  const cancelRunnerStep = () => {
+    setShowRunnerStep(false)
+    setShowOutcomeSelection(false)
+    setPendingRunnerUpdates([])
+  }
+
+  // Bases occupied by the other runners (after the play once it is decided, before it otherwise)
+  const occupiedBases = (() => {
+    const o = { first: false, second: false, third: false, home: false }
+    if (pendingRunnerUpdates.length > 0) {
+      for (const u of pendingRunnerUpdates) {
+        if (u.move === 'home' || u.move === 'out') continue
+        const b = u.move === 'stay' ? activeRunners.find((r) => r.atBatId === u.atBatId)?.base : u.move
+        if (b) o[b] = true
+      }
+    } else {
+      for (const r of activeRunners) o[r.base] = true
+    }
+    return o
+  })()
 
   const addFoul = () => {
     setCount(prev => {
@@ -356,10 +512,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     // Set base runners - batter reaches first base for hit-like outcomes
     setBaseRunners({ first: true, second: false, third: false, home: false })
     
-    // Always show RBI selection for statistics tracking (0-4 options)
-    console.log('Always showing RBI selection for hit-like outcome:', notation)
-    setRbiEligibleCount(4) // Always show 0-4 RBI options
-    setShowRBISelection(true)
+    // Other runners first (if any), then RBIs
+    openRunnerStep(notation, true)
   }
 
   const handleHitTypeSelection = (hitType: string) => {
@@ -401,10 +555,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     // Update base runners
     setBaseRunners(newBaseRunners)
     
-    // Always show RBI selection for statistics tracking (0-4 options)
-    console.log('Always showing RBI selection for statistics')
-    setRbiEligibleCount(4) // Always show 0-4 RBI options
-    setShowRBISelection(true)
+    // Other runners first (if any), then RBIs
+    openRunnerStep(hitType, true)
   }
 
   const saveDrawing = () => {
@@ -418,7 +570,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     console.log('fieldLocationData:', fieldLocationData)
     console.log('===================')
     
-    onSave(handwritingInput || 'DRAWING_SAVED', finalBaseRunners, fieldLocationData || undefined, baseRunnerOuts, baseRunnerOutTypes, selectedRBI)
+    onSave(handwritingInput || 'DRAWING_SAVED', finalBaseRunners, fieldLocationData || undefined, baseRunnerOuts, baseRunnerOutTypes, selectedRBI, pendingRunnerUpdates)
     
     // Mark out as saved so button can't be clicked again
     if (isOut) {
@@ -472,6 +624,22 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           </p>
         </div>
 
+        {/* Other runners on this play (decided in the step after the result) */}
+        {pendingRunnerUpdates.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
+            <span className="min-w-0 flex-1 truncate">
+              {pendingRunnerUpdates.map((u) => {
+                const from = activeRunners.find((r) => r.atBatId === u.atBatId)?.base
+                const what = u.move === 'stay' ? 'stays ' + (from ? BASE_SHORT[from] : '') : u.move === 'home' ? 'scores' : u.move === 'out' ? 'out' : 'to ' + BASE_SHORT[u.move]
+                return u.playerName.split(' ')[0] + ' ' + what
+              }).join(' · ')}
+            </span>
+            {!isLocked && (
+              <button type="button" onClick={() => setShowRunnerStep(true)} className="shrink-0 font-semibold underline">Edit</button>
+            )}
+          </div>
+        )}
+
         {/* Canvas Area */}
         <div className="flex-1 p-2 sm:p-6 flex items-center justify-center bg-gray-50 overflow-auto">
           <div className="relative">
@@ -494,6 +662,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 runners={baseRunners}
                 selectedBase={selectedBase}
                 runnerOuts={baseRunnerOuts}
+                occupied={occupiedBases}
                 runScored={runScored}
                 landing={ballLandingPosition ? [ballLandingPosition.x, ballLandingPosition.y] : null}
                 onBaseClick={showFieldSelection ? undefined : handleBaseClick}
@@ -947,6 +1116,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('BUNT_OUT')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('BUNT_OUT', false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                       >
@@ -957,6 +1127,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('SAC')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('SAC', false)
                         }}
                         className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
                       >
@@ -967,6 +1138,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('GO')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('GO', false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                       >
@@ -989,6 +1161,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('FO')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('FO', false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                       >
@@ -999,6 +1172,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('SF')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('SF', false)
                         }}
                         className="w-full p-3 bg-orange-100 border-2 border-orange-600 rounded-lg hover:bg-orange-200 font-semibold"
                       >
@@ -1009,6 +1183,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                           setHandwritingInput('LO')
                           setIsOut(true)
                           setShowOutcomeSelection(false)
+                          openRunnerStep('LO', false)
                         }}
                         className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                       >
@@ -1035,6 +1210,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       setHandwritingInput('K')
                       setIsOut(true)
                       setShowOutcomeSelection(false)
+                      openRunnerStep('K', false)
                     }}
                     className="w-full p-3 bg-red-100 border-2 border-red-600 rounded-lg hover:bg-red-200 font-semibold"
                   >
@@ -1134,6 +1310,75 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       )}
 
       {/* RBI Selection Modal */}
+      {/* Runners step: what happened to the other runners on this play */}
+      {showRunnerStep && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-3">
+          <div className="bg-white p-5 rounded-lg shadow-xl max-w-md w-full max-h-[92vh] overflow-auto">
+            <h3 className="text-xl font-bold mb-1 text-center">Runners on base</h3>
+            <p className="text-center text-sm text-gray-600 mb-4">
+              {RESULT_LABEL[runnerResult] ?? runnerResult}: the usual moves are pre-selected. Fix any that went differently.
+            </p>
+            <div className="space-y-3">
+              {activeRunners.map((r) => {
+                const move = runnerMoves[r.atBatId] ?? 'stay'
+                const options: { value: RunnerMove; label: string }[] = [{ value: 'stay', label: 'Stays ' + BASE_SHORT[r.base] }]
+                if (r.base === 'first') options.push({ value: 'second', label: 'To 2B' })
+                if (r.base !== 'third') options.push({ value: 'third', label: 'To 3B' })
+                options.push({ value: 'home', label: 'Scores' }, { value: 'out', label: 'Out' })
+                return (
+                  <div key={r.atBatId} className="rounded-lg border border-gray-200 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="truncate font-semibold">{r.playerName}</span>
+                      <span className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">{BASE_SHORT[r.base]}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {options.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          onClick={() => setRunnerMove(r.atBatId, o.value)}
+                          className={
+                            'rounded-lg px-3 py-2 text-sm font-bold ' +
+                            (move === o.value
+                              ? o.value === 'out' ? 'bg-red-600 text-white' : o.value === 'home' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200')
+                          }
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-4 border-t border-gray-200 pt-3">
+              <div className="mb-2 text-center text-sm font-semibold">RBIs for {playerName}</div>
+              <div className="flex gap-2 justify-center">
+                {[0, 1, 2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setSelectedRBI(n)}
+                    className={'px-4 py-2 rounded-lg font-bold ' + (selectedRBI === n ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-center mt-5">
+              <button type="button" onClick={confirmRunnerStep} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold">
+                Confirm
+              </button>
+              <button type="button" onClick={cancelRunnerStep} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-bold">
+                Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRBISelection && (() => {
         console.log('RBI Modal rendering - showRBISelection:', showRBISelection)
         console.log('RBI Modal rendering - eligibleCount:', rbiEligibleCount)

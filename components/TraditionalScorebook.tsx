@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import DiamondCanvas from './DiamondCanvas'
+import DiamondCanvas, { type ActiveRunner, type RunnerUpdate } from './DiamondCanvas'
 import OpponentLineupEntry from './OpponentLineupEntry'
 import { ArrowLeftRight, Lock, Plus, Save } from 'lucide-react'
 import { Button, FormField, Input, LoadingState } from '@/components/ui'
@@ -521,6 +521,24 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     )
   }
 
+  /** Runners on base in this inning for this side, from other batters' boxes (not out, not scored). */
+  function getActiveRunners(playerId: string, inning: number, teamSide: 'home' | 'opponent'): ActiveRunner[] {
+    const list: ActiveRunner[] = []
+    for (const ab of atBats) {
+      if (ab.inning !== inning || ab.player_id === playerId) continue
+      if (!(ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))) continue
+      const b = ab.base_runners
+      if (!b || b.home) continue
+      const base: 'first' | 'second' | 'third' | null = b.third ? 'third' : b.second ? 'second' : b.first ? 'first' : null
+      if (!base || ab.base_runner_outs?.[base]) continue
+      const p = ab.players
+      list.push({ atBatId: ab.id, playerName: p ? `${p.first_name} ${p.last_name}` : 'Runner', base })
+    }
+    // third base first, so the list reads like the field
+    const order = { third: 0, second: 1, first: 2 }
+    return list.sort((a, b) => order[a.base] - order[b.base])
+  }
+
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
     // Allow viewing (but not editing) when locked
     setSelectedCell({ playerId, inning, playerName })
@@ -735,8 +753,22 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
-  async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) {
+  async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) {
     if (!selectedCell) return
+
+    // Other runners on this play: write the result into their own boxes (score is recalculated below)
+    if (runnerUpdates && runnerUpdates.length > 0) {
+      for (const u of runnerUpdates) {
+        if (u.move === 'stay') continue
+        const patch = { base_runners: u.base_runners, base_runner_outs: u.base_runner_outs, out_type: u.out_type, runs_scored: u.runs_scored }
+        const { error } = await supabase.from('at_bats').update(patch).eq('id', u.atBatId)
+        if (error) {
+          console.error('Error updating runner', u.playerName, error)
+          continue
+        }
+        setAtBats(prev => prev.map(ab => (ab.id === u.atBatId ? { ...ab, ...patch } : ab)))
+      }
+    }
 
     const result = interpretHandwriting(notation)
     const runsScored = baseRunners?.home ? 1 : 0
@@ -1286,9 +1318,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       {/* Canvas Drawing Modal */}
       {showCanvasModal && selectedCell && (
         <DiamondCanvas
-          onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi) => {
-            saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi)
+          onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates) => {
+            saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates)
           }}
+          activeRunners={getActiveRunners(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
           onClose={() => {
             setShowCanvasModal(false)
             setSelectedCell(null)
