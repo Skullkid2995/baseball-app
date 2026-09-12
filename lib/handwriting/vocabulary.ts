@@ -47,6 +47,8 @@ export const TOKENS: Token[] = [
   { value: 'CS', es: 'Out robando', en: 'Caught stealing', group: 'runner' },
   { value: 'WP', es: 'Lanzamiento descontrolado', en: 'Wild pitch', group: 'runner' },
   { value: 'PB', es: 'Passed ball', en: 'Passed ball', group: 'runner' },
+  { value: 'PK', es: 'Pickoff', en: 'Pickoff', group: 'runner' },
+  { value: 'BK', es: 'Balk', en: 'Balk', group: 'runner' },
   // Fielder numbers (also used in combinations like 6-3, 4-6-3, F8)
   ...Object.entries(FIELDERS).map(([n, d]) => ({ value: n, es: d.es, en: d.en, group: 'fielder' as const })),
   // The most common ground-out combinations, written as one unit

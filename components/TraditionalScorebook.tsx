@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import DiamondCanvas, { type ActiveRunner, type RunnerUpdate } from './DiamondCanvas'
 import PitcherPicker, { type RosterPlayer } from './PitcherPicker'
 import { loadMatchup, type MatchupSummary } from '@/lib/matchup'
+import { applyRunnerEvent, type RunnerEventInput } from '@/lib/runnerEvents'
 import OpponentLineupEntry from './OpponentLineupEntry'
 import { ArrowLeftRight, Lock, Plus, Save } from 'lucide-react'
 import { Button, FormField, Input, LoadingState } from '@/components/ui'
@@ -657,7 +658,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       const base: 'first' | 'second' | 'third' | null = b.third ? 'third' : b.second ? 'second' : b.first ? 'first' : null
       if (!base || ab.base_runner_outs?.[base]) continue
       const p = ab.players
-      list.push({ atBatId: ab.id, playerName: p ? `${p.first_name} ${p.last_name}` : 'Runner', base })
+      list.push({ atBatId: ab.id, playerId: ab.player_id, playerName: p ? `${p.first_name} ${p.last_name}` : 'Runner', base })
     }
     // third base first, so the list reads like the field
     const order = { third: 0, second: 1, first: 2 }
@@ -884,6 +885,64 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
+  /** Each side's score from its own at-bats (runs can also come from runner plays). */
+  async function recalculateScore() {
+    const allAtBats = await supabase.from('at_bats').select('runs_scored, team_side').eq('game_id', game.id)
+    if (allAtBats.error || !allAtBats.data) return
+    const ours = allAtBats.data.filter((ab) => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+    const theirs = allAtBats.data.filter((ab) => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+    const { data: updatedGame, error } = await supabase
+      .from('games')
+      .update({ our_score: ours, opponent_score: theirs, updated_at: new Date().toISOString() })
+      .eq('id', game.id)
+      .select()
+    if (!error && updatedGame && updatedGame[0]) setCurrentGame(updatedGame[0])
+  }
+
+  /**
+   * A runner play during the current at-bat (stolen base, caught stealing, pickoff,
+   * wild pitch, passed ball, balk): saved on its own, and the runner moves or is
+   * retired in their own box right away.
+   */
+  async function recordRunnerEvent(ev: RunnerEventInput) {
+    const teamSide = selectedCell?.teamSide || currentTeamSide || 'home'
+    const runnerRow = atBats.find((ab) => ab.id === ev.runnerAtBatId)
+    if (!runnerRow) return
+    const pitcher = currentPitcher(fieldingSide(teamSide))
+    const batterAtBat = selectedCell ? getAtBatForPlayer(selectedCell.playerId, selectedCell.inning) : null
+    const { error: evError } = await supabase.from('runner_events').insert([
+      {
+        game_id: game.id,
+        team_side: teamSide,
+        inning: runnerRow.inning,
+        runner_at_bat_id: ev.runnerAtBatId,
+        runner_player_id: ev.runnerPlayerId ?? runnerRow.player_id,
+        during_at_bat_id: batterAtBat?.id ?? null,
+        batter_player_id: selectedCell?.playerId ?? null,
+        pitcher_id: pitcher?.id ?? null,
+        event_type: ev.type,
+        from_base: ev.fromBase,
+        to_base: ev.isOut ? null : ev.toBase,
+        is_out: ev.isOut,
+        throw: ev.throw ?? null,
+        fielders: ev.fielders ?? null,
+        entered_via: ev.enteredVia,
+      },
+    ])
+    if (evError) {
+      alert('Could not save the runner play: ' + evError.message)
+      return
+    }
+    const patch = applyRunnerEvent(runnerRow, ev)
+    const { error } = await supabase.from('at_bats').update(patch).eq('id', ev.runnerAtBatId)
+    if (error) {
+      alert('Could not update the runner: ' + error.message)
+      return
+    }
+    setAtBats((prev) => prev.map((ab) => (ab.id === ev.runnerAtBatId ? { ...ab, ...patch } : ab)))
+    if (ev.toBase === 'home' && !ev.isOut) await recalculateScore()
+  }
+
   async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) {
     if (!selectedCell) return
 
@@ -1106,35 +1165,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         }
       }
 
-      // Recalculate total score from all at-bats (more accurate than incrementing)
-      // This ensures we don't double-count runs
-      const allAtBats = await supabase
-        .from('at_bats')
-        .select('runs_scored, team_side')
-        .eq('game_id', game.id)
-      
-      if (!allAtBats.error && allAtBats.data) {
-        // Each side keeps its own score: our runs from our at-bats, theirs from theirs
-        const totalRunsScored = allAtBats.data.filter(ab => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
-        const opponentRunsScored = allAtBats.data.filter(ab => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
-        console.log(`Recalculating score after save. Total runs from all at-bats: ${totalRunsScored}`)
-        
-        // Update game score to match the sum of all at-bats
-        const { data: updatedGame, error: scoreError } = await supabase
-          .from('games')
-          .update({ 
-            our_score: totalRunsScored,
-            opponent_score: opponentRunsScored,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', game.id)
-          .select()
-        
-        if (!scoreError && updatedGame && updatedGame[0]) {
-          setCurrentGame(updatedGame[0])
-          console.log('Game score recalculated after save to:', totalRunsScored)
-        }
-      }
+      await recalculateScore()
 
       // Close the modal after successful save
       setShowCanvasModal(false)
@@ -1521,6 +1552,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           activeRunners={getActiveRunners(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
           matchup={matchup}
           outsBefore={outsBefore(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
+          onRunnerEvent={recordRunnerEvent}
           onClose={() => {
             setShowCanvasModal(false)
             setSelectedCell(null)

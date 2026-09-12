@@ -12,6 +12,8 @@ import { NO_BASES, OUT_TOKENS, basesForToken, interpretBox, type BaseRunners, ty
 import { landingData, type Pt } from '@/lib/scorecard/geometry'
 import { cn } from '@/lib/utils'
 import { matchupLine, type MatchupSummary } from '@/lib/matchup'
+import RunnerPlayModal, { type RunnerOption } from './RunnerPlayModal'
+import { RUNNER_TOKENS, runnerBaseOf, type RunnerEventInput, type RunnerEventType, type ToBase } from '@/lib/runnerEvents'
 
 /**
  * Classic (paper) scoring dialog for one plate appearance. The box itself and
@@ -22,6 +24,9 @@ export interface ClassicAtBatPadProps {
   playerName: string
   /** This batter's history against the pitcher on the mound */
   matchup?: MatchupSummary | null
+  /** Runners on base from other boxes (for stolen bases, pickoffs...) */
+  activeRunners?: RunnerOption[]
+  onRunnerEvent?: (ev: RunnerEventInput) => Promise<void> | void
   inning: number
   existingAtBat?: Record<string, unknown>
   isLocked?: boolean
@@ -45,7 +50,7 @@ function toScorebookNotation(token: string): string {
   return token
 }
 
-export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isLocked = false, onSave, onClose, onSwitchMode, matchup = null }: ClassicAtBatPadProps) {
+export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isLocked = false, onSave, onClose, onSwitchMode, matchup = null, activeRunners = [], onRunnerEvent }: ClassicAtBatPadProps) {
   const { language } = useLanguage()
   const [actions, setActions] = useState<BoxAction[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
@@ -55,6 +60,8 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
   const [rbi, setRbi] = useState(0)
   const [outOverride, setOutOverride] = useState<number | null>(null)
   const [saved, setSaved] = useState(false)
+  const [runnerPlay, setRunnerPlay] = useState<{ type: RunnerEventType | null; toBase: ToBase | null } | null>(null)
+  const [runnerDone, setRunnerDone] = useState<string | null>(null)
 
   const L = language === 'es'
     ? {
@@ -64,6 +71,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
         correct: 'Correcto', fix: 'Corregir', redo: 'Repetir', pick: 'Elige la jugada', out: 'Out', run: 'Carrera',
         landing: 'Batazo', noLanding: 'sin trazo', rbiLabel: 'Carreras impulsadas', save: 'Guardar turno', close: 'Cerrar', undo: 'Deshacer', clear: 'Borrar',
         locked: 'Juego cerrado: solo lectura.', savedOk: 'Turno guardado',
+        runnerPlay: 'Corredores', runnerRecognized: 'Jugada de corredor reconocida', confirmRunner: 'Confirmar', notThat: 'No', runnerSaved: 'Jugada de corredor guardada',
       }
     : {
         title: 'Score at-bat', classic: 'Classic', digital: 'Digital',
@@ -72,6 +80,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
         correct: 'Correct', fix: 'Fix', redo: 'Redo', pick: 'Pick the play', out: 'Out', run: 'Run',
         landing: 'Batted ball', noLanding: 'no line', rbiLabel: 'Runs batted in', save: 'Save at-bat', close: 'Close', undo: 'Undo', clear: 'Clear',
         locked: 'Game locked: read only.', savedOk: 'At-bat saved',
+        runnerPlay: 'Runners', runnerRecognized: 'Runner play recognized', confirmRunner: 'Confirm', notThat: 'No', runnerSaved: 'Runner play saved',
       }
 
   // Templates from the handwriting lab (notation set only)
@@ -113,6 +122,18 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
   const landing = marks.hitLine ? landingData(marks.hitLine[marks.hitLine.length - 1] as Pt) : undefined
   const canSave = !!token && !isLocked && !saved
 
+  // Runner plays: this box's own runner (when editing a box whose batter is on base) plus the other runners
+  const selfBase = existingAtBat ? runnerBaseOf(existingAtBat as { base_runners?: BaseRunners | null; base_runner_outs?: BaseRunners | null }) : null
+  const runnerOptions: RunnerOption[] = [
+    ...(existingAtBat && selfBase ? [{ atBatId: String(existingAtBat.id), playerId: (existingAtBat.player_id as string) ?? null, playerName, base: selfBase }] : []),
+    ...activeRunners,
+  ]
+  const canRunnerPlay = !!onRunnerEvent && !isLocked && runnerOptions.length > 0
+  // "SB" (or CS / PK / WP / PB / BK) written in the box: offer it as a runner play instead of a batting result
+  const inkRunnerToken = canRunnerPlay && hasInk && top && RUNNER_TOKENS.has(top.symbol) ? (top.symbol as RunnerEventType) : null
+  // The drawn base path says where the runner ended up
+  const drawnTo: ToBase | null = marks.bases.home ? 'home' : marks.bases.third ? 'third' : marks.bases.second ? 'second' : null
+
   function save() {
     if (!token) return
     const runners: BaseRunners = effectiveBases.home ? { first: false, second: false, third: false, home: true } : effectiveBases
@@ -122,6 +143,22 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 backdrop-blur-sm sm:p-6">
+      {runnerPlay && (
+        <RunnerPlayModal
+          runners={runnerOptions}
+          initialRunnerId={existingAtBat && selfBase ? String(existingAtBat.id) : null}
+          initialType={runnerPlay.type}
+          initialToBase={runnerPlay.toBase}
+          enteredVia="classic"
+          onConfirm={async (ev) => {
+            await onRunnerEvent?.(ev)
+            setRunnerDone(`${ev.runnerName} · ${ev.type}`)
+            setRunnerPlay(null)
+            setActions(actions.filter((a) => a.type === 'tap'))
+          }}
+          onClose={() => setRunnerPlay(null)}
+        />
+      )}
       <div className="flex max-h-[95vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-card shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
           <div className="min-w-0">
@@ -138,6 +175,9 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
               <button type="button" aria-pressed className="rounded-md bg-card px-3 py-1 text-xs font-semibold shadow-sm">{L.classic}</button>
               <button type="button" onClick={onSwitchMode} className="rounded-md px-3 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground">{L.digital}</button>
             </div>
+            {canRunnerPlay && (
+              <Button variant="warning" size="sm" onClick={() => setRunnerPlay({ type: null, toBase: null })}>{L.runnerPlay}</Button>
+            )}
             <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={L.close}><X /></Button>
           </div>
         </div>
@@ -190,6 +230,21 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
                 </div>
               )}
             </div>
+
+            {inkRunnerToken && !runnerDone && (
+              <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">{L.runnerRecognized}</p>
+                <div className="mt-1 flex items-baseline gap-3">
+                  <span className="text-4xl font-bold">{inkRunnerToken}</span>
+                  <span className="text-sm text-amber-900">{describeToken(inkRunnerToken, language)}</span>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button variant="success" onClick={() => setRunnerPlay({ type: inkRunnerToken, toBase: drawnTo })}><Check />{L.confirmRunner}</Button>
+                  <Button variant="ghost" onClick={() => setActions(actions.filter((a) => a.type === 'tap'))}>{L.notThat}</Button>
+                </div>
+              </div>
+            )}
+            {runnerDone && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{L.runnerSaved}: {runnerDone}</div>}
 
             {!token && hasInk && !fixing && (
               <div className="flex flex-wrap gap-2">

@@ -5,6 +5,8 @@ import ClassicAtBatPad from './ClassicAtBatPad'
 import FieldSvg, { type BaseName } from './FieldSvg'
 import { fieldAreaAt } from '@/lib/scorecard/geometry'
 import { matchupLine, type MatchupSummary } from '@/lib/matchup'
+import RunnerPlayModal, { type RunnerOption } from './RunnerPlayModal'
+import { runnerBaseOf, type RunnerEventInput } from '@/lib/runnerEvents'
 
 type BaseFlags = { first: boolean, second: boolean, third: boolean, home: boolean }
 type RunnerBase = 'first' | 'second' | 'third'
@@ -12,6 +14,7 @@ type RunnerBase = 'first' | 'second' | 'third'
 /** A runner from another batter's box who is on base when this at-bat starts. */
 export interface ActiveRunner {
   atBatId: string
+  playerId?: string | null
   playerName: string
   base: RunnerBase
 }
@@ -109,6 +112,8 @@ interface DiamondCanvasProps {
   matchup?: MatchupSummary | null
   /** Outs already recorded in this inning for this side before this at-bat (live game data) */
   outsBefore?: number
+  /** A runner play during this at-bat (stolen base, pickoff...): persisted by the scorebook */
+  onRunnerEvent?: (ev: RunnerEventInput) => Promise<void> | void
   onClose: () => void
   playerName: string
   inning: number
@@ -116,7 +121,7 @@ interface DiamondCanvasProps {
   isLocked?: boolean // Game is locked and view-only
 }
 
-export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [], matchup = null, outsBefore = 0 }: DiamondCanvasProps) {
+export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [], matchup = null, outsBefore = 0, onRunnerEvent }: DiamondCanvasProps) {
   // Classic (paper box, stylus/finger) or Digital (buttons). Remembered per browser.
   const [scoringMode, setScoringMode] = useState<'classic' | 'digital'>(() => {
     try { return localStorage.getItem('scoringMode') === 'digital' ? 'digital' : 'classic' } catch { return 'classic' }
@@ -177,6 +182,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
   const [runnerResult, setRunnerResult] = useState('')
   const [runnerMoves, setRunnerMoves] = useState<Record<string, RunnerMove>>({})
   const [pendingRunnerUpdates, setPendingRunnerUpdates] = useState<RunnerUpdate[]>([])
+  const [showRunnerPlay, setShowRunnerPlay] = useState(false)
 
   // Load existing at-bat data when component mounts or existingAtBat changes
   useEffect(() => {
@@ -423,6 +429,14 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setPendingRunnerUpdates([])
   }
 
+  // Runners who can steal / be picked off right now: this box's own runner (when editing) plus the others
+  const selfBase = existingAtBat ? runnerBaseOf(existingAtBat as { base_runners?: BaseFlags | null; base_runner_outs?: BaseFlags | null }) : null
+  const runnerOptions: RunnerOption[] = [
+    ...(existingAtBat && selfBase ? [{ atBatId: String(existingAtBat.id), playerId: (existingAtBat.player_id as string) ?? null, playerName, base: selfBase }] : []),
+    ...activeRunners.map((r) => ({ atBatId: r.atBatId, playerId: r.playerId ?? null, playerName: r.playerName, base: r.base })),
+  ]
+  const canRunnerPlay = !!onRunnerEvent && !isLocked && runnerOptions.length > 0
+
   // Out number of this play: outs already in the inning + batter out + runners put out here
   const BATTER_OUT_CODES = ['K', 'KC', 'GO', 'FO', 'LO', 'PO', 'SF', 'SAC', 'BUNT_OUT', 'DP']
   const batterOut = BATTER_OUT_CODES.includes(handwritingInput.toUpperCase()) || ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt'].includes(handwritingInput.toLowerCase())
@@ -609,6 +623,8 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         onClose={onClose}
         onSwitchMode={() => switchMode('digital')}
         matchup={matchup}
+        activeRunners={activeRunners.map((r) => ({ atBatId: r.atBatId, playerId: r.playerId ?? null, playerName: r.playerName, base: r.base }))}
+        onRunnerEvent={onRunnerEvent}
       />
     )
   }
@@ -627,6 +643,11 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 <button type="button" onClick={() => switchMode('classic')} className="rounded-md px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-800">Clásico</button>
                 <button type="button" aria-pressed className="rounded-md bg-white px-3 py-1 text-xs font-semibold shadow-sm">Digital</button>
               </div>
+              {canRunnerPlay && (
+                <button type="button" onClick={() => setShowRunnerPlay(true)} className="whitespace-nowrap rounded-lg border border-amber-500 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100" title="Stolen base, pickoff, wild pitch…">
+                  SB/PK
+                </button>
+              )}
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 text-xl sm:text-2xl"
@@ -1341,6 +1362,19 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       )}
 
       {/* RBI Selection Modal */}
+      {/* Runner play during the at-bat: stolen base, caught stealing, pickoff, wild pitch, passed ball, balk */}
+      {showRunnerPlay && (
+        <RunnerPlayModal
+          runners={runnerOptions}
+          enteredVia="digital"
+          onConfirm={async (ev) => {
+            await onRunnerEvent?.(ev)
+            setShowRunnerPlay(false)
+          }}
+          onClose={() => setShowRunnerPlay(false)}
+        />
+      )}
+
       {/* Runners step: what happened to the other runners on this play */}
       {showRunnerStep && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-3">
