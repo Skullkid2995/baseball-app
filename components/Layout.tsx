@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import type { User, Session } from '@supabase/supabase-js'
-import { LogOut, Menu, X } from 'lucide-react'
+import { LogOut, Menu, X, Lock } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import ViewModeSwitcher from '@/components/ViewModeSwitcher'
 import { useViewMode } from '@/contexts/ViewModeContext'
@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase-browser'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { NAV_GROUPS, findNavItem } from '@/lib/navigation'
+import { usePermissions } from '@/contexts/PermissionsContext'
+import { roleLabel } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 interface LayoutProps {
@@ -25,7 +27,8 @@ export default function Layout({ children }: LayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  const { canView, loading: permsLoading, role } = usePermissions()
   const { mode } = useViewMode()
   // 'mobile' forces the drawer layout everywhere; 'desktop' forces the sidebar everywhere
   const forceMobile = mode === 'mobile'
@@ -64,6 +67,8 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const current = findNavItem(pathname)
+  const visibleGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => canView(i.feature)) })).filter((g) => g.items.length > 0)
+  const blocked = !permsLoading && !!current && !canView(current.feature)
   const pageTitle = current ? t[current.labelKey] : t.appTitle
   const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : ''
 
@@ -82,7 +87,7 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5" aria-label={t.menu}>
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.labelKey}>
             <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t[group.labelKey]}
@@ -134,7 +139,7 @@ export default function Layout({ children }: LayoutProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium text-slate-700">{user.email}</p>
-              <p className="text-[11px] text-muted-foreground">Dodgers</p>
+              <p className="text-[11px] text-muted-foreground">{roleLabel(role, language === 'es' ? 'es' : 'en')}</p>
             </div>
             <Button variant="ghost" size="icon-sm" onClick={handleLogout} title={t.logout} aria-label={t.logout}>
               <LogOut />
@@ -221,7 +226,23 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className={cn('mx-auto w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>{children}</div>
+          <div className={cn('mx-auto w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>
+            {permsLoading && current ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">…</div>
+            ) : blocked ? (
+              <div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+                <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                  <Lock className="size-5" />
+                </span>
+                <h2 className="text-lg font-semibold">{language === 'es' ? 'Sin acceso a esta sección' : 'No access to this section'}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {language === 'es' ? 'Pídele a un super admin que active el permiso para tu rol.' : 'Ask a super admin to enable it for your role.'}
+                </p>
+              </div>
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
     </div>

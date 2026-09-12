@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Play, RotateCcw, Save, Scale } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Checkbox, Input, LoadingState, PageHeader, Select } from '@/components/ui'
 import { DEFAULT_RULES, RULE_DEFINITIONS, RULE_GROUPS, mergeRules, type RuleSet } from '@/lib/rules/config'
 import { applyEvent, createGame, era, inningsPitched, type GameState } from '@/lib/rules/engine'
@@ -14,6 +15,7 @@ const RULE_SET_NAME = 'default'
 
 export default function RulesView() {
   const { language } = useLanguage()
+  const { canEdit } = usePermissions()
   const [rules, setRules] = useState<RuleSet>(DEFAULT_RULES)
   const [saved, setSaved] = useState<RuleSet>(DEFAULT_RULES)
   const [loading, setLoading] = useState(true)
@@ -154,7 +156,7 @@ export default function RulesView() {
               <RotateCcw />
               {L.reset}
             </Button>
-            <Button onClick={save} loading={saving} disabled={!dirty}>
+            <Button onClick={save} loading={saving} disabled={!dirty || !canEdit('rules')}>
               <Save />
               {L.save}
             </Button>

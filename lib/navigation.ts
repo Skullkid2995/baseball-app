@@ -17,6 +17,8 @@ export interface NavItem {
   href: string
   /** Key into the translations object for the label. */
   labelKey: keyof Translations
+  /** Permission key from lib/permissions.ts; hidden unless the role can view it */
+  feature: string
   Icon: LucideIcon
   /** Placeholder view that is on the roadmap but not built yet. */
   soon?: boolean
@@ -35,26 +37,26 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     labelKey: 'navMain',
     items: [
-      { href: '/dashboard', labelKey: 'dashboard', Icon: LayoutDashboard },
-      { href: '/teams', labelKey: 'teams', Icon: Users },
-      { href: '/players', labelKey: 'players', Icon: UserRound },
-      { href: '/games', labelKey: 'games', Icon: CalendarDays },
+      { href: '/dashboard', labelKey: 'dashboard', feature: 'dashboard', Icon: LayoutDashboard },
+      { href: '/teams', labelKey: 'teams', feature: 'teams', Icon: Users },
+      { href: '/players', labelKey: 'players', feature: 'players', Icon: UserRound },
+      { href: '/games', labelKey: 'games', feature: 'games', Icon: CalendarDays },
     ],
   },
   {
     labelKey: 'navAnalysis',
     items: [
-      { href: '/statistics', labelKey: 'statistics', Icon: BarChart3 },
-      { href: '/lineups', labelKey: 'lineups', Icon: ClipboardList },
-      { href: '/rules', labelKey: 'rules', Icon: Scale },
+      { href: '/statistics', labelKey: 'statistics', feature: 'statistics', Icon: BarChart3 },
+      { href: '/lineups', labelKey: 'lineups', feature: 'lineups', Icon: ClipboardList },
+      { href: '/rules', labelKey: 'rules', feature: 'rules', Icon: Scale },
     ],
   },
   {
     labelKey: 'navSystem',
     items: [
-      { href: '/handwriting', labelKey: 'handwritingLab', Icon: PenTool },
-      { href: '/scorecard-lab', labelKey: 'scorecardLab', Icon: NotebookPen },
-      { href: '/settings', labelKey: 'settings', Icon: Settings },
+      { href: '/handwriting', labelKey: 'handwritingLab', feature: 'handwritingLab', Icon: PenTool },
+      { href: '/scorecard-lab', labelKey: 'scorecardLab', feature: 'scorecardLab', Icon: NotebookPen },
+      { href: '/settings', labelKey: 'settings', feature: 'settings', Icon: Settings },
     ],
   },
 ]

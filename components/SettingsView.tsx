@@ -8,7 +8,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { supabase } from '@/lib/supabase'
 import { env } from '@/lib/env'
-import { ALLOWED_EMAILS } from '@/lib/auth'
+import { roleLabel } from '@/lib/permissions'
+import { usePermissions } from '@/contexts/PermissionsContext'
+import AccessSettings from '@/components/AccessSettings'
 import { useLanguage } from '@/contexts/LanguageContext'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import ViewModeSwitcher from '@/components/ViewModeSwitcher'
@@ -30,6 +32,7 @@ export default function SettingsView() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [team, setTeam] = useState<OurTeam | null>(null)
+  const { role, isSuperAdmin } = usePermissions()
 
   const L =
     language === 'es'
@@ -49,7 +52,8 @@ export default function SettingsView() {
           accountHint: 'Sesión iniciada con Google.',
           signOut: 'Cerrar sesión',
           access: 'Acceso',
-          accessHint: 'Solo estas cuentas de Google pueden entrar. Se cambian en el código (lib/auth.ts).',
+          accessHint: 'Los usuarios y sus permisos los administra un super admin aquí abajo.',
+          yourRole: 'Tu rol',
           you: 'tú',
           system: 'Sistema',
           systemHint: 'Referencias técnicas del proyecto.',
@@ -73,7 +77,8 @@ export default function SettingsView() {
           accountHint: 'Signed in with Google.',
           signOut: 'Sign out',
           access: 'Access',
-          accessHint: 'Only these Google accounts can sign in. They are changed in code (lib/auth.ts).',
+          accessHint: 'Users and their permissions are managed below by a super admin.',
+          yourRole: 'Your role',
           you: 'you',
           system: 'System',
           systemHint: 'Technical references for the project.',
@@ -211,15 +216,8 @@ export default function SettingsView() {
               </div>
             </div>
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.access}</p>
-              <ul className="space-y-1.5">
-                {ALLOWED_EMAILS.map((email) => (
-                  <li key={email} className="flex items-center gap-2 text-sm">
-                    <span className="truncate">{email}</span>
-                    {user?.email === email && <Badge variant="primary">{L.you}</Badge>}
-                  </li>
-                ))}
-              </ul>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.yourRole}</p>
+              <Badge variant="primary">{roleLabel(role, language === 'es' ? 'es' : 'en')}</Badge>
               <p className="mt-2 text-xs text-muted-foreground">{L.accessHint}</p>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -269,6 +267,8 @@ export default function SettingsView() {
           </CardContent>
         </Card>
       </div>
+
+      {isSuperAdmin && <AccessSettings />}
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isAllowedEmail } from '@/lib/auth'
+import { isAuthorizedEmail } from '@/lib/access'
 import BaseballMark from '@/components/BaseballMark'
 import { Alert, Button, Card } from '@/components/ui'
 
@@ -26,10 +26,10 @@ export default function Login() {
 
   useEffect(() => {
     // Check if user is already logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         // Check if email matches
-        if (isAllowedEmail(session.user.email)) {
+        if (await isAuthorizedEmail(supabase, session.user.email)) {
           window.location.href = '/'
         } else {
           // User is logged in but email doesn't match
@@ -41,9 +41,9 @@ export default function Login() {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        if (isAllowedEmail(session.user.email)) {
+        if (await isAuthorizedEmail(supabase, session.user.email)) {
           window.location.href = '/'
         } else {
           setError(t.accessDenied)

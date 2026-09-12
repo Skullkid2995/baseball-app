@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Alert, Badge, Button, Card, FormField, Input, LoadingState, Panel, Select } from '@/components/ui'
 
@@ -50,6 +51,7 @@ const POSITIONS = [
 ]
 
 export default function LineupTemplates({ onClose, teamId, embedded = false }: LineupTemplatesProps) {
+  const { canEdit } = usePermissions()
   const [templates, setTemplates] = useState<LineupTemplate[]>([])
   const [players, setPlayers] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
@@ -505,7 +507,7 @@ export default function LineupTemplates({ onClose, teamId, embedded = false }: L
           </div>
 
           <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
-            <Button variant="success" onClick={createTemplate}>
+            <Button variant="success" disabled={!canEdit('lineups')} onClick={createTemplate}>
               {editingTemplate ? 'Update Template' : 'Create Template'}
             </Button>
           </div>
@@ -536,11 +538,11 @@ export default function LineupTemplates({ onClose, teamId, embedded = false }: L
                     <Eye />
                     View Lineup
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => startEditTemplate(template.id)}>
+                  <Button size="sm" variant="outline" disabled={!canEdit('lineups')} onClick={() => startEditTemplate(template.id)}>
                     <Pencil />
                     Edit
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => deleteTemplate(template.id)}>
+                  <Button size="sm" variant="destructive" disabled={!canEdit('lineups')} onClick={() => deleteTemplate(template.id)}>
                     <Trash2 />
                     Delete
                   </Button>

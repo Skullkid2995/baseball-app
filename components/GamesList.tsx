@@ -7,6 +7,7 @@ import HitStatistics from './HitStatistics'
 import LineupSelection from './LineupSelection'
 import OpponentLineupEntry from './OpponentLineupEntry'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import { AlertTriangle, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ClipboardList, Clock, CloudSun, MapPin, Play, Plus, Trash2, X } from 'lucide-react'
 import { Alert, Badge, Button, Card, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Panel } from '@/components/ui'
 
@@ -40,6 +41,7 @@ export default function GamesList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { t, language } = useLanguage()
+  const { canEdit } = usePermissions()
   const [showNewGameForm, setShowNewGameForm] = useState(false)
   const [showScorebook, setShowScorebook] = useState<string | null>(null)
   const [showStatistics, setShowStatistics] = useState<string | null>(null)
@@ -281,7 +283,7 @@ export default function GamesList() {
         title={t.gamesCount}
         count={games.length}
         actions={
-          <Button
+          canEdit('games') && <Button
             variant={showNewGameForm ? 'outline' : 'primary'}
             onClick={() => setShowNewGameForm(!showNewGameForm)}
             className="w-full sm:w-auto"
@@ -451,6 +453,7 @@ export default function GamesList() {
                           <Button
                             variant="success"
                             size="sm"
+                            disabled={!canEdit('scorebook')}
                             onClick={() => {
                               updateGameStatus(game.id, 'in_progress')
                               setShowScorebook(game.id)
@@ -476,7 +479,7 @@ export default function GamesList() {
                             {t.startScoring}
                           </Button>
                         )}
-                        <Button variant="accent" size="sm" onClick={() => setShowLineupSelection(game.id)}>
+                        <Button variant="accent" size="sm" disabled={!canEdit('games')} onClick={() => setShowLineupSelection(game.id)}>
                           <ClipboardList />
                           {t.selectLineup}
                         </Button>
@@ -505,7 +508,7 @@ export default function GamesList() {
                   )}
                   {game.game_status === 'in_progress' && (
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                      <Button variant="warning" size="sm" onClick={() => setShowScorebook(game.id)}>
+                      <Button variant="warning" size="sm" disabled={!canEdit('scorebook')} onClick={() => setShowScorebook(game.id)}>
                         <Play />
                         {t.continueScoring}
                       </Button>
@@ -513,7 +516,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!canEdit('games')} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearGameData}
                       </Button>
@@ -529,7 +532,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!canEdit('games')} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearData}
                       </Button>

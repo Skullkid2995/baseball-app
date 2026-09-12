@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { usePermissions } from '@/contexts/PermissionsContext'
 import { getBaseballPositions } from '@/lib/translations'
 import LineupTemplates from './LineupTemplates'
 import { ChevronDown, ChevronUp, ClipboardList, MapPin, Pencil, Plus, UserPlus, Users, X } from 'lucide-react'
@@ -85,6 +86,7 @@ export default function TeamsList() {
   const [showTemplateManagement, setShowTemplateManagement] = useState(false)
   const [selectedTeamForTemplates, setSelectedTeamForTemplates] = useState<string | null>(null)
   const { t, language } = useLanguage()
+  const { canEdit } = usePermissions()
 
   // Get baseball positions based on current language
   const BASEBALL_POSITIONS = getBaseballPositions(language)
@@ -803,7 +805,7 @@ export default function TeamsList() {
         title={t.teamsCount}
         count={teams.length}
         actions={
-          <Button variant={showAddForm ? 'outline' : 'primary'} onClick={() => setShowAddForm(!showAddForm)}>
+          canEdit('teams') && <Button variant={showAddForm ? 'outline' : 'primary'} onClick={() => setShowAddForm(!showAddForm)}>
             {showAddForm ? <X /> : <Plus />}
             {showAddForm ? t.cancel : t.addTeam}
           </Button>
@@ -979,7 +981,7 @@ export default function TeamsList() {
                       {team.name.charAt(0)}
                     </div>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => editTeam(team)}>
+                  <Button variant="outline" size="sm" disabled={!canEdit('teams')} onClick={() => editTeam(team)}>
                     <Pencil />
                     {t.editTeam}
                   </Button>
@@ -1000,7 +1002,7 @@ export default function TeamsList() {
                       {expandedTeams.has(team.id) ? <ChevronUp /> : <ChevronDown />}
                       {expandedTeams.has(team.id) ? t.viewLess : t.viewPlayers}
                     </Button>
-                    <Button size="sm" variant="success" onClick={() => openAddPlayerForm(team.id)}>
+                    <Button size="sm" variant="success" disabled={!canEdit('teams')} onClick={() => openAddPlayerForm(team.id)}>
                       <UserPlus />
                       {t.addPlayer}
                     </Button>
@@ -1042,7 +1044,7 @@ export default function TeamsList() {
                                 {player.positions?.join(', ')} • {player.handedness}
                               </div>
                             </div>
-                            <Button size="xs" variant="ghost" onClick={() => editPlayer(player, team.id)}>
+                            <Button size="xs" variant="ghost" disabled={!canEdit('teams')} onClick={() => editPlayer(player, team.id)}>
                               <Pencil />
                               {t.editPlayer}
                             </Button>

@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { env } from '@/lib/env'
-import { isAllowedEmail } from '@/lib/auth'
+import { isAuthorizedEmail } from '@/lib/access'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -48,14 +48,14 @@ export async function middleware(request: NextRequest) {
     }
 
     // If user is logged in but email doesn't match, redirect to login
-    if (!isAllowedEmail(user.email)) {
+    if (!(await isAuthorizedEmail(supabase, user.email))) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
     }
   }
 
   // If user is already logged in and on login page, redirect to home
-  if (isLoginPage && user && isAllowedEmail(user.email)) {
+  if (isLoginPage && user && (await isAuthorizedEmail(supabase, user.email))) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
