@@ -189,7 +189,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
                 <div className="pointer-events-none absolute inset-0">
                   {activeRunners.map((r) => {
                     const at = r.base === 'first' ? FIRST : r.base === 'second' ? SECOND : THIRD
-                    const parts = r.playerName.trim().split(/s+/)
+                    const parts = r.playerName.trim().split(/\s+/)
                     const short = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]
                     return (
                       <div key={r.atBatId} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${at[0]}%`, top: `${at[1]}%` }}>
