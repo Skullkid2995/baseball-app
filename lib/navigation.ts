@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  NotebookPen,
   PenTool,
   Scale,
   Settings,
@@ -52,6 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
     labelKey: 'navSystem',
     items: [
       { href: '/handwriting', labelKey: 'handwritingLab', Icon: PenTool },
+      { href: '/scorecard-lab', labelKey: 'scorecardLab', Icon: NotebookPen },
       { href: '/settings', labelKey: 'settings', Icon: Settings },
     ],
   },

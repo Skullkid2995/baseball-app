@@ -191,6 +191,7 @@ export interface Translations {
   comingSoonDescription: string
   handwritingLab: string
   rules: string
+  scorecardLab: string
 }
 
 const translations: Record<Language, Translations> = {
@@ -385,6 +386,7 @@ const translations: Record<Language, Translations> = {
     comingSoonDescription: 'This section is on the roadmap and will be built in an upcoming iteration.',
     handwritingLab: 'Handwriting lab',
     rules: 'Rules',
+    scorecardLab: 'Scorecard lab',
   },
   es: {
     // Header
@@ -577,6 +579,7 @@ const translations: Record<Language, Translations> = {
     comingSoonDescription: 'Esta sección está en el plan y se construirá en una próxima iteración.',
     handwritingLab: 'Laboratorio de escritura',
     rules: 'Reglas',
+    scorecardLab: 'Laboratorio de tarjeta',
   },
 }
 
