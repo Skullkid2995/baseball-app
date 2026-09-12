@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Baseball Scorebook
 
-## Getting Started
+Web app for managing one amateur baseball team (the Dodgers), its roster and
+lineups, and scoring games pitch by pitch against any opponent. Spanish-first
+UI with an English toggle. Access is limited to two Google accounts.
 
-First, run the development server:
+## Stack
+
+- Next.js 15 (App Router, Turbopack), React 19, Tailwind CSS 4
+- Supabase: Postgres, Google OAuth, Storage bucket `player-photos`
+- Deployed on Vercel: https://baseball-app-swart.vercel.app
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # then fill in URL + anon/publishable key
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The env file must be UTF-8. On Windows do not create it with PowerShell `>`
+redirection, which writes UTF-16 that Next.js cannot read.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Path | Purpose |
+| --- | --- |
+| `app/dashboard` | Season overview: record, team batting, next game, recent results, top hitters |
+| `app/teams` | Roster management, player photos, lineup templates |
+| `app/players` | Roster directory across all teams with search, filters and player detail |
+| `app/games` | Create games, guided game preparation (home/away, both lineups, review), live scorebook, hit statistics |
+| `app/statistics` | Season batting leaderboard and hit distribution |
+| `app/lineups` | Saved lineup templates per team |
+| `app/settings` | Preferences, our team, account/access, system references |
+| `app/login`, `app/auth/callback` | Google OAuth flow |
+| `middleware.ts` | Redirects anyone not in `lib/auth.ts` to `/login` |
+| `components/` | Screens. `TraditionalScorebook.tsx` + `DiamondCanvas.tsx` are the scorebook; `LineupSelection.tsx` is the 4-step game preparation flow |
+| `components/ui/` | Design-system primitives (Button, Card, Modal, FormField, ...) used by every screen |
+| `lib/navigation.ts` | Sidebar sections; add a view here and it shows up in the menu |
+| `docs/FRONTEND_GUIDE.md` | How to build a screen: primitives, layout patterns, data model, batting math |
+| `lib/supabase-browser.ts` / `lib/supabase-server.ts` | Supabase clients (client / server) |
+| `database/schema.sql` | Complete schema for a fresh Supabase project |
+| `database/legacy/` | Historical migrations, already folded into `schema.sql` |
+| `docs/` | Auth, Google credentials and Vercel setup guides |
+| `docs/archive/` | Old troubleshooting notes, kept for reference only |
 
-## Learn More
+## Setting up a new Supabase project
 
-To learn more about Next.js, take a look at the following resources:
+Follow `RECONNECT_SUPABASE.md`. Short version: create the project, run
+`database/schema.sql` in the SQL Editor, enable the Google provider, set the
+redirect URLs, put the URL and key in `.env.local` and in Vercel.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Data model
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`teams` → `players` (roster) and `lineup_templates` → `lineup_template_players`
+(one saved batting order per team). `games` records a single game against an
+`opponent`, links our lineup and the opponent lineup, and owns the `at_bats`
+rows written by the scorebook.

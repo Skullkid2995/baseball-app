@@ -10,14 +10,16 @@ export function createClient() {
     )
   }
 
-  // Check if user is using a publishable key instead of anon key
+  // Both key formats work with @supabase/supabase-js >= 2.5x:
+  //   - legacy anon key: JWT starting with 'eyJ...'
+  //   - new publishable key: 'sb_publishable_...' (default for projects created since 2025)
+  // Any other prefix is almost certainly a copy/paste mistake (e.g. the secret/service key).
   const key = env.supabase.anonKey
-  if (key.startsWith('sb_publishable_')) {
+  if (!key.startsWith('eyJ') && !key.startsWith('sb_publishable_')) {
     console.warn(
-      '⚠️  You are using a publishable key (sb_publishable_...). ' +
-      'For Next.js web apps, you should use the anon key (JWT format starting with eyJ...). ' +
-      'Publishable keys are for mobile apps and may cause auth issues. ' +
-      'Get your anon key from: Supabase Dashboard → Settings → API → Project API keys → anon/public'
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY does not look like an anon/publishable key. ' +
+      'Use the anon (eyJ...) or publishable (sb_publishable_...) key from ' +
+      'Supabase Dashboard -> Project Settings -> API Keys. Never put the secret/service_role key here.'
     )
   }
 

@@ -1,4 +1,4 @@
--- Add fields to track lineup selection and home/away team selection
+-- Add batting_first column to games table
 -- Run this in your Supabase SQL Editor
 
 -- Add batting_first field to games table to track which team bats first
@@ -10,11 +10,13 @@ BEGIN
         WHERE table_name = 'games' AND column_name = 'batting_first'
     ) THEN
         ALTER TABLE games ADD COLUMN batting_first VARCHAR(10) CHECK (batting_first IN ('home', 'opponent'));
+        
+        -- Add comment to explain the field
+        COMMENT ON COLUMN games.batting_first IS 'Which team bats first: home (our team) or opponent';
     END IF;
 END $$;
 
--- Add comments to explain the fields
-COMMENT ON COLUMN games.lineup_template_id IS 'Lineup template for our team - NULL means lineup not selected yet';
-COMMENT ON COLUMN games.opponent_lineup_template_id IS 'Lineup template for the opponent team - NULL means lineup not selected yet';
-COMMENT ON COLUMN games.batting_first IS 'Which team bats first: home (our team) or opponent';
+
+
+
 

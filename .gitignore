@@ -88,3 +88,8 @@ dist
 # Temporary folders
 tmp/
 temp/
+# UTF-16 backups of env files (pre-fix)
+*.bak-utf16
+
+# Local Claude Code launch config
+.claude/

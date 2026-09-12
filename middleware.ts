@@ -1,11 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const ALLOWED_EMAILS = ['jesus.contreras@group-u.com', 'skullkid2995@gmail.com']
-
-// Fallback values from env.ts (in case environment variables are not set)
-const DEFAULT_SUPABASE_URL = 'https://uzbupbtrmbmmmkztmrtl.supabase.co'
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YnVwYnRybWJtbW1renRtcnRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwNjUyMjAsImV4cCI6MjA2NjY0MTIyMH0.rCR1cmQ4itYa7S0PVY9PKdOuO57jJ4PAJO-7w53L50Y'
+import { env } from '@/lib/env'
+import { isAllowedEmail } from '@/lib/auth'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -14,25 +11,16 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Get Supabase URL and key with fallbacks
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Supabase URL or Key is missing')
-    return response
-  }
-
   const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    env.supabase.url,
+    env.supabase.anonKey,
     {
       cookies: {
         getAll() {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({
             request,
           })
@@ -60,14 +48,14 @@ export async function middleware(request: NextRequest) {
     }
 
     // If user is logged in but email doesn't match, redirect to login
-    if (!user.email || !ALLOWED_EMAILS.includes(user.email)) {
+    if (!isAllowedEmail(user.email)) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
     }
   }
 
   // If user is already logged in and on login page, redirect to home
-  if (isLoginPage && user && user.email && ALLOWED_EMAILS.includes(user.email)) {
+  if (isLoginPage && user && isAllowedEmail(user.email)) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 

@@ -1,10 +1,18 @@
-// Environment configuration for Supabase
+// Supabase configuration. Values come ONLY from environment variables
+// (.env.local locally, Project Settings -> Environment Variables on Vercel).
+// There are deliberately no hard-coded fallbacks: a missing variable fails fast
+// instead of silently pointing the app at the wrong project.
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+if (!url || !anonKey) {
+  throw new Error(
+    'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
+    'Copy .env.example to .env.local and fill in the values from ' +
+    'Supabase Dashboard -> Project Settings -> API Keys.'
+  )
+}
+
 export const env = {
-  supabase: {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uzbupbtrmbmmmkztmrtl.supabase.co',
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YnVwYnRybWJtbW1renRtcnRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwNjUyMjAsImV4cCI6MjA2NjY0MTIyMH0.rCR1cmQ4itYa7S0PVY9PKdOuO57jJ4PAJO-7w53L50Y',
-    // Expo/React Native compatibility
-    expoUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://uzbupbtrmbmmmkztmrtl.supabase.co',
-    expoKey: process.env.EXPO_PUBLIC_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6YnVwYnRybWJtbW1renRtcnRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwNjUyMjAsImV4cCI6MjA2NjY0MTIyMH0.rCR1cmQ4itYa7S0PVY9PKdOuO57jJ4PAJO-7w53L50Y',
-  }
+  supabase: { url, anonKey },
 } as const

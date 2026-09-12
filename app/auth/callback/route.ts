@@ -1,8 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import { type NextRequest } from 'next/server'
-
-const ALLOWED_EMAILS = ['jesus.contreras@group-u.com', 'skullkid2995@gmail.com']
+import { isAllowedEmail } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -15,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     if (!error && data.session?.user) {
       // Check if email matches allowed emails
-      if (data.session.user.email && ALLOWED_EMAILS.includes(data.session.user.email)) {
+      if (isAllowedEmail(data.session.user.email)) {
         // Redirect to home page
         return NextResponse.redirect(`${origin}/`)
       } else {
