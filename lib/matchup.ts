@@ -41,6 +41,7 @@ export function resultLabel(result: string, notation?: string | null): string {
     case 'error': return 'E'
     case 'sacrifice_fly': return 'SF'
     case 'sacrifice_bunt': return 'SAC'
+    case 'fielders_choice': return 'FC'
     case 'ground_out': return 'GO'
     case 'fly_out': return 'FO'
     case 'line_out': return 'LO'

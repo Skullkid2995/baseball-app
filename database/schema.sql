@@ -145,7 +145,7 @@ create table if not exists at_bats (
     result           varchar(50) not null
                      check (result in ('single', 'double', 'triple', 'home_run', 'walk', 'strikeout',
                                        'ground_out', 'fly_out', 'line_out', 'pop_out', 'error',
-                                       'hit_by_pitch', 'sacrifice_fly', 'sacrifice_bunt')),
+                                       'hit_by_pitch', 'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice')),
     rbi              integer default 0,
     runs_scored      integer default 0,
     stolen_bases     integer default 0,

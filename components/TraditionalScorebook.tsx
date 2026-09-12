@@ -385,8 +385,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       } else {
         setAtBats(data || [])
         
-        // Always recalculate total score from all saved at-bats to ensure accuracy
-        const totalRunsScored = (data || []).reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        // Always recalculate the score from the saved at-bats, each side on its own
+        const totalRunsScored = (data || []).filter(ab => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        const opponentRunsScored = (data || []).filter(ab => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
         
         // Debug: Log which at-bats have runs_scored
         const atBatsWithRuns = (data || []).filter(ab => (ab.runs_scored || 0) > 0)
@@ -405,6 +406,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           .from('games')
           .update({ 
             our_score: totalRunsScored,
+            opponent_score: opponentRunsScored,
             updated_at: new Date().toISOString()
           })
           .eq('id', game.id)
@@ -815,11 +817,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       'SAC_BUNT': 'sacrifice_bunt',
       'SACRIFICE_BUNT': 'sacrifice_bunt',
       
-        // Fielders choice (mapped to ground_out)
-        'FC': 'ground_out',
-        'FIELDERS_CHOICE': 'ground_out',
-        'FIELDER_CHOICE': 'ground_out',
-        'FIELDERS_CHOICE_OUT': 'ground_out',
+        // Fielder's choice: the batter is safe, the out (if any) is on the runner's box
+        'FC': 'fielders_choice',
+        'FIELDERS_CHOICE': 'fielders_choice',
+        'FIELDER_CHOICE': 'fielders_choice',
+        'FIELDERS_CHOICE_OUT': 'fielders_choice',
       
       // Wild pitch and passed ball (mapped to walk)
       'WP': 'walk',
@@ -1108,11 +1110,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       // This ensures we don't double-count runs
       const allAtBats = await supabase
         .from('at_bats')
-        .select('runs_scored')
+        .select('runs_scored, team_side')
         .eq('game_id', game.id)
       
       if (!allAtBats.error && allAtBats.data) {
-        const totalRunsScored = allAtBats.data.reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        // Each side keeps its own score: our runs from our at-bats, theirs from theirs
+        const totalRunsScored = allAtBats.data.filter(ab => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
+        const opponentRunsScored = allAtBats.data.filter(ab => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
         console.log(`Recalculating score after save. Total runs from all at-bats: ${totalRunsScored}`)
         
         // Update game score to match the sum of all at-bats
@@ -1120,6 +1124,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           .from('games')
           .update({ 
             our_score: totalRunsScored,
+            opponent_score: opponentRunsScored,
             updated_at: new Date().toISOString()
           })
           .eq('id', game.id)
@@ -1415,6 +1420,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                                 {atBat.result === 'hit_by_pitch' && 'HBP'}
                                 {atBat.result === 'sacrifice_fly' && 'SF'}
                                 {atBat.result === 'sacrifice_bunt' && 'SAC'}
+                                {atBat.result === 'fielders_choice' && 'FC'}
                               </div>
                             )}
                             
