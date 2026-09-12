@@ -5,7 +5,7 @@ import { Check, ChevronRight, Eraser, PenTool, RotateCcw, Save, SkipForward, Und
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormField, InkPad, Input, LoadingState, PageHeader } from '@/components/ui'
-import { TOKENS, describeToken } from '@/lib/handwriting/vocabulary'
+import { describeToken, tokensFor, type SampleSet } from '@/lib/handwriting/vocabulary'
 import { normalize, recognize, type Match, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { cn } from '@/lib/utils'
 
@@ -41,6 +41,7 @@ export default function HandwritingLabView() {
   const [error, setError] = useState<string | null>(null)
   const [writer, setWriter] = useState('')
   const [mode, setMode] = useState<'collect' | 'test'>('collect')
+  const [set, setSet] = useState<SampleSet>('notation')
   const [index, setIndex] = useState(0)
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [pointerType, setPointerType] = useState('mouse')
@@ -84,6 +85,9 @@ export default function HandwritingLabView() {
         pen: 'stylus',
         touch: 'dedo',
         mouse: 'mouse',
+        setNotation: 'Notación',
+        setLetters: 'Letras y números',
+        setHint: 'Notación: símbolos del scorecard. Letras y números: para nombres de jugadores y números de camiseta, una letra por celda.',
       }
     : {
         title: 'Handwriting lab',
@@ -119,14 +123,18 @@ export default function HandwritingLabView() {
         pen: 'stylus',
         touch: 'finger',
         mouse: 'mouse',
+        setNotation: 'Notation',
+        setLetters: 'Letters and digits',
+        setHint: 'Notation: scorecard symbols. Letters and digits: for player names and jersey numbers, one character per cell.',
       }
 
   // Prompt sequence: every token, REPEATS times, interleaved so the same token is not written back to back
+  const activeTokens = useMemo(() => tokensFor(set), [set])
   const sequence = useMemo(() => {
     const seq: string[] = []
-    for (let r = 0; r < REPEATS; r++) for (const t of TOKENS) seq.push(t.value)
+    for (let r = 0; r < REPEATS; r++) for (const t of activeTokens) seq.push(t.value)
     return seq
-  }, [])
+  }, [activeTokens])
   const current = sequence[index]
   const finished = index >= sequence.length
 
@@ -157,10 +165,11 @@ export default function HandwritingLabView() {
     loadSamples()
   }, [loadSamples])
 
-  const templates = useMemo<Template[]>(
-    () => samples.map((s) => ({ symbol: s.symbol, cloud: normalize(s.strokes) })),
-    [samples]
-  )
+  // Only compare against the symbols of the active set (a notation 'K' and a letter 'K' are the same glyph, so both count)
+  const templates = useMemo<Template[]>(() => {
+    const allowed = new Set(activeTokens.map((t) => t.value))
+    return samples.filter((s) => allowed.has(s.symbol)).map((s) => ({ symbol: s.symbol, cloud: normalize(s.strokes) }))
+  }, [samples, activeTokens])
 
   // Re-run recognition whenever the drawing changes
   useEffect(() => {
@@ -257,9 +266,27 @@ export default function HandwritingLabView() {
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         {/* Writing area */}
         <Card className="p-5 sm:p-6">
-          <FormField label={L.writer} hint={L.writerHint} className="mb-5 max-w-sm">
-            <Input value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="Ej. Miguel" />
-          </FormField>
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end">
+            <FormField label={L.writer} hint={L.writerHint} className="max-w-sm flex-1">
+              <Input value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="Ej. Miguel" />
+            </FormField>
+            <div className="inline-flex items-center self-start rounded-lg bg-secondary p-0.5 sm:mb-6" role="group" title={L.setHint}>
+              {(['notation', 'letters'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => { setSet(s); setIndex(0); setStrokes([]); setTestChoice(null) }}
+                  aria-pressed={set === s}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    set === s ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {s === 'notation' ? L.setNotation : L.setLetters}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {!writer.trim() ? (
             <Alert variant="info">{L.needWriter}</Alert>
@@ -337,7 +364,7 @@ export default function HandwritingLabView() {
                       <div>
                         <p className="mb-2 text-sm font-medium">{L.pickSymbol}</p>
                         <div className="flex flex-wrap gap-1.5">
-                          {TOKENS.map((t) => (
+                          {activeTokens.map((t) => (
                             <button
                               key={t.value}
                               type="button"

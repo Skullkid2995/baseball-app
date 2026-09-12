@@ -73,3 +73,20 @@ export function describeToken(value: string, language: 'es' | 'en'): string {
   }
   return value
 }
+
+/**
+ * Letters and digits, written one per cell. Used for free text (player names,
+ * jersey numbers) in Classic mode: each cell is recognized on its own and the
+ * roster is filtered as the letters arrive, so the scorer taps the player
+ * instead of writing the whole name.
+ */
+export const LETTER_TOKENS: Token[] = [
+  ...'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ'.split('').map((c) => ({ value: c, es: `Letra ${c}`, en: `Letter ${c}`, group: 'fielder' as const })),
+  ...'0123456789'.split('').map((d) => ({ value: d, es: `Número ${d}`, en: `Digit ${d}`, group: 'fielder' as const })),
+]
+export const LETTER_VALUES = LETTER_TOKENS.map((t) => t.value)
+
+export type SampleSet = 'notation' | 'letters'
+export function tokensFor(set: SampleSet): Token[] {
+  return set === 'letters' ? LETTER_TOKENS : TOKENS
+}
