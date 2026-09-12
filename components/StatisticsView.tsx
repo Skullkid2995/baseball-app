@@ -54,6 +54,7 @@ interface AtBatRow {
   hit_x?: number | string | null
   hit_y?: number | string | null
   notation?: string | null
+  pitcher_id?: string | null
   players: AtBatPlayer | null
 }
 
@@ -208,6 +209,17 @@ function finalize(s: PlayerStats): PlayerStats {
 
 const EN = {
   sprayChart: 'Spray chart',
+  ourPitchers: 'Our pitchers',
+  ourPitchersHint: 'What the opponents did against our pitchers: where their hits and outs landed, and each batter’s numbers. Tap a batter to filter the field.',
+  allPitchers: 'All our pitchers',
+  vsBatters: 'Opposing batters',
+  bf: 'BF',
+  bfFull: 'Batters faced',
+  hAllowed: 'H',
+  bbAllowed: 'BB',
+  kAllowed: 'K',
+  avgAgainst: 'AVG against',
+  tapToFilterOpp: 'tap a row to filter the field',
   sprayChartHint: 'Every batted ball as the line registered at the at-bat: home plate to where it landed. Tap a player in the table to filter.',
   filteredBy: 'Showing',
   clearPlayer: 'All players',
@@ -282,6 +294,17 @@ const EN = {
 
 const ES: typeof EN = {
   sprayChart: 'Mapa de batazos',
+  ourPitchers: 'Nuestros pitchers',
+  ourPitchersHint: 'Qué hicieron los rivales contra nuestros pitchers: dónde cayeron sus hits y outs, y los números de cada bateador. Toca un bateador para filtrar el campo.',
+  allPitchers: 'Todos nuestros pitchers',
+  vsBatters: 'Bateadores rivales',
+  bf: 'BE',
+  bfFull: 'Bateadores enfrentados',
+  hAllowed: 'H',
+  bbAllowed: 'BB',
+  kAllowed: 'K',
+  avgAgainst: 'AVG en contra',
+  tapToFilterOpp: 'toca una fila para filtrar el campo',
   sprayChartHint: 'Cada batazo como la línea registrada en el turno: de home a donde cayó. Toca un jugador en la tabla para filtrar.',
   filteredBy: 'Mostrando',
   clearPlayer: 'Todos los jugadores',
@@ -384,6 +407,8 @@ const COLUMNS: Column[] = [
   { key: 'ops', label: 'ops', full: 'opsFull', kind: 'avg', denom: (s) => s.ab },
 ]
 
+const OPP_COLUMNS = COLUMNS.filter((c) => ['pa', 'ab', 'h', 'doubles', 'triples', 'hr', 'bb', 'k', 'avg'].includes(c.key))
+
 const PAGE_SIZE = 1000
 
 // ---------------------------------------------------------------------------
@@ -406,6 +431,9 @@ export default function StatisticsView() {
   const [sortKey, setSortKey] = useState<SortKey>('avg')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
+  const [playersById, setPlayersById] = useState<Map<string, { name: string; jersey: number | null }>>(new Map())
+  const [pitcherFilter, setPitcherFilter] = useState<string>('all')
+  const [selectedOppBatterId, setSelectedOppBatterId] = useState<string | null>(null)
 
   const minAb = Math.max(0, Math.floor(Number(minAbInput)) || 0)
 
@@ -437,6 +465,10 @@ export default function StatisticsView() {
 
         const { data: gamesData, error: gamesError } = await gamesReq
         if (gamesError) throw new Error(gamesError.message)
+        const { data: playersData } = await supabase.from('players').select('id, first_name, last_name, jersey_number')
+        if (!cancelled) {
+          setPlayersById(new Map(((playersData ?? []) as { id: string; first_name: string; last_name: string; jersey_number: number | null }[]).map((p) => [p.id, { name: `${p.first_name} ${p.last_name}`, jersey: p.jersey_number }])))
+        }
 
         if (cancelled) return
         setAtBats(rows)
@@ -533,6 +565,39 @@ export default function StatisticsView() {
     [filtered, selectedPlayerId]
   )
   const selectedPlayer = useMemo(() => players.find((p) => p.id === selectedPlayerId) ?? null, [players, selectedPlayerId])
+
+  // Our pitchers: the opponents' at-bats (they bat against us) that carry the pitcher on record
+  const pitching = useMemo(() => {
+    const rows = atBats.filter(
+      (ab) => (gameFilter === 'all' || ab.game_id === gameFilter) && sideOf(ab, gameTeamById.get(ab.game_id)) === 'opponent' && !!ab.pitcher_id
+    )
+    const ids = Array.from(new Set(rows.map((ab) => ab.pitcher_id as string)))
+    const pitchers = ids
+      .map((id) => ({ id, name: playersById.get(id)?.name ?? L.unknownPlayer, jersey: playersById.get(id)?.jersey ?? null }))
+      .sort((a, b) => a.name.localeCompare(b.name, locale))
+    const byPitcher = pitcherFilter === 'all' ? rows : rows.filter((ab) => ab.pitcher_id === pitcherFilter)
+    const line = finalize(
+      byPitcher.reduce((acc, ab) => {
+        accumulate(acc, ab)
+        return acc
+      }, newPlayerStats('line', null, ''))
+    )
+    const map = new Map<string, PlayerStats>()
+    for (const ab of byPitcher) {
+      let st = map.get(ab.player_id)
+      if (!st) {
+        st = newPlayerStats(ab.player_id, ab.players, L.unknownPlayer)
+        map.set(ab.player_id, st)
+      }
+      accumulate(st, ab)
+    }
+    const batters = Array.from(map.values())
+      .map(finalize)
+      .sort((a, b) => b.avg - a.avg || b.h - a.h || a.name.localeCompare(b.name, locale))
+    const chartRows = selectedOppBatterId ? byPitcher.filter((ab) => ab.player_id === selectedOppBatterId) : byPitcher
+    return { rows, pitchers, line, batters, chartRows }
+  }, [atBats, gameFilter, gameTeamById, pitcherFilter, selectedOppBatterId, playersById, L.unknownPlayer, locale])
+  const selectedOppBatter = pitching.batters.find((b) => b.id === selectedOppBatterId) ?? null
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -787,6 +852,105 @@ export default function StatisticsView() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* Our pitchers: where the opponents' hits and outs landed, and each opposing batter's numbers */}
+      {pitching.rows.length > 0 && (
+        <Card>
+          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle>{L.ourPitchers}</CardTitle>
+              <CardDescription>{L.ourPitchersHint}</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={pitcherFilter}
+                onChange={(e) => {
+                  setPitcherFilter(e.target.value)
+                  setSelectedOppBatterId(null)
+                }}
+                className="w-56"
+              >
+                <option value="all">{L.allPitchers}</option>
+                {pitching.pitchers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.jersey !== null ? ` #${p.jersey}` : ''}
+                  </option>
+                ))}
+              </Select>
+              {selectedOppBatter && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedOppBatterId(null)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-accent px-3 py-1 text-xs font-semibold text-accent-foreground hover:bg-blue-100"
+                  title={L.clearPlayer}
+                >
+                  {L.filteredBy}: {selectedOppBatter.name}
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <div className="mb-3 grid grid-cols-5 gap-2 text-center">
+                {[
+                  { label: L.bf, title: L.bfFull, value: String(pitching.line.pa) },
+                  { label: L.hAllowed, title: L.hitsFull as string, value: String(pitching.line.h) },
+                  { label: L.bbAllowed, title: L.bbFull as string, value: String(pitching.line.bb) },
+                  { label: L.kAllowed, title: L.kFull as string, value: String(pitching.line.k) },
+                  { label: L.avgAgainst, title: L.avgFull as string, value: fmtAvg(pitching.line.avg, pitching.line.ab) },
+                ].map((tile) => (
+                  <div key={tile.label} className="rounded-lg border border-border bg-slate-50 px-2 py-1.5" title={tile.title}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{tile.label}</div>
+                    <div className="text-base font-bold tabular-nums">{tile.value}</div>
+                  </div>
+                ))}
+              </div>
+              <SprayChart atBats={pitching.chartRows} lang={locale.startsWith('es') ? 'es' : 'en'} />
+            </div>
+            <div className="min-w-0">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {L.vsBatters} · {pitching.batters.length} · {L.tapToFilterOpp}
+              </p>
+              <div className="max-h-[420px] overflow-y-auto overflow-x-auto rounded-xl border border-border bg-card">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">{L.player}</th>
+                      {OPP_COLUMNS.map((col) => (
+                        <th key={col.key} className="px-2 py-2 text-right font-semibold" title={L[col.full] as string}>
+                          {L[col.label] as string}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pitching.batters.map((p) => (
+                      <tr
+                        key={p.id}
+                        onClick={() => setSelectedOppBatterId((cur) => (cur === p.id ? null : p.id))}
+                        aria-selected={selectedOppBatterId === p.id}
+                        className={cn('cursor-pointer border-t border-border hover:bg-slate-50/60', selectedOppBatterId === p.id && 'bg-accent/60 hover:bg-accent/60')}
+                      >
+                        <td className="px-3 py-2">
+                          <div className="truncate font-medium text-foreground">{p.name}</div>
+                          {p.jersey !== null && <div className="text-xs text-muted-foreground tabular-nums">#{p.jersey}</div>}
+                        </td>
+                        {OPP_COLUMNS.map((col) => (
+                          <td key={col.key} className={cn('px-2 py-2 text-right tabular-nums whitespace-nowrap', col.kind === 'avg' && 'font-medium')}>
+                            {col.kind === 'avg' ? fmtAvg(p[col.key], col.denom ? col.denom(p) : 1) : p[col.key]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
