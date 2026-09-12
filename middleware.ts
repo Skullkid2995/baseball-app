@@ -40,8 +40,10 @@ export async function middleware(request: NextRequest) {
   // Protected routes (everything except /login and /auth/callback)
   const isLoginPage = request.nextUrl.pathname === '/login'
   const isAuthCallback = request.nextUrl.pathname.startsWith('/auth/callback')
+  // Public handwriting collection links (/write/<code>): no account needed
+  const isPublicWrite = request.nextUrl.pathname.startsWith('/write')
 
-  if (!isLoginPage && !isAuthCallback) {
+  if (!isLoginPage && !isAuthCallback && !isPublicWrite) {
     // If user is not logged in, redirect to login
     if (!user) {
       return NextResponse.redirect(new URL('/login', request.url))

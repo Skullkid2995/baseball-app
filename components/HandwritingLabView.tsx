@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, ChevronRight, Eraser, PenTool, RotateCcw, Save, SkipForward, Undo2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import SampleInvites from './SampleInvites'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormField, InkPad, Input, LoadingState, PageHeader } from '@/components/ui'
 import { describeToken, tokensFor, type SampleSet } from '@/lib/handwriting/vocabulary'
@@ -262,6 +263,9 @@ export default function HandwritingLabView() {
       />
 
       {error && <Alert variant="error">{error}</Alert>}
+
+      {/* Public links: collect samples from anyone, no account */}
+      <SampleInvites />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         {/* Writing area */}
