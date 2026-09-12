@@ -11,8 +11,9 @@
  */
 import { recognize, type Match, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import {
-  BALL_BOXES, BASE_PATH, BASE_RADIUS, FIRST, HIT_MIN_LENGTH, HIT_START_RADIUS, HOME, OUT_MARK, PATH_END_RADIUS, SECOND,
-  STRIKE_BOXES, TAP_LENGTH, THIRD, bbox, dist, distToSegment, inBox, strokeLength, type Pt,
+  BALL_BOXES, BASE_PATH, BASE_RADIUS, FIRST, HIT_MIN_LENGTH, HIT_START_RADIUS, HOME, OUT_AREA_RADIUS, OUT_MARK,
+  PATH_END_RADIUS, PATH_MAX_DEVIATION, SECOND, STRIKE_BOXES, TALLY, TAP_LENGTH, THIRD, bbox, dist, distToSegment, inBox,
+  strokeLength, type Pt,
 } from './geometry'
 
 export interface BaseRunners { first: boolean; second: boolean; third: boolean; home: boolean }
@@ -25,6 +26,7 @@ export type StrokeKind =
   | { kind: 'base_path'; toBase: 1 | 2 | 3 | 4 }
   | { kind: 'hit_line'; end: Pt }
   | { kind: 'out_circle' }
+  | { kind: 'out_digit' }
   | { kind: 'ink' }
 
 export interface BoxMarks {
@@ -35,15 +37,19 @@ export interface BoxMarks {
   hitLine: Stroke | null
   /** notation strokes (what the recognizer sees) */
   ink: Stroke[]
-  /** strokes drawn along base paths, kept so they can be undone */
+  /** strokes drawn along base paths */
   pathStrokes: Stroke[]
   outCircles: Stroke[]
+  /** digit strokes written inside the out circle */
+  outDigitStrokes: Stroke[]
 }
 
 export interface Interpretation {
   marks: BoxMarks
   /** top matches for the notation ink, best first */
   tokenMatches: Match[]
+  /** what the digit in the out circle was read as, when digit templates exist */
+  outDigit: Match | null
   /** per-stroke classification, same order as the stroke actions */
   kinds: StrokeKind[]
 }
@@ -55,7 +61,7 @@ export const TOKEN_BASE: Record<string, keyof BaseRunners> = {
 export const OUT_TOKENS = new Set(['K', 'Kc', 'F', 'L', 'P', 'SF', 'SAC', 'DP', '6-3', '4-3', '5-3', '1-3', '3-1', '6-4-3', '4-6-3'])
 
 const baseIndex = (p: Pt): number => {
-  // 0 = home plate (start), 1..3 bases, 4 = home (scored) is the same point as 0
+  // 0 = home plate (start), 1..3 bases; home as the destination is handled by the caller
   const candidates: [Pt, number][] = [[HOME, 0], [FIRST, 1], [SECOND, 2], [THIRD, 3]]
   let best = -1, bestD = Infinity
   for (const [pt, i] of candidates) {
@@ -71,43 +77,47 @@ export function classifyStroke(s: Stroke): StrokeKind {
   const start = s[0] as Pt
   const end = s[s.length - 1] as Pt
   const length = strokeLength(s)
-  if (length < TAP_LENGTH) return { kind: 'tap', point: start }
+  const b = bbox(s)
+  // A tap, a tick or an X inside a ball/strike box counts as a tap on that box
+  if (b.w <= TALLY + 2 && b.h <= TALLY + 2) {
+    const c: Pt = [b.cx, b.cy]
+    if (BALL_BOXES.some((k) => inBox(c, k)) || STRIKE_BOXES.some((k) => inBox(c, k))) return { kind: 'tap', point: c }
+  }
+  if (length < TAP_LENGTH || (b.w < 2.5 && b.h < 2.5)) return { kind: 'tap', point: start }
 
   // Base path: starts at a base (or home plate) and ends at a later base, hugging the path
   const from = baseIndex(start)
   const toRaw = baseIndex(end)
   if (from >= 0 && toRaw >= 0) {
-    // ending at home plate after leaving a base means the runner scored (index 4)
     const to = toRaw === 0 && from > 0 ? 4 : toRaw
     if (to > from) {
-      // every point must stay close to the polyline from..to
       const maxDev = Math.max(...s.map((p) => Math.min(...Array.from({ length: to - from }, (_, k) => distToSegment(p as Pt, BASE_PATH[from + k], BASE_PATH[from + k + 1])))))
-      if (maxDev < 9) return { kind: 'base_path', toBase: to as 1 | 2 | 3 | 4 }
+      if (maxDev < PATH_MAX_DEVIATION) return { kind: 'base_path', toBase: to as 1 | 2 | 3 | 4 }
     }
   }
 
   // Batted ball: leaves home plate into the field, does not end on a base
-  if (dist(start, HOME) < HIT_START_RADIUS && length >= HIT_MIN_LENGTH && dist(end, HOME) > HIT_MIN_LENGTH && baseIndex(end) < 0) {
+  if (dist(start, HOME) < HIT_START_RADIUS && length >= HIT_MIN_LENGTH && dist(end, HOME) > HIT_MIN_LENGTH && baseIndex(end) < 0 && end[1] < HOME[1]) {
     return { kind: 'hit_line', end }
   }
 
-  // Out circle: a small closed loop in the lower-right corner
-  const b = bbox(s)
-  const closed = dist(start, end) < Math.max(4, b.w * 0.35)
-  if (closed && length > 12 && b.w >= 5 && b.w <= 24 && b.h >= 5 && b.h <= 24 && dist([b.cx, b.cy], OUT_MARK) < 16) {
-    return { kind: 'out_circle' }
+  // Marks near the out circle: a closed loop is the circle, anything else is the digit inside it
+  if (dist([b.cx, b.cy], OUT_MARK) < OUT_AREA_RADIUS && b.w <= 26 && b.h <= 26) {
+    const closed = dist(start, end) < Math.max(4, Math.max(b.w, b.h) * 0.35)
+    if (closed && length > 12 && b.w >= 5 && b.h >= 5) return { kind: 'out_circle' }
+    return { kind: 'out_digit' }
   }
 
   return { kind: 'ink' }
 }
 
-/** Apply a tap to the marks (mutates a copy). */
+/** Apply a tap to the marks (returns a copy). */
 export function applyTap(marks: BoxMarks, p: Pt): BoxMarks {
   const m: BoxMarks = { ...marks, bases: { ...marks.bases } }
   if (dist(p, FIRST) < BASE_RADIUS) { m.bases.first = !m.bases.first; m.bases.home = false; return m }
   if (dist(p, SECOND) < BASE_RADIUS) { m.bases.second = !m.bases.second; m.bases.home = false; return m }
   if (dist(p, THIRD) < BASE_RADIUS) { m.bases.third = !m.bases.third; m.bases.home = false; return m }
-  if (dist(p, HOME) < BASE_RADIUS || dist(p, [50, 52]) < BASE_RADIUS) {
+  if (dist(p, HOME) < BASE_RADIUS || dist(p, [50, 74]) < BASE_RADIUS) {
     m.bases = m.bases.home ? { ...NO_BASES } : { first: true, second: true, third: true, home: true }
     return m
   }
@@ -129,13 +139,18 @@ function markBase(bases: BaseRunners, toBase: 1 | 2 | 3 | 4): BaseRunners {
 }
 
 export function emptyMarks(): BoxMarks {
-  return { bases: { ...NO_BASES }, outNumber: 0, balls: 0, strikes: 0, hitLine: null, ink: [], pathStrokes: [], outCircles: [] }
+  return { bases: { ...NO_BASES }, outNumber: 0, balls: 0, strikes: 0, hitLine: null, ink: [], pathStrokes: [], outCircles: [], outDigitStrokes: [] }
 }
 
-/** Reduce the ordered actions to marks and recognize the notation ink. */
-export function interpretBox(actions: BoxAction[], templates: Template[]): Interpretation {
+/**
+ * Reduce the ordered actions to marks and recognize the notation ink.
+ * `digitTemplates` (samples of 1, 2, 3 from the letters set) let a number
+ * written inside the out circle set the out number directly.
+ */
+export function interpretBox(actions: BoxAction[], templates: Template[], digitTemplates: Template[] = []): Interpretation {
   let marks = emptyMarks()
   const kinds: StrokeKind[] = []
+  let circles = 0
   for (const a of actions) {
     if (a.type === 'tap') { marks = applyTap(marks, a.point); continue }
     const k = classifyStroke(a.points)
@@ -144,12 +159,22 @@ export function interpretBox(actions: BoxAction[], templates: Template[]): Inter
       case 'tap': marks = applyTap(marks, k.point); break
       case 'base_path': marks = { ...marks, bases: markBase(marks.bases, k.toBase), pathStrokes: [...marks.pathStrokes, a.points] }; break
       case 'hit_line': marks = { ...marks, hitLine: a.points }; break
-      case 'out_circle': marks = { ...marks, outNumber: Math.min(3, marks.outNumber + 1), outCircles: [...marks.outCircles, a.points] }; break
+      case 'out_circle': circles += 1; marks = { ...marks, outCircles: [...marks.outCircles, a.points] }; break
+      case 'out_digit': marks = { ...marks, outDigitStrokes: [...marks.outDigitStrokes, a.points] }; break
       case 'ink': marks = { ...marks, ink: [...marks.ink, a.points] }; break
     }
   }
+  // Out number: a readable digit wins, otherwise the number of circles, otherwise taps
+  let outDigit: Match | null = null
+  if (marks.outDigitStrokes.length && digitTemplates.length) {
+    const digits = digitTemplates.filter((t) => ['1', '2', '3'].includes(t.symbol))
+    outDigit = recognize(marks.outDigitStrokes, digits)[0] ?? null
+  }
+  if (outDigit) marks = { ...marks, outNumber: Number(outDigit.symbol) }
+  else if (circles > 0 || marks.outDigitStrokes.length) marks = { ...marks, outNumber: Math.min(3, Math.max(marks.outNumber, circles || 1)) }
+
   const tokenMatches = marks.ink.length ? recognize(marks.ink, templates).slice(0, 3) : []
-  return { marks, tokenMatches, kinds }
+  return { marks, tokenMatches, outDigit, kinds }
 }
 
 /** Bases implied by a confirmed token when the scorer marked none. */

@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Stroke } from '@/lib/handwriting/recognizer'
 import type { BoxAction, BoxMarks } from '@/lib/scorecard/interpret'
-import { BALL_BOXES, FIRST, HOME, OUT_MARK, SECOND, STRIKE_BOXES, TALLY, TAP_LENGTH, THIRD, dist, strokeLength, type Pt } from '@/lib/scorecard/geometry'
+import {
+  BALL_BOXES, FENCE_RADIUS, FIELDERS, FIRST, HOME, LEFT_POLE, MOUND, OUT_MARK, RIGHT_POLE, SECOND, STRIKE_BOXES, TALLY,
+  TAP_LENGTH, THIRD, dist, strokeLength, type Pt,
+} from '@/lib/scorecard/geometry'
 import { cn } from '@/lib/utils'
 
 export interface ScorecardBoxProps {
@@ -19,8 +22,9 @@ export interface ScorecardBoxProps {
 const PENCIL = '#1f2937'
 
 /**
- * The classic scorecard box: a square canvas that records strokes and taps in
- * 0-100 units and paints the marks the interpreter derived from them.
+ * The classic scorecard box: a square canvas showing a proportioned field
+ * (foul lines, outfield to the fence, infield diamond). It records strokes and
+ * taps in 0-100 units and paints the marks the interpreter derived from them.
  * Pen input gets palm rejection (touch is ignored while a pen is in use).
  */
 export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType }: ScorecardBoxProps) {
@@ -41,21 +45,51 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     if (canvas.width !== target) { canvas.width = target; canvas.height = target }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const u = (v: number) => (v * size) / 100
+    const P = (p: Pt): [number, number] => [u(p[0]), u(p[1])]
     ctx.clearRect(0, 0, size, size)
 
-    // diamond guide
-    ctx.strokeStyle = 'rgba(100,116,139,0.55)'
-    ctx.lineWidth = Math.max(1, u(0.6))
+    // ---- field ----
+    const fenceStart = Math.atan2(LEFT_POLE[1] - HOME[1], LEFT_POLE[0] - HOME[0])
+    const fenceEnd = Math.atan2(RIGHT_POLE[1] - HOME[1], RIGHT_POLE[0] - HOME[0])
+    // fair territory
     ctx.beginPath()
-    ctx.moveTo(u(HOME[0]), u(HOME[1])); ctx.lineTo(u(FIRST[0]), u(FIRST[1])); ctx.lineTo(u(SECOND[0]), u(SECOND[1])); ctx.lineTo(u(THIRD[0]), u(THIRD[1])); ctx.closePath()
-    ctx.stroke()
+    ctx.moveTo(...P(HOME))
+    ctx.lineTo(...P(LEFT_POLE))
+    ctx.arc(u(HOME[0]), u(HOME[1]), u(FENCE_RADIUS), fenceStart, fenceEnd, false)
+    ctx.closePath()
+    ctx.fillStyle = '#e6f0e2'
+    ctx.fill()
+    // infield dirt
+    ctx.beginPath()
+    ctx.moveTo(...P(HOME))
+    ctx.lineTo(u(FIRST[0] + 8), u(FIRST[1] - 8))
+    ctx.arc(u(HOME[0]), u(HOME[1]), u(dist(HOME, [FIRST[0] + 8, FIRST[1] - 8])), Math.atan2(FIRST[1] - 8 - HOME[1], FIRST[0] + 8 - HOME[0]), Math.atan2(THIRD[1] - 8 - HOME[1], THIRD[0] - 8 - HOME[0]), true)
+    ctx.closePath()
+    ctx.fillStyle = '#eee3cf'
+    ctx.fill()
+    // infield grass
+    ctx.beginPath()
+    ctx.moveTo(u(HOME[0]), u(HOME[1] - 3)); ctx.lineTo(u(FIRST[0] - 3), u(FIRST[1])); ctx.lineTo(u(SECOND[0]), u(SECOND[1] + 3)); ctx.lineTo(u(THIRD[0] + 3), u(THIRD[1])); ctx.closePath()
+    ctx.fillStyle = '#d9e9d2'
+    ctx.fill()
+    // fence + foul lines + base paths
+    ctx.strokeStyle = 'rgba(71,85,105,0.8)'
+    ctx.lineWidth = Math.max(1, u(0.7))
+    ctx.beginPath(); ctx.arc(u(HOME[0]), u(HOME[1]), u(FENCE_RADIUS), fenceStart, fenceEnd, false); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(...P(HOME)); ctx.lineTo(...P(LEFT_POLE)); ctx.moveTo(...P(HOME)); ctx.lineTo(...P(RIGHT_POLE)); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(...P(HOME)); ctx.lineTo(...P(FIRST)); ctx.lineTo(...P(SECOND)); ctx.lineTo(...P(THIRD)); ctx.closePath(); ctx.stroke()
+    // fielder numbers
+    ctx.fillStyle = 'rgba(100,116,139,0.6)'
+    ctx.font = `600 ${Math.round(u(3.6))}px ui-sans-serif, system-ui`
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    for (const f of FIELDERS) ctx.fillText(String(f.n), u(f.at[0]), u(f.at[1]))
 
-    // base paths reached (pencil)
+    // ---- marks: base paths reached ----
     const { bases } = marks
     ctx.strokeStyle = PENCIL
-    ctx.lineWidth = u(2.2)
+    ctx.lineWidth = u(2)
     ctx.lineCap = 'round'
-    const seg = (a: Pt, b: Pt) => { ctx.beginPath(); ctx.moveTo(u(a[0]), u(a[1])); ctx.lineTo(u(b[0]), u(b[1])); ctx.stroke() }
+    const seg = (a: Pt, b: Pt) => { ctx.beginPath(); ctx.moveTo(...P(a)); ctx.lineTo(...P(b)); ctx.stroke() }
     if (bases.first || bases.second || bases.third || bases.home) seg(HOME, FIRST)
     if (bases.second || bases.third || bases.home) seg(FIRST, SECOND)
     if (bases.third || bases.home) seg(SECOND, THIRD)
@@ -63,32 +97,35 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
       seg(THIRD, HOME)
       ctx.fillStyle = 'rgba(31,41,55,0.85)'
       ctx.beginPath()
-      ctx.moveTo(u(50), u(60)); ctx.lineTo(u(58), u(52)); ctx.lineTo(u(50), u(44)); ctx.lineTo(u(42), u(52)); ctx.closePath()
+      ctx.moveTo(u(50), u(80)); ctx.lineTo(u(56), u(74)); ctx.lineTo(u(50), u(68)); ctx.lineTo(u(44), u(74)); ctx.closePath()
       ctx.fill()
     }
 
-    // base squares and home plate
-    ctx.fillStyle = '#fffdf7'
-    ctx.strokeStyle = 'rgba(100,116,139,0.7)'
-    ctx.lineWidth = Math.max(1, u(0.5))
-    for (const b of [FIRST, SECOND, THIRD]) { ctx.beginPath(); ctx.rect(u(b[0]) - u(3), u(b[1]) - u(3), u(6), u(6)); ctx.fill(); ctx.stroke() }
+    // mound, bases and home plate on top of the marks
+    ctx.fillStyle = '#eee3cf'; ctx.strokeStyle = 'rgba(148,163,184,0.9)'; ctx.lineWidth = Math.max(1, u(0.4))
+    ctx.beginPath(); ctx.arc(u(MOUND[0]), u(MOUND[1]), u(2.2), 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = 'rgba(71,85,105,0.9)'; ctx.lineWidth = Math.max(1, u(0.5))
+    for (const b of [FIRST, SECOND, THIRD]) {
+      ctx.save(); ctx.translate(u(b[0]), u(b[1])); ctx.rotate(Math.PI / 4)
+      ctx.beginPath(); ctx.rect(-u(2.2), -u(2.2), u(4.4), u(4.4)); ctx.fill(); ctx.stroke(); ctx.restore()
+    }
     ctx.beginPath()
-    ctx.moveTo(u(46), u(81)); ctx.lineTo(u(54), u(81)); ctx.lineTo(u(54), u(85)); ctx.lineTo(u(50), u(89)); ctx.lineTo(u(46), u(85)); ctx.closePath()
+    ctx.moveTo(u(HOME[0] - 2.5), u(HOME[1] - 2)); ctx.lineTo(u(HOME[0] + 2.5), u(HOME[1] - 2)); ctx.lineTo(u(HOME[0] + 2.5), u(HOME[1])); ctx.lineTo(u(HOME[0]), u(HOME[1] + 2.5)); ctx.lineTo(u(HOME[0] - 2.5), u(HOME[1])); ctx.closePath()
     ctx.fill(); ctx.stroke()
 
-    // out marker
+    // ---- out marker ----
     const { outNumber } = marks
-    ctx.strokeStyle = outNumber ? PENCIL : 'rgba(148,163,184,0.5)'
-    ctx.lineWidth = outNumber ? u(1.4) : Math.max(1, u(0.5))
+    ctx.strokeStyle = outNumber ? PENCIL : 'rgba(148,163,184,0.6)'
+    ctx.lineWidth = outNumber ? u(1.2) : Math.max(1, u(0.5))
     ctx.setLineDash(outNumber ? [] : [3, 3])
-    ctx.beginPath(); ctx.arc(u(OUT_MARK[0]), u(OUT_MARK[1]), u(6.5), 0, Math.PI * 2); ctx.stroke()
+    ctx.beginPath(); ctx.arc(u(OUT_MARK[0]), u(OUT_MARK[1]), u(6), 0, Math.PI * 2); ctx.stroke()
     ctx.setLineDash([])
-    ctx.fillStyle = outNumber ? PENCIL : 'rgba(148,163,184,0.8)'
-    ctx.font = `700 ${Math.round(u(8))}px ui-sans-serif, system-ui`
+    ctx.fillStyle = outNumber ? PENCIL : 'rgba(148,163,184,0.9)'
+    ctx.font = `700 ${Math.round(u(7))}px ui-sans-serif, system-ui`
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText(outNumber ? String(outNumber) : 'O', u(OUT_MARK[0]), u(OUT_MARK[1]) + u(0.5))
+    ctx.fillText(outNumber ? String(outNumber) : 'O', u(OUT_MARK[0]), u(OUT_MARK[1]) + u(0.4))
 
-    // tally boxes
+    // ---- tally boxes ----
     const boxes = (list: Pt[], n: number) => {
       list.forEach((b, i) => {
         ctx.beginPath()
@@ -108,7 +145,7 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     ctx.textAlign = 'left'; ctx.fillText('B', u(BALL_BOXES[0][0]), u(BALL_BOXES[0][1] + TALLY + 3.5))
     ctx.textAlign = 'right'; ctx.fillText('S', u(STRIKE_BOXES[0][0] + TALLY), u(STRIKE_BOXES[0][1] + TALLY + 3.5))
 
-    // strokes
+    // ---- strokes ----
     const strokePath = (s: Stroke, color: string, width: number) => {
       if (!s.length) return
       ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
@@ -118,13 +155,14 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
       ctx.stroke()
     }
     if (marks.hitLine) {
-      strokePath(marks.hitLine, '#b45309', u(1.6))
+      strokePath(marks.hitLine, '#b45309', u(1.5))
       const end = marks.hitLine[marks.hitLine.length - 1]
-      ctx.fillStyle = '#b45309'; ctx.beginPath(); ctx.arc(u(end[0]), u(end[1]), u(2.2), 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#b45309'; ctx.beginPath(); ctx.arc(u(end[0]), u(end[1]), u(2), 0, Math.PI * 2); ctx.fill()
     }
     for (const s of marks.outCircles) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
-    for (const s of marks.ink) strokePath(s, PENCIL, u(2.4))
-    if (drawing.current) strokePath(drawing.current, PENCIL, u(2.4))
+    for (const s of marks.outDigitStrokes) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
+    for (const s of marks.ink) strokePath(s, PENCIL, u(2.2))
+    if (drawing.current) strokePath(drawing.current, PENCIL, u(2.2))
   }, [marks])
 
   useEffect(() => {

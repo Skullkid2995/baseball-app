@@ -39,6 +39,7 @@ export default function ScorecardLabView() {
   const { language } = useLanguage()
   const [samples, setSamples] = useState<SampleRow[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
+  const [digitTemplates, setDigitTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [writer, setWriter] = useState('')
@@ -98,11 +99,12 @@ export default function ScorecardLabView() {
     const allowed = new Set(TOKENS.map((t) => t.value))
     const rows = (hwRes.data || []) as { symbol: string; strokes: Stroke[] }[]
     setTemplates(rows.filter((r) => allowed.has(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
+    setDigitTemplates(rows.filter((r) => ['1', '2', '3'].includes(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
-  const interpretation = useMemo(() => interpretBox(actions, templates), [actions, templates])
+  const interpretation = useMemo(() => interpretBox(actions, templates, digitTemplates), [actions, templates, digitTemplates])
   const { marks, tokenMatches } = interpretation
   const top = tokenMatches[0]
 

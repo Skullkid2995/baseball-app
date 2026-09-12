@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState } from 'react'
 import ClassicAtBatPad from './ClassicAtBatPad'
+import FieldSvg from './FieldSvg'
+import { fieldAreaAt } from '@/lib/scorecard/geometry'
 
 interface DiamondCanvasProps {
   onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) => void
@@ -608,28 +610,6 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setPitchCount(0)
   }
 
-  const getLeftFieldArea = (x: number, y: number): string => {
-    // Left field precision mapping
-    const depth = y < 20 ? 'DEEP' : y < 35 ? 'MEDIUM' : 'SHALLOW'
-    const angle = x < 10 ? 'LINE' : x < 20 ? 'GAP' : 'CENTER'
-    return `LEFT_FIELD_${depth}_${angle}`
-  }
-
-  const getCenterFieldArea = (x: number, y: number): string => {
-    // Center field precision mapping
-    const depth = y < 20 ? 'DEEP' : y < 35 ? 'MEDIUM' : 'SHALLOW'
-    const angle = x < 10 ? 'LEFT_GAP' : x < 20 ? 'CENTER' : 'RIGHT_GAP'
-    return `CENTER_FIELD_${depth}_${angle}`
-  }
-
-  const getRightFieldArea = (x: number, y: number): string => {
-    // Right field precision mapping
-    const depth = y < 20 ? 'DEEP' : y < 35 ? 'MEDIUM' : 'SHALLOW'
-    const angle = x < 10 ? 'CENTER' : x < 20 ? 'GAP' : 'LINE'
-    return `RIGHT_FIELD_${depth}_${angle}`
-  }
-
-
   const handleFieldClick = (fieldArea: string, event: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement> | null = null) => {
     console.log('Field area clicked:', fieldArea)
     
@@ -1168,30 +1148,19 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
               </h3>
               
               {/* Simple Field Selection */}
-              <div id="field-container" className="relative w-full h-[350px] sm:h-[450px] bg-gradient-to-b from-green-200 to-green-300 border-2 sm:border-4 border-green-800 rounded-lg overflow-hidden">
-                
-                {/* Foul Lines */}
-                <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 5 }}>
-                  {/* Left foul line - continues line from home through third base */}
-                  <line
-                    x1="50%"
-                    y1="100%"
-                    x2="-50%"
-                    y2="0%"
-                    stroke="#000000"
-                    strokeWidth="2"
-                  />
-                  {/* Right foul line - continues line from home through first base */}
-                  <line
-                    x1="50%"
-                    y1="100%"
-                    x2="150%"
-                    y2="0%"
-                    stroke="#000000"
-                    strokeWidth="2"
-                  />
-                </svg>
-                
+              {/* Proportioned field: home plate at the bottom, foul lines, infield diamond and the outfield to the fence.
+                  Click anywhere; the area name comes from the shared geometry so Classic and Digital agree. */}
+              <div
+                id="field-container"
+                className="relative mx-auto aspect-square w-full max-w-[460px] cursor-crosshair overflow-hidden rounded-2xl border-2 border-slate-400 bg-[#fffdf7] shadow-inner"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const x = ((e.clientX - rect.left) / rect.width) * 100
+                  const y = ((e.clientY - rect.top) / rect.height) * 100
+                  handleFieldClick(fieldAreaAt([x, y]), e)
+                }}
+              >
+                <FieldSvg className="pointer-events-none absolute inset-0 h-full w-full" />
                 {/* Visual Ball Marker - shows where ball landed */}
                 {ballLandingPosition && (
                   <div
@@ -1204,227 +1173,11 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                       pointerEvents: 'none'
                     }}
                   >
-                    <div className="w-6 h-6 bg-white border-3 border-black rounded-full shadow-lg flex items-center justify-center">
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-900 bg-white shadow-lg">
+                      <div className="h-2 w-2 rounded-full bg-red-500"></div>
                     </div>
                   </div>
                 )}
-                
-                {/* Infield Diamond */}
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2" style={{ zIndex: 10 }}>
-                  <div className="relative w-40 h-40 sm:w-52 sm:h-52 md:w-64 md:h-64">
-                    {/* Infield Dirt Area - Diamond shape */}
-                    <div 
-                      className="absolute inset-0 bg-orange-200 cursor-pointer hover:bg-orange-300 hover:bg-opacity-80 transition-colors"
-                      style={{
-                        clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'
-                      }}
-                      onClick={(e) => handleFieldClick('INFIELD', e)}
-                      title="Infield"
-                    >
-                      {/* Diamond outline */}
-                      <div className="absolute inset-0 border-2 border-gray-600"></div>
-                      
-                      {/* Base paths - SVG for diamond shape */}
-                      <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 11 }}>
-                        {/* Home to First Base (bottom to right) */}
-                        <line
-                          x1="50%"
-                          y1="100%"
-                          x2="100%"
-                          y2="50%"
-                          stroke="#374151"
-                          strokeWidth="2"
-                        />
-                        
-                        {/* First to Second Base (right to top) */}
-                        <line
-                          x1="100%"
-                          y1="50%"
-                          x2="50%"
-                          y2="0%"
-                          stroke="#374151"
-                          strokeWidth="2"
-                        />
-                        
-                        {/* Second to Third Base (top to left) */}
-                        <line
-                          x1="50%"
-                          y1="0%"
-                          x2="0%"
-                          y2="50%"
-                          stroke="#374151"
-                          strokeWidth="2"
-                        />
-                        
-                        {/* Third to Home Base (left to bottom) */}
-                        <line
-                          x1="0%"
-                          y1="50%"
-                          x2="50%"
-                          y2="100%"
-                          stroke="#374151"
-                          strokeWidth="2"
-                        />
-                      </svg>
-                      
-                      {/* Large, Clear Bases positioned at diamond corners */}
-                      {/* Home Plate (bottom point) */}
-                      <div 
-                        className="absolute bg-white border-4 border-black shadow-lg"
-                        style={{
-                          left: '50%',
-                          bottom: '0%',
-                          width: '24px',
-                          height: '24px',
-                          transform: 'translate(-50%, 50%)',
-                          zIndex: 20
-                        }}
-                      ></div>
-                      
-                      {/* First Base (right point) */}
-                      <div 
-                        className="absolute bg-white border-4 border-black shadow-lg"
-                        style={{
-                          right: '0%',
-                          top: '50%',
-                          width: '24px',
-                          height: '24px',
-                          transform: 'translate(50%, -50%)',
-                          zIndex: 20
-                        }}
-                      ></div>
-                      
-                      {/* Second Base (top point) */}
-                      <div 
-                        className="absolute bg-white border-4 border-black shadow-lg"
-                        style={{
-                          left: '50%',
-                          top: '0%',
-                          width: '24px',
-                          height: '24px',
-                          transform: 'translate(-50%, -50%)',
-                          zIndex: 20
-                        }}
-                      ></div>
-                      
-                      {/* Third Base (left point) */}
-                      <div 
-                        className="absolute bg-white border-4 border-black shadow-lg"
-                        style={{
-                          left: '0%',
-                          top: '50%',
-                          width: '24px',
-                          height: '24px',
-                          transform: 'translate(-50%, -50%)',
-                          zIndex: 20
-                        }}
-                      ></div>
-                      
-                      {/* Pitcher's Mound */}
-                      <div 
-                        className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-orange-300 rounded-full border border-gray-600"
-                        style={{ zIndex: 11 }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Ultra-Precise Outfield Mapping */}
-                <div className="absolute inset-0">
-                  {/* Left Field - precise clickable areas covering entire outfield */}
-                  <div className="absolute top-0 left-0 w-1/3" style={{ height: '70%', zIndex: 6 }}>
-                    {Array.from({ length: 70 }, (_, row) => 
-                      Array.from({ length: 20 }, (_, col) => {
-                        const x = (col / 20) * 100
-                        const y = (row / 70) * 100
-                        const area = getLeftFieldArea(x, y)
-                        
-                        return (
-                          <div
-                            key={`left-${row}-${col}`}
-                            className="absolute cursor-pointer hover:bg-green-400 hover:bg-opacity-50 transition-colors"
-                            style={{
-                              left: `${x}%`,
-                              top: `${y}%`,
-                              width: '5%',
-                              height: '2%'
-                            }}
-                            onClick={(e) => handleFieldClick(area, e)}
-                            title={area}
-                          />
-                        )
-                      })
-                    )}
-                  </div>
-                  
-                  {/* Center Field - precise clickable areas covering entire outfield */}
-                  <div className="absolute top-0 left-1/3 w-1/3" style={{ height: '70%', zIndex: 6 }}>
-                    {Array.from({ length: 70 }, (_, row) => 
-                      Array.from({ length: 20 }, (_, col) => {
-                        const x = (col / 20) * 100
-                        const y = (row / 70) * 100
-                        const area = getCenterFieldArea(x, y)
-                        
-                        return (
-                          <div
-                            key={`center-${row}-${col}`}
-                            className="absolute cursor-pointer hover:bg-green-400 hover:bg-opacity-50 transition-colors"
-                            style={{
-                              left: `${x}%`,
-                              top: `${y}%`,
-                              width: '5%',
-                              height: '2%'
-                            }}
-                            onClick={(e) => handleFieldClick(area, e)}
-                            title={area}
-                          />
-                        )
-                      })
-                    )}
-                  </div>
-                  
-                  {/* Right Field - precise clickable areas covering entire outfield */}
-                  <div className="absolute top-0 right-0 w-1/3" style={{ height: '70%', zIndex: 6 }}>
-                    {Array.from({ length: 70 }, (_, row) => 
-                      Array.from({ length: 20 }, (_, col) => {
-                        const x = (col / 20) * 100
-                        const y = (row / 70) * 100
-                        const area = getRightFieldArea(x, y)
-                        
-                        return (
-                          <div
-                            key={`right-${row}-${col}`}
-                            className="absolute cursor-pointer hover:bg-green-400 hover:bg-opacity-50 transition-colors"
-                            style={{
-                              left: `${x}%`,
-                              top: `${y}%`,
-                              width: '5%',
-                              height: '2%'
-                            }}
-                            onClick={(e) => handleFieldClick(area, e)}
-                            title={area}
-                          />
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-                
-                {/* Foul Territory */}
-                <div 
-                  className="absolute bottom-0 left-0 w-1/2 h-1/2 cursor-pointer hover:bg-gray-300 hover:bg-opacity-30 transition-colors"
-                  style={{ zIndex: 6 }}
-                  onClick={(e) => handleFieldClick('FOUL_LEFT', e)}
-                  title="Foul Territory (Left)"
-                ></div>
-                
-                <div 
-                  className="absolute bottom-0 right-0 w-1/2 h-1/2 cursor-pointer hover:bg-gray-300 hover:bg-opacity-30 transition-colors"
-                  style={{ zIndex: 6 }}
-                  onClick={(e) => handleFieldClick('FOUL_RIGHT', e)}
-                  title="Foul Territory (Right)"
-                ></div>
               </div>
               
               <div className="mt-2 sm:mt-4 flex justify-center">

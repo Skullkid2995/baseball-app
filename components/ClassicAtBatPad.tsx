@@ -46,6 +46,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
   const { language } = useLanguage()
   const [actions, setActions] = useState<BoxAction[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
+  const [digitTemplates, setDigitTemplates] = useState<Template[]>([])
   const [token, setToken] = useState<string | null>(null)
   const [fixing, setFixing] = useState(false)
   const [rbi, setRbi] = useState(0)
@@ -80,6 +81,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
       .then(({ data }) => {
         const rows = (data || []) as { symbol: string; strokes: Stroke[] }[]
         setTemplates(rows.filter((r) => allowed.has(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
+        setDigitTemplates(rows.filter((r) => ['1', '2', '3'].includes(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
       })
   }, [])
 
@@ -91,7 +93,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
     if (typeof existingAtBat.rbi === 'number') setRbi(existingAtBat.rbi)
   }, [existingAtBat])
 
-  const interpretation = useMemo(() => interpretBox(actions, templates), [actions, templates])
+  const interpretation = useMemo(() => interpretBox(actions, templates, digitTemplates), [actions, templates, digitTemplates])
   const { marks, tokenMatches } = interpretation
   const top = tokenMatches[0]
   const hasInk = marks.ink.length > 0
