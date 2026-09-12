@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import OpponentLineupEntry from './OpponentLineupEntry'
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ClipboardList, Home, Pencil, Plane, Play, Plus, Save, UserPlus, Users, Zap } from 'lucide-react'
+import { Alert, Badge, Button, Card, EmptyState, FormField, Input, LoadingState, Modal, Select } from '@/components/ui'
+import { cn } from '@/lib/utils'
 
 interface Team {
   id: string
@@ -23,6 +27,29 @@ interface LineupEntry {
   playerId: string
   position: string
   battingFor?: string  // Player ID that the DH is batting for (only for 10th row)
+}
+
+interface TemplatePlayerRow {
+  player_id: string
+  position: string
+  batting_for?: string | null
+}
+
+interface TemplatePlayerInsert {
+  template_id: string
+  player_id: string
+  batting_order: number
+  position: string
+  batting_for?: string
+}
+
+type PrepStep = 'batting' | 'ours' | 'opponent' | 'review'
+
+interface PreviewRow {
+  batting_order: number
+  position: string
+  batting_for?: string | null
+  players?: { first_name: string; last_name: string; jersey_number: number } | null
 }
 
 interface LineupSelectionProps {
@@ -48,6 +75,14 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>([])
   const [hasDH, setHasDH] = useState(false)
+  const [showAddPlayerModal, setShowAddPlayerModal] = useState(false)
+  const [newPlayerData, setNewPlayerData] = useState({
+    first_name: '',
+    last_name: '',
+    jersey_number: '',
+    positions: [] as string[]
+  })
+  const [creatingPlayer, setCreatingPlayer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +103,9 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
   }
   
   const [savedTemplates, setSavedTemplates] = useState<LineupTemplate[]>([]) // Store saved templates from database
+  const [step, setStep] = useState<PrepStep | null>(null) // null = first incomplete step
+  const [quickEntry, setQuickEntry] = useState(false) // opponent lineup typed by name
+  const [previews, setPreviews] = useState<{ ours: PreviewRow[]; opponent: PreviewRow[] }>({ ours: [], opponent: [] })
 
   const fieldPositions = [
     'Lanzador (P)',
@@ -104,6 +142,27 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     }
   }, [gameInfo])
 
+  // Load read-only previews of both saved lineups for the summary step
+  useEffect(() => {
+    if (!gameId || !gameInfo) return
+    let cancelled = false
+    const load = async (templateId?: string | null): Promise<PreviewRow[]> => {
+      if (!templateId) return []
+      const { data } = await supabase
+        .from('lineup_template_players')
+        .select('batting_order, position, batting_for, players ( first_name, last_name, jersey_number )')
+        .eq('template_id', templateId)
+        .order('batting_order')
+      return (data || []) as unknown as PreviewRow[]
+    }
+    Promise.all([load(gameInfo.lineup_template_id), load(gameInfo.opponent_lineup_template_id)]).then(([ours, opponent]) => {
+      if (!cancelled) setPreviews({ ours, opponent })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [gameId, gameInfo, selectedTeam])
+
   useEffect(() => {
     if (teamId && teams.length > 0) {
       selectTeam(teamId)
@@ -122,8 +181,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       setLoading(true)
       
       // First try with all possible fields
-      let gameData: any = null
-      let gameError: any = null
+      let gameData: GameInfo | null = null
       
       const { data, error } = await supabase
         .from('games')
@@ -208,6 +266,16 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       
       // Find opponent team by matching name
       opponentTeam = (allTeams || []).find(t => t.name === gameData.opponent) || null
+      
+      // If opponent team doesn't exist in database, create a virtual team object
+      if (!opponentTeam && gameData.opponent) {
+        opponentTeam = {
+          id: `opponent_${gameId || 'temp'}`,
+          name: gameData.opponent,
+          city: 'Opponent',
+          players: []
+        }
+      }
       
       setGameTeams({ ourTeam, opponentTeam })
       
@@ -334,7 +402,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               .order('batting_order')
             
             if (!error && templatePlayers) {
-              const loadedEntries: LineupEntry[] = templatePlayers.map((tp: any) => ({
+              const loadedEntries: LineupEntry[] = templatePlayers.map((tp: TemplatePlayerRow) => ({
                 playerId: tp.player_id,
                 position: getPositionFromDb(tp.position),
                 battingFor: tp.batting_for || undefined
@@ -346,9 +414,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               )
               setHasDH(hasDHInLineup)
               
-              // If DH is in lineup, ensure we have 10 entries
+              // If DH is in lineup, ensure we have 10 entries (10th row is for who DH is batting for)
               if (hasDHInLineup && loadedEntries.length === 9) {
-                loadedEntries.push({ playerId: '', position: '', battingFor: '' })
+                // Find the batting_for from the DH entry
+                const dhEntry = templatePlayers.find((tp: TemplatePlayerRow) => tp.position === 'DH')
+                loadedEntries.push({ 
+                  playerId: dhEntry?.batting_for || '', 
+                  position: 'Lanzador (P)',
+                  battingFor: undefined
+                })
               }
               
               setLineupEntries(loadedEntries)
@@ -391,7 +465,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       for (let i = 0; i < maxEntries; i++) {
         initialEntries.push({ 
           playerId: '', 
-          position: '',
+          position: i === 9 ? 'Lanzador (P)' : '',  // 10th row defaults to Pitcher position
           battingFor: i === 9 ? '' : undefined  // Only 10th row has battingFor
         })
       }
@@ -409,13 +483,13 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     const newEntries = [...lineupEntries]
     newEntries[index] = { ...newEntries[index], position }
     
-    // Check if DH is selected to show/hide 10th row
-    const hasDHSelected = position === 'Bateador Designado (DH)'
+    // Check if DH is selected anywhere in the lineup
+    const hasDHSelected = newEntries.some(entry => entry.position === 'Bateador Designado (DH)')
     setHasDH(hasDHSelected)
     
-    // If DH is selected, ensure 10th row exists
+    // If DH is selected, ensure 10th row exists for selecting who DH is batting for
     if (hasDHSelected && newEntries.length === 9) {
-      newEntries.push({ playerId: '', position: '', battingFor: '' })
+      newEntries.push({ playerId: '', position: 'Lanzador (P)', battingFor: undefined })
     }
     
     // If DH is removed, hide 10th row
@@ -428,16 +502,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     setLineupEntries(newEntries)
   }
 
-  function updateBattingFor(index: number, playerId: string) {
-    const newEntries = [...lineupEntries]
-    newEntries[index] = { ...newEntries[index], battingFor: playerId }
-    setLineupEntries(newEntries)
-  }
-
-  function getAvailablePlayers() {
+  function getAvailablePlayers(rowIndex?: number) {
     if (!selectedTeam) return []
     const team = teams.find(t => t.id === selectedTeam)
     if (!team?.players) return []
+    
+    // For the 10th row (DH batting for), show all players including those already in lineup
+    if (rowIndex === 9) {
+      return team.players
+    }
     
     const usedPlayerIds = lineupEntries.map(entry => entry.playerId).filter(id => id !== '')
     return team.players.filter(player => !usedPlayerIds.includes(player.id))
@@ -449,6 +522,87 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       .filter(position => position !== '')
     
     return fieldPositions.filter(position => !usedPositions.includes(position))
+  }
+
+  async function createNewPlayer() {
+    if (!selectedTeam) return
+    
+    setCreatingPlayer(true)
+    try {
+      const team = teams.find(t => t.id === selectedTeam)
+      if (!team) {
+        alert('Error: Equipo no encontrado')
+        return
+      }
+
+      // Create the player
+      const { data: newPlayer, error: playerError } = await supabase
+        .from('players')
+        .insert([{
+          first_name: newPlayerData.first_name,
+          last_name: newPlayerData.last_name,
+          jersey_number: parseInt(newPlayerData.jersey_number) || 0,
+          positions: newPlayerData.positions.length > 0 ? newPlayerData.positions : ['P'],
+          team_id: selectedTeam,
+          date_of_birth: new Date().toISOString().split('T')[0], // Required field, use today's date as default
+          handedness: 'Righty', // Default
+          is_active: true
+        }])
+        .select('id, first_name, last_name, jersey_number, positions')
+        .single()
+
+      if (playerError) {
+        console.error('Error creating player:', playerError)
+        alert(`Error al crear jugador: ${playerError.message}`)
+        return
+      }
+
+      // Refresh team players
+      const { data: teamData, error: teamError } = await supabase
+        .from('teams')
+        .select(`
+          id,
+          name,
+          city,
+          players (
+            id,
+            first_name,
+            last_name,
+            jersey_number,
+            positions
+          )
+        `)
+        .eq('id', selectedTeam)
+        .single()
+
+      if (teamError) {
+        console.error('Error refreshing team:', teamError)
+      } else if (teamData) {
+        // Update teams state
+        setTeams(teams.map(t => t.id === selectedTeam ? teamData as Team : t))
+        
+        // Update gameTeams if this is one of the game teams
+        if (gameTeams.ourTeam?.id === selectedTeam) {
+          setGameTeams({ ...gameTeams, ourTeam: teamData as Team })
+        } else if (gameTeams.opponentTeam?.id === selectedTeam) {
+          setGameTeams({ ...gameTeams, opponentTeam: teamData as Team })
+        }
+      }
+
+      // Close modal and reset form
+      setShowAddPlayerModal(false)
+      setNewPlayerData({
+        first_name: '',
+        last_name: '',
+        jersey_number: '',
+        positions: []
+      })
+    } catch (err) {
+      console.error('Error creating player:', err)
+      alert('Error al crear jugador')
+    } finally {
+      setCreatingPlayer(false)
+    }
   }
 
   async function fetchSavedTemplates() {
@@ -527,48 +681,14 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     return positionMap[dbPosition] || dbPosition
   }
 
-  function getSavedLineupTemplates(teamId: string) {
-    const savedLineup = localStorage.getItem(`lineup_${teamId}`)
-    if (savedLineup) {
-      try {
-        const lineupData = JSON.parse(savedLineup)
-        if (lineupData.lineup && Array.isArray(lineupData.lineup)) {
-          return lineupData.lineup
-        }
-      } catch (error) {
-        console.log('Error parsing saved lineup:', error)
-      }
-    }
-    return null
-  }
-
-  function getAllSavedTemplates() {
-    const templates = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && key.startsWith('lineup_')) {
-        const teamId = key.replace('lineup_', '')
-        const team = teams.find(t => t.id === teamId)
-        if (team) {
-          const template = getSavedLineupTemplates(teamId)
-          if (template) {
-            templates.push({
-              teamId,
-              teamName: team.name,
-              template,
-              timestamp: new Date().toISOString() // We could store this when saving
-            })
-          }
-        }
-      }
-    }
-    return templates
-  }
-
   function selectLineupTemplate(template: LineupEntry[]) {
-    setLineupEntries(template)
     // Check if DH is in the template
     const hasDHInTemplate = template.some(entry => entry.position === 'Bateador Designado (DH)')
+    // A DH lineup needs the 10th row (who the DH bats for); templates only store 9 rows
+    const entries = hasDHInTemplate && template.length === 9
+      ? [...template, { playerId: '', position: 'Lanzador (P)', battingFor: undefined }]
+      : template
+    setLineupEntries(entries)
     setHasDH(hasDHInTemplate)
     setMode('create') // Switch to create mode to allow editing
   }
@@ -672,11 +792,55 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         'Bateador Designado (DH)': 'DH'
       }
 
+      // Check if selectedTeam is a virtual opponent team (starts with 'opponent_')
+      let actualTeamId = selectedTeam
+      if (selectedTeam && selectedTeam.startsWith('opponent_')) {
+        // This is a virtual opponent team, we need to create it or find it
+        const opponentName = gameInfo?.opponent
+        if (opponentName) {
+          // Try to find existing team first
+          const { data: existingTeam } = await supabase
+            .from('teams')
+            .select('id')
+            .eq('name', opponentName)
+            .single()
+          
+          if (existingTeam) {
+            actualTeamId = existingTeam.id
+          } else {
+            // Create the opponent team
+            const { data: newTeam, error: createError } = await supabase
+              .from('teams')
+              .insert([{
+                name: opponentName,
+                city: 'Opponent'
+              }])
+              .select('id')
+              .single()
+            
+            if (createError || !newTeam) {
+              throw new Error('Failed to create opponent team')
+            }
+            actualTeamId = newTeam.id
+            
+            // Update gameTeams with the new team
+            const updatedOpponentTeam = {
+              id: newTeam.id,
+              name: opponentName,
+              city: 'Opponent',
+              players: []
+            }
+            setGameTeams({ ...gameTeams, opponentTeam: updatedOpponentTeam })
+            setTeams([gameTeams.ourTeam, updatedOpponentTeam].filter(Boolean) as Team[])
+          }
+        }
+      }
+      
       // Create or update lineup template for this team
       const { data: existingTemplate } = await supabase
         .from('lineup_templates')
         .select('id')
-        .eq('team_id', selectedTeam)
+        .eq('team_id', actualTeamId)
         .single()
 
       let templateId: string
@@ -692,7 +856,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         const { data: newTemplate, error: templateError } = await supabase
           .from('lineup_templates')
           .insert([{
-            team_id: selectedTeam,
+            team_id: actualTeamId,
             name: 'Default Lineup'
           }])
           .select('id')
@@ -704,21 +868,84 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         templateId = newTemplate.id
       }
 
+      // Before creating lineup template players, check if any players need to be created
+      // This handles cases where players were added but don't exist in the database yet
+      const playerIdsToCheck = filledEntries
+        .filter((entry) => entry.playerId && entry.playerId.trim() !== '')
+        .map(entry => entry.playerId)
+      
+      // Check which players exist in the database
+      const { data: existingPlayers, error: checkError } = await supabase
+        .from('players')
+        .select('id')
+        .in('id', playerIdsToCheck)
+      
+      if (checkError) {
+        console.error('Error checking existing players:', checkError)
+      }
+      
+      const existingPlayerIds = new Set((existingPlayers || []).map(p => p.id))
+      const missingPlayerIds = playerIdsToCheck.filter(id => !existingPlayerIds.has(id))
+      
+      // If there are missing players, we need to create them
+      // This shouldn't normally happen, but handle it gracefully
+      if (missingPlayerIds.length > 0) {
+        console.warn('Some players in lineup do not exist in database:', missingPlayerIds)
+        // For now, we'll skip these entries - in a real scenario, you'd want to create them
+        // or show an error to the user
+      }
+
       // Create lineup template players
-      const templatePlayers = filledEntries.map((entry, index) => ({
-        template_id: templateId,
-        player_id: entry.playerId,
-        batting_order: index + 1,
-        position: positionMap[entry.position] || 'DH',
-        batting_for: entry.battingFor || null  // Store which player the DH is batting for (only for 10th row)
-      }))
+      // Find the DH entry to get who it's batting for from the 10th row
+      const dhEntry = filledEntries.find((entry, idx) => entry.position === 'Bateador Designado (DH)')
+      const dhBattingFor = dhEntry && filledEntries.length === 10 ? filledEntries[9].playerId : null
+      
+      // Filter to only first 9 rows with valid player IDs that exist in database
+      const validEntries = filledEntries
+        .filter((entry, index) => index < 9) // Only save first 9 rows (10th row is just for reference)
+        .filter((entry) => entry.playerId && entry.playerId.trim() !== '' && existingPlayerIds.has(entry.playerId)) // Only save entries with valid player IDs that exist
+      
+      const templatePlayers = validEntries.map((entry, index) => {
+        const playerData: TemplatePlayerInsert = {
+          template_id: templateId,
+          player_id: entry.playerId,
+          batting_order: index + 1,
+          position: positionMap[entry.position] || 'DH'
+        }
+        
+        // Only add batting_for if it's the DH entry and we have a valid player ID
+        if (entry.position === 'Bateador Designado (DH)' && dhBattingFor && dhBattingFor.trim() !== '') {
+          playerData.batting_for = dhBattingFor
+        }
+        
+        return playerData
+      })
 
       const { error: templatePlayersError } = await supabase
         .from('lineup_template_players')
         .insert(templatePlayers)
 
-      if (templatePlayersError) {
-        throw new Error('Failed to save lineup template players')
+      // Only treat as error if it has actual error properties (message, code, etc.)
+      if (templatePlayersError && (templatePlayersError.message || templatePlayersError.code || Object.keys(templatePlayersError).length > 0)) {
+        console.error('Error saving lineup template players:', templatePlayersError)
+        console.error('Template players data:', templatePlayers)
+        
+        // If error is about batting_for column not existing, try without it
+        if (templatePlayersError.message && templatePlayersError.message.includes('batting_for')) {
+          console.log('batting_for column not found, trying without it...')
+          const templatePlayersWithoutBattingFor = templatePlayers.map(({ batting_for, ...rest }) => rest)
+          
+          const { error: retryError } = await supabase
+            .from('lineup_template_players')
+            .insert(templatePlayersWithoutBattingFor)
+          
+          if (retryError && (retryError.message || retryError.code)) {
+            throw new Error(`Failed to save lineup template players: ${retryError.message || JSON.stringify(retryError)}`)
+          }
+        } else if (templatePlayersError.message || templatePlayersError.code) {
+          throw new Error(`Failed to save lineup template players: ${templatePlayersError.message || JSON.stringify(templatePlayersError)}`)
+        }
+        // If error object is empty or has no meaningful error info, ignore it (save likely succeeded)
       }
 
       // Link game to team's lineup template (only if gameId is provided)
@@ -735,7 +962,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
           isOpponentTeam
         })
         
-        let updateData: any = {}
+        const updateData: { lineup_template_id?: string; opponent_lineup_template_id?: string } = {}
         if (isOurTeam) {
           updateData.lineup_template_id = templateId
           console.log('📌 This is OUR team - will update lineup_template_id')
@@ -781,6 +1008,38 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         }
       }
 
+      // Refresh team players to include any newly created players
+      if (actualTeamId) {
+        const { data: refreshedTeam, error: refreshError } = await supabase
+          .from('teams')
+          .select(`
+            id,
+            name,
+            city,
+            players (
+              id,
+              first_name,
+              last_name,
+              jersey_number,
+              positions
+            )
+          `)
+          .eq('id', actualTeamId)
+          .single()
+        
+        if (!refreshError && refreshedTeam) {
+          // Update teams state
+          setTeams(teams.map(t => t.id === actualTeamId ? refreshedTeam as Team : t))
+          
+          // Update gameTeams if this is one of the game teams
+          if (gameTeams.ourTeam?.id === actualTeamId) {
+            setGameTeams({ ...gameTeams, ourTeam: refreshedTeam as Team })
+          } else if (gameTeams.opponentTeam?.id === actualTeamId) {
+            setGameTeams({ ...gameTeams, opponentTeam: refreshedTeam as Team })
+          }
+        }
+      }
+      
       // Refresh saved templates
       await fetchSavedTemplates()
       
@@ -818,323 +1077,196 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     return player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : ''
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Cargando equipos...</span>
-      </div>
-    )
+  // ---------------------------------------------------------------------------
+  // Guided game-preparation flow (only when a gameId is provided)
+  // ---------------------------------------------------------------------------
+  const done = {
+    batting: !!gameInfo?.batting_first,
+    ours: !!gameInfo?.lineup_template_id,
+    opponent: !!gameInfo?.opponent_lineup_template_id,
+  }
+  const allDone = done.batting && done.ours && done.opponent
+  const firstIncomplete: PrepStep = !done.batting ? 'batting' : !done.ours ? 'ours' : !done.opponent ? 'opponent' : 'review'
+  const activeStep: PrepStep = step ?? firstIncomplete
+  const STEPS: { key: PrepStep; label: string; short: string }[] = [
+    { key: 'batting', label: 'Local y visitante', short: 'Orden' },
+    { key: 'ours', label: 'Nuestra alineación', short: 'Nosotros' },
+    { key: 'opponent', label: 'Alineación del oponente', short: 'Oponente' },
+    { key: 'review', label: 'Resumen e inicio', short: 'Resumen' },
+  ]
+  const stepIndex = STEPS.findIndex((s) => s.key === activeStep)
+  const stepDone = (key: PrepStep) => (key === 'review' ? allDone : done[key])
+  const goTo = (key: PrepStep) => {
+    setStep(key)
+    setQuickEntry(false)
+  }
+
+  function blankEntries(): LineupEntry[] {
+    const entries: LineupEntry[] = []
+    for (let i = 0; i < 9; i++) {
+      entries.push({ playerId: '', position: '', battingFor: undefined })
+    }
+    return entries
+  }
+
+  // Start a brand-new lineup for a team (skips loading the saved one)
+  async function startBlankLineup(teamIdToEdit: string) {
+    await selectTeam(teamIdToEdit, true)
+    setHasDH(false)
+    setLineupEntries(blankEntries())
+    setMode('create')
+  }
+
+  // Load the team's saved lineup into the editor
+  async function editExistingLineup(teamIdToEdit: string) {
+    await selectTeam(teamIdToEdit)
+    setMode('create')
+  }
+
+  // Show the team's saved templates to pick from
+  function changeTemplate(teamIdToEdit: string) {
+    setSelectedTeam(teamIdToEdit)
+    setMode('select')
+  }
+
+  // Leave the editor and go back to the step overview
+  function leaveWorkspace() {
+    setSelectedTeam(null)
+    setLineupEntries([])
+    setMode('select')
+  }
+
+  // Make sure the opponent exists as a real team before editing its lineup
+  async function ensureOpponentTeam(): Promise<string | null> {
+    if (!gameInfo) return null
+    let opponentTeamId = gameTeams.opponentTeam?.id
+
+    if (!opponentTeamId || opponentTeamId.startsWith('opponent_')) {
+      // Create the opponent team in the database
+      const { data: newTeam, error: createError } = await supabase
+        .from('teams')
+        .insert([{
+          name: gameInfo.opponent,
+          city: 'Opponent'
+        }])
+        .select('id')
+        .single()
+
+      if (createError) {
+        console.error('Error creating opponent team:', createError)
+        alert('Error al crear el equipo oponente')
+        return null
+      }
+
+      opponentTeamId = newTeam.id
+
+      // Update gameTeams with the new team
+      const updatedOpponentTeam = {
+        id: newTeam.id,
+        name: gameInfo.opponent,
+        city: 'Opponent',
+        players: []
+      }
+      setGameTeams({ ...gameTeams, opponentTeam: updatedOpponentTeam })
+      setTeams([gameTeams.ourTeam, updatedOpponentTeam].filter(Boolean) as Team[])
+    }
+    return opponentTeamId ?? null
+  }
+
+  async function setBattingFirst(newBattingFirst: 'home' | 'opponent') {
+    if (!gameId || !gameInfo) return
+    const { error } = await supabase
+      .from('games')
+      .update({ batting_first: newBattingFirst })
+      .eq('id', gameId)
+    if (!error && gameInfo) {
+      setGameInfo({ ...gameInfo, batting_first: newBattingFirst })
+      setHomeTeam(newBattingFirst === 'home' ? 'our' : 'opponent')
+    }
+  }
+
+  async function startScoring() {
+    if (!gameId || !onStartScoring) return
+
+    // Update game status to in_progress
+    const { error } = await supabase
+      .from('games')
+      .update({ game_status: 'in_progress' })
+      .eq('id', gameId)
+
+    if (error) {
+      console.error('Error updating game status:', error)
+      alert('Error al iniciar la anotación')
+      return
+    }
+
+    // Call the callback to start scoring (this will open the scorebook)
+    onStartScoring(gameId)
+    onClose()
+  }
+
+  if (loading && !gameInfo && teams.length === 0) {
+    return <LoadingState label="Cargando equipos..." />
   }
 
   if (error) {
-  return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800">Error: {error}</p>
-        <button
+    return (
+      <Alert variant="error" title={`Error: ${error}`}>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="mt-2"
           onClick={() => {
             setError(null)
             fetchTeams()
           }}
-          className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
         >
           Reintentar
-        </button>
-      </div>
+        </Button>
+      </Alert>
     )
   }
 
   const currentTeam = selectedTeam ? teams.find(t => t.id === selectedTeam) : null
-  const availablePlayers = getAvailablePlayers()
   const maxRows = hasDH ? 10 : 9
+  const pendingCount = maxRows - lineupEntries.slice(0, maxRows).filter(entry => entry.playerId && entry.position).length
 
-  return (
-    <div className="space-y-6">
-      {/* Home/Away Selection - Show if gameId provided */}
-      {gameId && gameInfo && gameTeams.ourTeam && gameTeams.opponentTeam && (
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-md font-semibold text-gray-800">Equipo Local y Visitante:</h4>
-            {/* Toggle Switch */}
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-medium ${gameInfo.batting_first === 'home' ? 'text-blue-600' : 'text-gray-600'}`}>
-                {gameTeams.ourTeam.name}
-              </span>
-              <button
-                onClick={async () => {
-                  const newBattingFirst = gameInfo.batting_first === 'home' ? 'opponent' : 'home'
-                  const { error } = await supabase
-                    .from('games')
-                    .update({ batting_first: newBattingFirst })
-                    .eq('id', gameId)
-                  if (!error && gameInfo) {
-                    setGameInfo({ ...gameInfo, batting_first: newBattingFirst })
-                    setHomeTeam(newBattingFirst === 'home' ? 'our' : 'opponent')
-                  }
-                }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  gameInfo.batting_first === 'home' ? 'bg-blue-600' : 'bg-gray-300'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    gameInfo.batting_first === 'home' ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-              <span className={`text-sm font-medium ${gameInfo.batting_first === 'opponent' ? 'text-blue-600' : 'text-gray-600'}`}>
-                {gameTeams.opponentTeam.name}
-              </span>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {gameTeams.ourTeam && (
-              <div className={`p-4 border-2 rounded-lg ${
-                gameInfo.batting_first === 'home' 
-                  ? 'border-blue-500 bg-blue-100' 
-                  : 'border-gray-300 bg-white'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <h5 className="font-semibold text-gray-900">{gameTeams.ourTeam.name}</h5>
-                  {gameInfo.batting_first === 'home' ? (
-                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Local</span>
-                  ) : (
-                    <span className="text-xs bg-gray-500 text-white px-2 py-1 rounded">Visitante</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-600">{gameTeams.ourTeam.city}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {gameTeams.ourTeam.players?.length || 0} jugadores
-                </p>
-                {gameInfo.lineup_template_id && gameInfo.lineup_template_id !== null && gameInfo.lineup_template_id !== '' && gameInfo.lineup_template_id.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                      ✓ Alineación elegida
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-            {gameTeams.opponentTeam && (
-              <div className={`p-4 border-2 rounded-lg ${
-                gameInfo.batting_first === 'opponent' 
-                  ? 'border-blue-500 bg-blue-100' 
-                  : 'border-gray-300 bg-white'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <h5 className="font-semibold text-gray-900">{gameTeams.opponentTeam.name}</h5>
-                  {gameInfo.batting_first === 'opponent' ? (
-                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Local</span>
-                  ) : (
-                    <span className="text-xs bg-gray-500 text-white px-2 py-1 rounded">Visitante</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-600">{gameTeams.opponentTeam.city}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {gameTeams.opponentTeam.players?.length || 0} jugadores
-                </p>
-                {gameInfo.opponent_lineup_template_id && gameInfo.opponent_lineup_template_id !== null && gameInfo.opponent_lineup_template_id !== '' && gameInfo.opponent_lineup_template_id.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                      ✓ Alineación elegida
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          
-          {/* Start Scoring Button - Show when all conditions are met */}
-          {gameInfo.lineup_template_id && 
-           gameInfo.opponent_lineup_template_id && 
-           gameInfo.batting_first && (
-            <div className="mt-4 pt-4 border-t border-blue-300">
-              <button
-                onClick={async () => {
-                  if (!gameId || !onStartScoring) return
-                  
-                  // Update game status to in_progress
-                  const { error } = await supabase
-                    .from('games')
-                    .update({ game_status: 'in_progress' })
-                    .eq('id', gameId)
-                  
-                  if (error) {
-                    console.error('Error updating game status:', error)
-                    alert('Error al iniciar la anotación')
-                    return
-                  }
-                  
-                  // Call the callback to start scoring (this will open the scorebook)
-                  onStartScoring(gameId)
-                  onClose()
-                }}
-                className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold text-lg transition-colors shadow-md"
-              >
-                ✓ Iniciar Anotación
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Team Selection - Show if no teamId provided */}
-      {!teamId && (
-        <div>
-          <h4 className="text-md font-semibold text-gray-800 mb-3">
-            {gameId ? 'Equipos del Juego:' : 'Seleccionar Equipo:'}
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {teams.map((team) => {
-              // Check if this team has lineup saved
-              const isOurTeam = team.id === gameTeams.ourTeam?.id
-              const isOpponentTeam = team.id === gameTeams.opponentTeam?.id
-              
-              // Debug logging
-              if (gameId && gameInfo) {
-                console.log(`🔍 Checking lineup for team ${team.name}:`, {
-                  isOurTeam,
-                  isOpponentTeam,
-                  lineup_template_id: gameInfo.lineup_template_id,
-                  opponent_lineup_template_id: gameInfo.opponent_lineup_template_id,
-                  ourTeamId: gameTeams.ourTeam?.id,
-                  opponentTeamId: gameTeams.opponentTeam?.id
-                })
-              }
-              
-              // Helper function to check if a template ID is valid
-              const isValidTemplateId = (templateId: string | null | undefined): boolean => {
-                return !!templateId && templateId !== null && templateId !== '' && templateId.length > 0
-              }
-              
-              // Only show as saved if there's a valid (non-null, non-empty) template ID
-              const hasLineupSaved = gameId && gameInfo && (
-                (isOurTeam && isValidTemplateId(gameInfo.lineup_template_id)) ||
-                (isOpponentTeam && isValidTemplateId(gameInfo.opponent_lineup_template_id))
-              )
-              
-              const isHomeTeam = gameInfo?.batting_first === 'home' && isOurTeam ||
-                                gameInfo?.batting_first === 'opponent' && isOpponentTeam
-              
-              return (
-                <div
-                  key={team.id}
-                  className={`p-4 border-2 rounded-lg transition-colors ${
-                    selectedTeam === team.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-semibold text-gray-900">{team.name}</div>
-                    <div className="flex items-center gap-2">
-                      {isHomeTeam && (
-                        <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">Local</span>
-                      )}
-                      {!isHomeTeam && (isOurTeam || isOpponentTeam) && gameInfo?.batting_first && (
-                        <span className="text-xs bg-gray-500 text-white px-2 py-1 rounded">Visitante</span>
-                      )}
-                      {hasLineupSaved && (
-                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                          ✓ Alineación elegida
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600">{team.city}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    {team.players?.length || 0} jugadores
-                  </div>
-                  {!hasLineupSaved && gameId && (
-                    <div className="text-xs text-orange-600 mt-2 font-medium">
-                      ⚠ Alineación pendiente
-                    </div>
-                  )}
-                  <div className="mt-3 flex gap-2">
-                    {hasLineupSaved ? (
-                      <>
-                        <button
-                          onClick={async () => {
-                            await selectTeam(team.id)
-                            setMode('create')
-                            // The selectTeam function will load the existing lineup
-                          }}
-                          className="flex-1 px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          Editar Alineación
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await selectTeam(team.id)
-                            setMode('select')
-                            // Load templates for selection
-                            await fetchSavedTemplates()
-                          }}
-                          className="flex-1 px-3 py-2 bg-gray-600 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
-                        >
-                          Cambiar Plantilla
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => selectTeam(team.id)}
-                        className="w-full px-3 py-2 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 transition-colors"
-                      >
-                        Seleccionar Alineación
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
+  // ---------------------------------------------------------------------------
+  // Workspace: template picker ("select") or lineup editor ("create") for currentTeam
+  // ---------------------------------------------------------------------------
+  const workspace = currentTeam && (
+    <div className="space-y-5">
       {/* Template Selection Mode */}
-      {currentTeam && mode === 'select' && gameId && (
+      {mode === 'select' && gameId && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-lg font-semibold text-gray-800">
-              Seleccionar Plantilla de Alineación para {currentTeam.name}
-            </h4>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => {
-                  const allTemplates = getAllSavedTemplates()
-                  console.log('Todas las plantillas guardadas:', allTemplates)
-                  alert(`Plantillas guardadas: ${allTemplates.length}\nEquipos: ${allTemplates.map(t => t.teamName).join(', ')}`)
-                }}
-                className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-              >
-                Ver Todas
-              </button>
-              <button
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-base font-semibold">Plantillas guardadas de {currentTeam.name}</h4>
+              <p className="text-sm text-muted-foreground">Usa una plantilla como punto de partida o crea una nueva.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={leaveWorkspace}>
+                <ArrowLeft />
+                Volver
+              </Button>
+              <Button
+                variant="success"
+                size="sm"
                 onClick={() => {
                   // Clear lineup entries and reset DH when creating new template
                   setHasDH(false)
-                  const blankEntries: LineupEntry[] = []
-                  for (let i = 0; i < 9; i++) {
-                    blankEntries.push({ 
-                      playerId: '', 
-                      position: '',
-                      battingFor: undefined
-                    })
-                  }
-                  setLineupEntries(blankEntries)
+                  setLineupEntries(blankEntries())
                   setMode('create')
                 }}
-                className="text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
               >
-                Crear Nueva Plantilla
-              </button>
+                <Plus />
+                Crear nueva
+              </Button>
             </div>
           </div>
 
-          {/* Saved Templates */}
           {savedTemplates.length > 0 ? (
-            <div className="space-y-4">
-              <h5 className="text-md font-medium text-gray-700">Plantillas Guardadas:</h5>
+            <div className="space-y-3">
               {savedTemplates.map((template) => {
                 const lineupEntries = template.lineup_template_players
                   ?.sort((a: LineupTemplatePlayer, b: LineupTemplatePlayer) => a.batting_order - b.batting_order)
@@ -1143,12 +1275,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                     position: getPositionFromDb(ltp.position),
                     player: ltp.players
                   })) || []
-
                 return (
-                  <div key={template.id} className="bg-white border-2 border-blue-200 rounded-lg p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h6 className="text-sm font-semibold text-gray-800">{template.name || 'Default Lineup'}</h6>
-                      <button
+                  <Card key={template.id} className="p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h6 className="flex items-center gap-2 text-sm font-semibold">
+                        <ClipboardList className="size-4 text-primary" />
+                        {template.name || 'Default Lineup'}
+                      </h6>
+                      <Button
+                        size="sm"
                         onClick={() => {
                           const entries = lineupEntries.map((e: { playerId: string; position: string }) => ({
                             playerId: e.playerId,
@@ -1156,276 +1291,744 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                           }))
                           selectLineupTemplate(entries)
                         }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
                       >
-                        Usar Esta Plantilla
-                      </button>
+                        Usar esta plantilla
+                        <ArrowRight />
+                      </Button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       {lineupEntries.map((entry: { playerId: string; position: string; player?: { id: string; first_name: string; last_name: string; jersey_number: number } }, index: number) => {
                         if (entry.playerId && entry.position) {
                           const player = entry.player || currentTeam.players?.find((p: { id: string }) => p.id === entry.playerId)
                           return (
-                            <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
-                              <div className="flex items-center space-x-3">
-                                <span className="text-sm font-bold text-blue-800 bg-blue-200 px-2 py-1 rounded-full">
-                                  {index + 1}
-                                </span>
-                                <span className="text-sm font-medium text-gray-800">
+                            <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-slate-50 px-3 py-2">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <OrderChip n={index + 1} />
+                                <span className="truncate text-sm font-medium">
                                   {player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : 'Jugador no encontrado'}
                                 </span>
                               </div>
-                              <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                                {entry.position}
-                              </span>
+                              <Badge variant="primary">{entry.position}</Badge>
                             </div>
                           )
                         }
                         return null
                       })}
                     </div>
-                  </div>
+                  </Card>
                 )
               })}
-              <div className="flex justify-center">
-                <button
-                  onClick={() => {
-                    // Clear lineup entries and reset DH when creating new template
-                    setHasDH(false)
-                    const blankEntries: LineupEntry[] = []
-                    for (let i = 0; i < 9; i++) {
-                      blankEntries.push({ 
-                        playerId: '', 
-                        position: '',
-                        battingFor: undefined
-                      })
-                    }
-                    setLineupEntries(blankEntries)
-                    setMode('create')
-                  }}
-                  className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
-                >
-                  Crear Nueva Plantilla
-                </button>
-              </div>
             </div>
           ) : (
-            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6">
-              <div className="text-center">
-                <div className="text-yellow-600 mb-3">
-                  <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                </div>
-                <h5 className="text-lg font-medium text-yellow-800 mb-2">No hay plantillas guardadas</h5>
-                <p className="text-yellow-700 text-sm mb-4">
-                  No se encontraron plantillas guardadas para este equipo.
-                </p>
-                <button
+            <EmptyState
+              icon={<ClipboardList />}
+              title="No hay plantillas guardadas"
+              description="No se encontraron plantillas guardadas para este equipo."
+              action={
+                <Button
+                  variant="warning"
                   onClick={() => {
                     // Clear lineup entries and reset DH when creating new template
                     setHasDH(false)
-                    const blankEntries: LineupEntry[] = []
-                    for (let i = 0; i < 9; i++) {
-                      blankEntries.push({ 
-                        playerId: '', 
-                        position: '',
-                        battingFor: undefined
-                      })
-                    }
-                    setLineupEntries(blankEntries)
+                    setLineupEntries(blankEntries())
                     setMode('create')
                   }}
-                  className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium"
                 >
-                  Crear Primera Plantilla
-                </button>
-              </div>
-            </div>
-        )}
-      </div>
+                  <Plus />
+                  Crear primera plantilla
+                </Button>
+              }
+            />
+          )}
+        </div>
       )}
 
       {/* Lineup Grid - Create/Edit Mode */}
-      {currentTeam && mode === 'create' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h4 className="text-lg font-semibold text-gray-800">
-              {gameId ? 'Crear/Editar Plantilla' : 'Alineación'} para {currentTeam.name}
-            </h4>
-            <div className="flex space-x-3">
+      {mode === 'create' && (
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-base font-semibold">
+                {gameId ? 'Alineación' : 'Alineación'} de {currentTeam.name}
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                Asigna jugador y posición a cada turno al bat. {hasDH ? '10 filas (con DH).' : '9 filas.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
               {gameId && (
-        <button
-                  onClick={() => setMode('select')}
-                  className="text-sm bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
-        >
-                  Ver Plantillas
-        </button>
+                <Button variant="outline" size="sm" onClick={() => setMode('select')}>
+                  <ClipboardList />
+                  Ver plantillas
+                </Button>
               )}
-              {localStorage.getItem(`lineup_${selectedTeam}`) && (
-                <span className="text-sm bg-green-100 text-green-800 px-3 py-2 rounded-lg font-medium">
-                  ✓ Datos guardados localmente
-                </span>
-              )}
+              <Badge variant={pendingCount === 0 ? 'success' : 'warning'}>
+                {pendingCount === 0 ? (
+                  <>
+                    <CheckCircle2 /> Completa
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle /> {pendingCount} pendientes
+                  </>
+                )}
+              </Badge>
             </div>
           </div>
 
           {/* Grid Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse border border-gray-300">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
-                    #
-                  </th>
-                  <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
-                    Jugador
-                  </th>
-                  <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
-                    Posición
-                  </th>
-                  {hasDH && (
-                    <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700">
-                      Bateando por
-                    </th>
-                  )}
+                <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="w-12 px-3 py-2 text-center font-semibold">#</th>
+                  <th className="px-3 py-2 font-semibold">Jugador</th>
+                  <th className="w-[44%] px-3 py-2 font-semibold">Posición</th>
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: maxRows }, (_, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    {/* Batting Order Number */}
-                    <td className="border border-gray-300 px-3 py-2 text-center font-medium">
-                      {index + 1}
-                    </td>
-                    
-                    {/* Player Selection */}
-                    <td className="border border-gray-300 px-3 py-2">
-                      <select
-                        value={lineupEntries[index]?.playerId || ''}
-                        onChange={(e) => updatePlayerInLineup(index, e.target.value)}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Seleccionar jugador...</option>
-                        {availablePlayers.map((player) => (
-                          <option key={player.id} value={player.id}>
-                            {player.first_name} {player.last_name} #{player.jersey_number}
-                          </option>
-                        ))}
-                        {lineupEntries[index]?.playerId && (
-                          <option value={lineupEntries[index].playerId}>
-                            {getPlayerName(lineupEntries[index].playerId)}
-                          </option>
-                        )}
-                      </select>
-                    </td>
-                    
-                    {/* Position Selection */}
-                    <td className="border border-gray-300 px-3 py-2">
-                      <select
-                        value={lineupEntries[index]?.position || ''}
-                        onChange={(e) => updatePositionInLineup(index, e.target.value)}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Seleccionar posición...</option>
-                        {getAvailablePositions(index).map((position) => (
-                          <option key={position} value={position}>
-                            {position}
-                          </option>
-                        ))}
-                        {lineupEntries[index]?.position && (
-                          <option value={lineupEntries[index].position}>
-                            {lineupEntries[index].position}
-                          </option>
-                        )}
-                      </select>
-                    </td>
-                    
-                    {/* Batting For (only for 10th row when DH is selected) */}
-                    {hasDH && index === 9 && (
-                      <td className="border border-gray-300 px-3 py-2">
-                        <select
-                          value={lineupEntries[index]?.battingFor || ''}
-                          onChange={(e) => updateBattingFor(index, e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">Seleccionar jugador...</option>
-                          {selectedTeam && teams.find(t => t.id === selectedTeam)?.players?.map((player) => (
-                            <option key={player.id} value={player.id}>
-                              {player.first_name} {player.last_name} #{player.jersey_number}
-                            </option>
-                          ))}
-                          {lineupEntries[index]?.battingFor && (
-                            <option value={lineupEntries[index].battingFor}>
-                              {getPlayerName(lineupEntries[index].battingFor)}
-                            </option>
-                          )}
-                        </select>
+                {Array.from({ length: maxRows }, (_, index) => {
+                  const rowComplete = !!lineupEntries[index]?.playerId && !!lineupEntries[index]?.position
+                  return (
+                    <tr key={index} className={cn('border-t border-border', index === 9 && 'bg-blue-50/60')}>
+                      {/* Batting Order Number */}
+                      <td className="px-3 py-2 text-center">
+                        <OrderChip n={index + 1} done={rowComplete} dh={index === 9} />
                       </td>
-                    )}
-                    {hasDH && index < 9 && (
-                      <td className="border border-gray-300 px-3 py-2">
-                        {/* Empty cell for non-DH rows */}
+                      {/* Player Selection */}
+                      <td className="px-3 py-2">
+                        {index === 9 && hasDH ? (
+                          // 10th row: Show player selection for "who DH is batting for"
+                          <Select
+                            value={lineupEntries[index]?.playerId || ''}
+                            onChange={(e) => updatePlayerInLineup(index, e.target.value)}
+                          >
+                            <option value="">Seleccionar jugador (DH batea por)...</option>
+                            {getAvailablePlayers(9).map((player) => (
+                              <option key={player.id} value={player.id}>
+                                {player.first_name} {player.last_name} #{player.jersey_number}
+                              </option>
+                            ))}
+                            {lineupEntries[index]?.playerId && (
+                              <option value={lineupEntries[index].playerId}>
+                                {getPlayerName(lineupEntries[index].playerId)}
+                              </option>
+                            )}
+                          </Select>
+                        ) : (
+                          // Regular rows: Show player selection
+                          <div className="flex gap-2">
+                            <div className="min-w-0 flex-1">
+                              <Select
+                                value={lineupEntries[index]?.playerId || ''}
+                                onChange={(e) => updatePlayerInLineup(index, e.target.value)}
+                              >
+                                <option value="">Seleccionar jugador...</option>
+                                {getAvailablePlayers(index).map((player) => (
+                                  <option key={player.id} value={player.id}>
+                                    {player.first_name} {player.last_name} #{player.jersey_number}
+                                  </option>
+                                ))}
+                                {lineupEntries[index]?.playerId && (
+                                  <option value={lineupEntries[index].playerId}>
+                                    {getPlayerName(lineupEntries[index].playerId)}
+                                  </option>
+                                )}
+                              </Select>
+                            </div>
+                            {getAvailablePlayers(index).length === 0 && (
+                              <Button
+                                type="button"
+                                variant="success"
+                                size="sm"
+                                onClick={() => setShowAddPlayerModal(true)}
+                                title="Agregar nuevo jugador"
+                              >
+                                <UserPlus />
+                                Agregar
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {/* Position Selection */}
+                      <td className="px-3 py-2">
+                        {index === 9 && hasDH ? (
+                          // 10th row: Show position dropdown with "Lanzador (P)" as default
+                          <Select
+                            value={lineupEntries[index]?.position || 'Lanzador (P)'}
+                            onChange={(e) => updatePositionInLineup(index, e.target.value)}
+                          >
+                            <option value="Lanzador (P)">Lanzador (P)</option>
+                          </Select>
+                        ) : (
+                          // Regular rows: Show position selection
+                          <Select
+                            value={lineupEntries[index]?.position || ''}
+                            onChange={(e) => updatePositionInLineup(index, e.target.value)}
+                          >
+                            <option value="">Seleccionar posición...</option>
+                            {getAvailablePositions(index).map((position) => (
+                              <option key={position} value={position}>
+                                {position}
+                              </option>
+                            ))}
+                            {lineupEntries[index]?.position && (
+                              <option value={lineupEntries[index].position}>
+                                {lineupEntries[index].position}
+                              </option>
+                            )}
+                          </Select>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
 
           {/* DH Info */}
           {hasDH && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-sm text-blue-800 mb-2">
-                <strong>Bateador Designado (DH)</strong> seleccionado. Se habilitó la fila 10.
-              </p>
-              <p className="text-xs text-blue-700">
-                En la fila 10, selecciona el jugador por el cual el DH está bateando (típicamente el lanzador).
-              </p>
-            </div>
+            <Alert variant="info" title="Bateador Designado (DH) seleccionado. Se habilitó la fila 10.">
+              En la fila 10, selecciona el jugador por el cual el DH está bateando (típicamente el lanzador).
+            </Alert>
           )}
 
           {/* Position Status */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-            <h6 className="text-sm font-medium text-gray-700 mb-2">Posiciones Asignadas:</h6>
+          <div className="rounded-xl border border-border bg-slate-50 p-3">
+            <h6 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Posiciones asignadas</h6>
             <div className="flex flex-wrap gap-2">
               {lineupEntries.slice(0, maxRows).map((entry, index) => {
                 if (entry.position) {
                   return (
-                    <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <Badge key={index} variant="success">
                       {index + 1}. {entry.position}
-                    </span>
+                    </Badge>
                   )
                 }
                 return null
               })}
               {lineupEntries.slice(0, maxRows).filter(entry => !entry.position).length > 0 && (
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                <Badge variant="default">
                   {lineupEntries.slice(0, maxRows).filter(entry => !entry.position).length} posiciones pendientes
-                </span>
+                </Badge>
               )}
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4 border-t">
-          <button
-            onClick={onClose}
-              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+            <Button variant="outline" onClick={gameId ? leaveWorkspace : onClose}>
               Cancelar
-          </button>
-          <button
-              onClick={saveLineup}
-              disabled={saving}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? 'Guardando...' : (gameId ? 'Guardar Plantilla' : 'Guardar Alineación')}
-          </button>
+            </Button>
+            <Button variant="accent" onClick={saveLineup} loading={saving}>
+              <Save />
+              {saving ? 'Guardando...' : (gameId ? 'Guardar alineación' : 'Guardar Alineación')}
+            </Button>
+          </div>
         </div>
-      </div>
       )}
     </div>
+  )
+
+  // ---------------------------------------------------------------------------
+  // Team step: summary card + workspace (used for both our team and the opponent)
+  // ---------------------------------------------------------------------------
+  function renderTeamStep(side: 'ours' | 'opponent') {
+    if (!gameInfo) return null
+    const team = side === 'ours' ? gameTeams.ourTeam : gameTeams.opponentTeam
+    const name = side === 'ours' ? (team?.name ?? '') : (gameInfo.opponent || team?.name || '')
+    const isDone = done[side]
+    const preview = previews[side]
+    const rosterSize = team?.players?.length || 0
+    const editingThisTeam = !!currentTeam && !!team && currentTeam.id === team.id
+
+    if (editingThisTeam) return workspace
+
+    if (side === 'opponent' && quickEntry && gameId) {
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold">Captura rápida de {name}</h4>
+              <p className="text-sm text-muted-foreground">Escribe nombre y posición de cada bateador. Se crearán como jugadores del oponente.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setQuickEntry(false)}>
+              <ArrowLeft />
+              Volver
+            </Button>
+          </div>
+          <OpponentLineupEntry
+            embedded
+            gameId={gameId}
+            opponentName={name}
+            onClose={() => {
+              setQuickEntry(false)
+              fetchGameInfo()
+            }}
+          />
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        <Card className="p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-lg font-bold text-slate-500">
+                {name.charAt(0)}
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-base font-semibold">{name}</h4>
+                  {isDone ? (
+                    <Badge variant="success"><CheckCircle2 /> Alineación elegida</Badge>
+                  ) : (
+                    <Badge variant="warning"><AlertTriangle /> Alineación pendiente</Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {side === 'ours' ? (team?.city ?? '') : 'Oponente'} · {rosterSize} jugadores en el roster
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {isDone && team ? (
+                <>
+                  <Button size="sm" onClick={() => editExistingLineup(team.id)}>
+                    <Pencil />
+                    Editar alineación
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => changeTemplate(team.id)}>
+                    <ClipboardList />
+                    Cambiar plantilla
+                  </Button>
+                </>
+              ) : side === 'ours' && team ? (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => changeTemplate(team.id)}>
+                    <ClipboardList />
+                    Usar plantilla guardada
+                  </Button>
+                  <Button size="sm" variant="accent" onClick={() => startBlankLineup(team.id)}>
+                    <Plus />
+                    Crear alineación
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Opponent: choose how to enter the lineup */}
+          {side === 'opponent' && !isDone && (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <OptionCard
+                icon={<Zap />}
+                title="Captura rápida"
+                description="Escribe los nombres y posiciones de los 9 bateadores. Ideal para un oponente nuevo."
+                recommended={rosterSize === 0}
+                onClick={() => setQuickEntry(true)}
+              />
+              <OptionCard
+                icon={<Users />}
+                title="Usar su roster"
+                description={rosterSize > 0 ? `Elige de los ${rosterSize} jugadores registrados o de una plantilla guardada.` : 'El oponente aún no tiene jugadores registrados.'}
+                recommended={rosterSize > 0}
+                onClick={async () => {
+                  const opponentTeamId = await ensureOpponentTeam()
+                  if (!opponentTeamId) return
+                  if (rosterSize > 0) {
+                    changeTemplate(opponentTeamId)
+                  } else {
+                    await startBlankLineup(opponentTeamId)
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Saved lineup preview */}
+          {isDone && preview.length > 0 && (
+            <div className="mt-5">
+              <LineupPreviewList rows={preview} />
+            </div>
+          )}
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ---------------- Game preparation stepper ---------------- */}
+      {gameId && gameInfo && gameTeams.ourTeam && (gameTeams.opponentTeam || gameInfo.opponent) ? (
+        <>
+          {/* Step header */}
+          <ol className="grid grid-cols-4 gap-2" aria-label="Pasos">
+            {STEPS.map((s, i) => {
+              const isActive = s.key === activeStep
+              const isDone = stepDone(s.key)
+              return (
+                <li key={s.key}>
+                  <button
+                    type="button"
+                    onClick={() => goTo(s.key)}
+                    aria-current={isActive ? 'step' : undefined}
+                    className={cn(
+                      'flex w-full flex-col items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                      isActive
+                        ? 'border-primary bg-accent'
+                        : 'border-border bg-card hover:bg-slate-50'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-6 items-center justify-center rounded-full text-xs font-bold',
+                        isDone
+                          ? 'bg-emerald-600 text-white'
+                          : isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary text-slate-500'
+                      )}
+                    >
+                      {isDone ? <Check className="size-3.5" /> : i + 1}
+                    </span>
+                    <span className={cn('text-xs font-medium leading-tight sm:text-sm', isActive ? 'text-accent-foreground' : 'text-slate-700')}>
+                      <span className="sm:hidden">{s.short}</span>
+                      <span className="hidden sm:inline">{s.label}</span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+
+          {/* Step body */}
+          <div className="min-h-[240px]">
+            {activeStep === 'batting' && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-base font-semibold">¿Quién batea primero?</h4>
+                  <p className="text-sm text-muted-foreground">El equipo visitante batea en la parte alta de cada entrada. Elige quién es local en este juego.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <OptionCard
+                    icon={<Home />}
+                    title={gameTeams.ourTeam.name}
+                    description={gameInfo.batting_first === 'home' ? 'Nosotros somos locales: bateamos primero.' : 'Marcar a nuestro equipo como local (batea primero).'}
+                    selected={gameInfo.batting_first === 'home'}
+                    onClick={() => setBattingFirst('home')}
+                  />
+                  <OptionCard
+                    icon={<Plane />}
+                    title={gameInfo.opponent || gameTeams.opponentTeam?.name || 'Oponente'}
+                    description={gameInfo.batting_first === 'opponent' ? 'El oponente es local: batea primero.' : 'Marcar al oponente como local (batea primero).'}
+                    selected={gameInfo.batting_first === 'opponent'}
+                    onClick={() => setBattingFirst('opponent')}
+                  />
+                </div>
+                {!done.batting && (
+                  <Alert variant="warning">Selecciona una opción para continuar.</Alert>
+                )}
+              </div>
+            )}
+
+            {activeStep === 'ours' && renderTeamStep('ours')}
+            {activeStep === 'opponent' && renderTeamStep('opponent')}
+
+            {activeStep === 'review' && (
+              <div className="space-y-5">
+                <div>
+                  <h4 className="text-base font-semibold">Resumen del juego</h4>
+                  <p className="text-sm text-muted-foreground">Revisa que todo esté listo antes de abrir el libro de anotación.</p>
+                </div>
+
+                <ul className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { ok: done.batting, label: done.batting ? `Local: ${gameInfo.batting_first === 'home' ? gameTeams.ourTeam.name : gameInfo.opponent}` : 'Local/Visitante pendiente', step: 'batting' as PrepStep },
+                    { ok: done.ours, label: done.ours ? `${gameTeams.ourTeam.name}: alineación lista` : `${gameTeams.ourTeam.name}: alineación pendiente`, step: 'ours' as PrepStep },
+                    { ok: done.opponent, label: done.opponent ? `${gameInfo.opponent}: alineación lista` : `${gameInfo.opponent}: alineación pendiente`, step: 'opponent' as PrepStep },
+                  ].map((item) => (
+                    <li key={item.step}>
+                      <button
+                        type="button"
+                        onClick={() => goTo(item.step)}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors hover:bg-slate-50',
+                          item.ok ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/60'
+                        )}
+                      >
+                        {item.ok ? (
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                        ) : (
+                          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+                        )}
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card className="p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h5 className="text-sm font-semibold">{gameTeams.ourTeam.name}</h5>
+                      {gameInfo.batting_first === 'home' ? <Badge variant="solid">Local</Badge> : <Badge variant="dark">Visitante</Badge>}
+                    </div>
+                    {previews.ours.length > 0 ? (
+                      <LineupPreviewList rows={previews.ours} />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Sin alineación todavía.</p>
+                    )}
+                  </Card>
+                  <Card className="p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h5 className="text-sm font-semibold">{gameInfo.opponent}</h5>
+                      {gameInfo.batting_first === 'opponent' ? <Badge variant="solid">Local</Badge> : <Badge variant="dark">Visitante</Badge>}
+                    </div>
+                    {previews.opponent.length > 0 ? (
+                      <LineupPreviewList rows={previews.opponent} />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Sin alineación todavía.</p>
+                    )}
+                  </Card>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step footer */}
+          {!currentTeam && !quickEntry && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
+              <Button
+                variant="ghost"
+                onClick={() => goTo(STEPS[Math.max(0, stepIndex - 1)].key)}
+                disabled={stepIndex === 0}
+              >
+                <ArrowLeft />
+                Anterior
+              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={onClose}>
+                  Guardar y cerrar
+                </Button>
+                {activeStep === 'review' ? (
+                  <Button
+                    variant="success"
+                    size="lg"
+                    onClick={startScoring}
+                    disabled={!allDone || !onStartScoring}
+                    title={allDone ? undefined : 'Completa los tres pasos para iniciar'}
+                  >
+                    <Play />
+                    Iniciar anotación
+                  </Button>
+                ) : (
+                  <Button onClick={() => goTo(STEPS[Math.min(STEPS.length - 1, stepIndex + 1)].key)}>
+                    Siguiente
+                    <ArrowRight />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* ---------------- Plain team selection (no game context) ---------------- */
+        <>
+          {!teamId && !currentTeam && (
+            <div className="space-y-3">
+              <h4 className="text-base font-semibold">Seleccionar equipo</h4>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {teams.map((team) => (
+                  <Card key={team.id} className="p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{team.name}</div>
+                        <div className="text-sm text-muted-foreground">{team.city} · {team.players?.length || 0} jugadores</div>
+                      </div>
+                      <Button size="sm" variant="accent" onClick={() => selectTeam(team.id)}>
+                        Seleccionar
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+          {currentTeam && (mode === 'create' ? workspace : (
+            <div className="flex justify-end">
+              <Button variant="accent" onClick={() => setMode('create')}>Editar alineación</Button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Add Player Modal */}
+      {showAddPlayerModal && (
+        <Modal
+          size="sm"
+          title="Agregar nuevo jugador"
+          onClose={() => {
+            setShowAddPlayerModal(false)
+            setNewPlayerData({
+              first_name: '',
+              last_name: '',
+              jersey_number: '',
+              positions: []
+            })
+          }}
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddPlayerModal(false)
+                  setNewPlayerData({
+                    first_name: '',
+                    last_name: '',
+                    jersey_number: '',
+                    positions: []
+                  })
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={createNewPlayer}
+                loading={creatingPlayer}
+                disabled={!newPlayerData.first_name || !newPlayerData.last_name}
+              >
+                {creatingPlayer ? 'Creando...' : 'Crear jugador'}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <FormField label="Nombre">
+              <Input
+                type="text"
+                value={newPlayerData.first_name}
+                onChange={(e) => setNewPlayerData({ ...newPlayerData, first_name: e.target.value })}
+                placeholder="Nombre"
+              />
+            </FormField>
+            <FormField label="Apellido">
+              <Input
+                type="text"
+                value={newPlayerData.last_name}
+                onChange={(e) => setNewPlayerData({ ...newPlayerData, last_name: e.target.value })}
+                placeholder="Apellido"
+              />
+            </FormField>
+            <FormField label="Número de camiseta">
+              <Input
+                type="number"
+                value={newPlayerData.jersey_number}
+                onChange={(e) => setNewPlayerData({ ...newPlayerData, jersey_number: e.target.value })}
+                placeholder="Número"
+                min="0"
+              />
+            </FormField>
+            <FormField label="Posición principal">
+              <Select
+                value={newPlayerData.positions[0] || ''}
+                onChange={(e) => setNewPlayerData({
+                  ...newPlayerData,
+                  positions: e.target.value ? [e.target.value] : []
+                })}
+              >
+                <option value="">Seleccionar posición...</option>
+                {fieldPositions.map((pos) => (
+                  <option key={pos} value={pos}>
+                    {pos}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Small presentational helpers
+// -----------------------------------------------------------------------------
+function OrderChip({ n, done, dh }: { n: number; done?: boolean; dh?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex size-7 items-center justify-center rounded-full text-xs font-bold tabular-nums',
+        done ? 'bg-emerald-100 text-emerald-800' : dh ? 'bg-blue-100 text-blue-800' : 'bg-secondary text-slate-600'
+      )}
+    >
+      {n}
+    </span>
+  )
+}
+
+function OptionCard({
+  icon,
+  title,
+  description,
+  selected,
+  recommended,
+  onClick,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  selected?: boolean
+  recommended?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        selected ? 'border-primary bg-accent ring-1 ring-primary' : 'border-border bg-card hover:border-primary/40 hover:bg-slate-50'
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-10 shrink-0 items-center justify-center rounded-lg [&_svg]:size-5',
+          selected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-slate-600'
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold">{title}</span>
+          {recommended && <Badge variant="info">Recomendado</Badge>}
+          {selected && <Badge variant="solid"><Check /> Seleccionado</Badge>}
+        </span>
+        <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
+      </span>
+    </button>
+  )
+}
+
+function LineupPreviewList({ rows }: { rows: PreviewRow[] }) {
+  return (
+    <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+      {rows.map((row) => (
+        <li key={`${row.batting_order}-${row.position}`} className="flex items-center gap-3 px-3 py-1.5 text-sm">
+          <OrderChip n={row.batting_order} />
+          <span className="min-w-0 flex-1 truncate">
+            {row.players ? `${row.players.first_name} ${row.players.last_name}` : 'Jugador'}
+            {row.players?.jersey_number ? <span className="ml-1 text-xs text-muted-foreground">#{row.players.jersey_number}</span> : null}
+          </span>
+          <Badge variant="primary">{row.position}</Badge>
+        </li>
+      ))}
+    </ol>
   )
 }
