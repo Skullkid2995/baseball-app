@@ -209,6 +209,37 @@ function finalize(s: PlayerStats): PlayerStats {
 
 const EN = {
   sprayChart: 'Spray chart',
+  tabHitting: 'Hitting',
+  tabDefense: 'Defense',
+  defenseHint: 'Pitching and fielding: what the opponents did against us, and how our defense handled it.',
+  pitcherLines: 'Pitcher lines',
+  pitcherLinesHint: 'Every at-bat against each of our pitchers, plus the runners they let steal or picked off.',
+  runsAllowed: 'R',
+  runsAllowedFull: 'Runs allowed',
+  sbAllowed: 'SB',
+  sbAllowedFull: 'Stolen bases allowed',
+  csShort: 'CS',
+  csFull: 'Caught stealing',
+  pkShort: 'PK',
+  pkFull: 'Pickoffs',
+  fielding: 'Fielding by position',
+  fieldingHint: 'Putouts, assists, errors and fielder’s choices credited from the play notation (6-3, F-8, E-6, DP…) and from runners caught.',
+  position: 'Pos',
+  po: 'PO',
+  poFull: 'Putouts',
+  assists: 'A',
+  assistsFull: 'Assists',
+  errorsShort: 'E',
+  errorsFull: 'Errors',
+  fcShort: 'FC',
+  fcFull: "Fielder's choices",
+  fpct: 'FPCT',
+  fpctFull: 'Fielding percentage (PO+A)/(PO+A+E)',
+  dpShort: 'DP',
+  dpFull: 'Double plays',
+  teamDefense: 'Team defense',
+  noDefense: 'No defense data yet',
+  noDefenseHint: 'Score a game with the opponents batting (and the pitcher on record) and the defense shows up here.',
   ourPitchers: 'Our pitchers',
   ourPitchersHint: 'What the opponents did against our pitchers: where their hits and outs landed, and each batter’s numbers. Tap a batter to filter the field.',
   allPitchers: 'All our pitchers',
@@ -294,6 +325,37 @@ const EN = {
 
 const ES: typeof EN = {
   sprayChart: 'Mapa de batazos',
+  tabHitting: 'Bateo',
+  tabDefense: 'Defensa',
+  defenseHint: 'Pitcheo y fildeo: qué hicieron los rivales contra nosotros y cómo respondió nuestra defensa.',
+  pitcherLines: 'Líneas de pitcheo',
+  pitcherLinesHint: 'Cada turno contra cada uno de nuestros pitchers, más los corredores que dejaron robar o sorprendieron.',
+  runsAllowed: 'C',
+  runsAllowedFull: 'Carreras permitidas',
+  sbAllowed: 'BR',
+  sbAllowedFull: 'Bases robadas permitidas',
+  csShort: 'OR',
+  csFull: 'Outs robando',
+  pkShort: 'PK',
+  pkFull: 'Pickoffs',
+  fielding: 'Fildeo por posición',
+  fieldingHint: 'Outs, asistencias, errores y fielder’s choice acreditados desde la anotación de la jugada (6-3, F-8, E-6, DP…) y de los corredores sorprendidos.',
+  position: 'Pos',
+  po: 'PO',
+  poFull: 'Putouts',
+  assists: 'A',
+  assistsFull: 'Asistencias',
+  errorsShort: 'E',
+  errorsFull: 'Errores',
+  fcShort: 'FC',
+  fcFull: "Fielder's choice",
+  fpct: 'FPCT',
+  fpctFull: 'Porcentaje de fildeo (PO+A)/(PO+A+E)',
+  dpShort: 'DP',
+  dpFull: 'Dobles matanzas',
+  teamDefense: 'Defensa del equipo',
+  noDefense: 'Todavía no hay datos de defensa',
+  noDefenseHint: 'Anota un juego con los rivales al bat (y el pitcher registrado) y la defensa aparece aquí.',
   ourPitchers: 'Nuestros pitchers',
   ourPitchersHint: 'Qué hicieron los rivales contra nuestros pitchers: dónde cayeron sus hits y outs, y los números de cada bateador. Toca un bateador para filtrar el campo.',
   allPitchers: 'Todos nuestros pitchers',
@@ -407,6 +469,68 @@ const COLUMNS: Column[] = [
   { key: 'ops', label: 'ops', full: 'opsFull', kind: 'avg', denom: (s) => s.ab },
 ]
 
+const POS_NAMES = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
+interface PosLine {
+  pos: number
+  po: number
+  a: number
+  e: number
+  fc: number
+}
+const emptyPositions = (): PosLine[] => Array.from({ length: 9 }, (_, i) => ({ pos: i + 1, po: 0, a: 0, e: 0, fc: 0 }))
+const positionsIn = (notation: string | null | undefined) =>
+  (notation || '')
+    .replace(/[^0-9]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(Number)
+    .filter((x) => x >= 1 && x <= 9)
+/** Credit PO / A / E / FC to positions from a batted-ball result and its notation (6-3, F-8, E-6, DP, U-3...). */
+function creditPlay(lines: PosLine[], result: string, notation: string | null | undefined) {
+  const n = (notation || '').toUpperCase().trim()
+  const nums = positionsIn(n)
+  const at = (p: number) => lines[p - 1]
+  if (result === 'error') {
+    if (nums.length) at(nums[nums.length - 1]).e += 1
+    return
+  }
+  if (result === 'fielders_choice') {
+    if (nums.length) at(nums[0]).fc += 1
+    return
+  }
+  if (result === 'strikeout') {
+    at(2).po += 1
+    return
+  }
+  if (!['ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt'].includes(result) || nums.length === 0) return
+  if (/^(F|L|P|U)/.test(n)) {
+    at(nums[nums.length - 1]).po += 1
+    return
+  }
+  for (let i = 0; i < nums.length - 1; i++) at(nums[i]).a += 1
+  at(nums[nums.length - 1]).po += 1
+}
+/** Runner put out by our defense: last position gets the putout, the others assists. */
+function creditRunnerOut(lines: PosLine[], fielders: string | null | undefined) {
+  const nums = positionsIn(fielders)
+  if (!nums.length) return
+  for (let i = 0; i < nums.length - 1; i++) lines[nums[i] - 1].a += 1
+  lines[nums[nums.length - 1] - 1].po += 1
+}
+const isDoublePlay = (result: string, notation: string | null | undefined) =>
+  result === 'ground_out' && (/DP/i.test(notation || '') || positionsIn(notation).length >= 3)
+
+interface RunnerEventRow {
+  id: string
+  game_id: string
+  team_side: string
+  pitcher_id: string | null
+  event_type: string
+  is_out: boolean
+  fielders: string | null
+}
+
 const OPP_COLUMNS = COLUMNS.filter((c) => ['pa', 'ab', 'h', 'doubles', 'triples', 'hr', 'bb', 'k', 'avg'].includes(c.key))
 
 const PAGE_SIZE = 1000
@@ -434,6 +558,8 @@ export default function StatisticsView() {
   const [playersById, setPlayersById] = useState<Map<string, { name: string; jersey: number | null }>>(new Map())
   const [pitcherFilter, setPitcherFilter] = useState<string>('all')
   const [selectedOppBatterId, setSelectedOppBatterId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'hitting' | 'defense'>('hitting')
+  const [runnerEvents, setRunnerEvents] = useState<RunnerEventRow[]>([])
 
   const minAb = Math.max(0, Math.floor(Number(minAbInput)) || 0)
 
@@ -466,6 +592,8 @@ export default function StatisticsView() {
         const { data: gamesData, error: gamesError } = await gamesReq
         if (gamesError) throw new Error(gamesError.message)
         const { data: playersData } = await supabase.from('players').select('id, first_name, last_name, jersey_number')
+        const { data: eventsData } = await supabase.from('runner_events').select('id, game_id, team_side, pitcher_id, event_type, is_out, fielders')
+        if (!cancelled) setRunnerEvents((eventsData as RunnerEventRow[]) ?? [])
         if (!cancelled) {
           setPlayersById(new Map(((playersData ?? []) as { id: string; first_name: string; last_name: string; jersey_number: number | null }[]).map((p) => [p.id, { name: `${p.first_name} ${p.last_name}`, jersey: p.jersey_number }])))
         }
@@ -599,6 +727,59 @@ export default function StatisticsView() {
   }, [atBats, gameFilter, gameTeamById, pitcherFilter, selectedOppBatterId, playersById, L.unknownPlayer, locale])
   const selectedOppBatter = pitching.batters.find((b) => b.id === selectedOppBatterId) ?? null
 
+  // Defense: everything the opponents did against us (their at-bats), by pitcher and by position
+  const defense = useMemo(() => {
+    const oppRows = atBats.filter((ab) => (gameFilter === 'all' || ab.game_id === gameFilter) && sideOf(ab, gameTeamById.get(ab.game_id)) === 'opponent')
+    const oppEvents = runnerEvents.filter((ev) => (gameFilter === 'all' || ev.game_id === gameFilter) && ev.team_side === 'opponent')
+    // pitcher lines
+    const byPitcher = new Map<string, PlayerStats & { sbAllowed: number; cs: number; pk: number }>()
+    for (const ab of oppRows) {
+      if (!ab.pitcher_id) continue
+      let st = byPitcher.get(ab.pitcher_id)
+      if (!st) {
+        const p = playersById.get(ab.pitcher_id)
+        st = { ...newPlayerStats(ab.pitcher_id, null, L.unknownPlayer), sbAllowed: 0, cs: 0, pk: 0 }
+        if (p) {
+          st.name = p.name
+          st.jersey = p.jersey
+          st.initials = p.name.split(/\s+/).map((x) => x[0]).join('').slice(0, 2).toUpperCase()
+        }
+        byPitcher.set(ab.pitcher_id, st)
+      }
+      accumulate(st, ab)
+    }
+    for (const ev of oppEvents) {
+      if (!ev.pitcher_id) continue
+      const st = byPitcher.get(ev.pitcher_id)
+      if (!st) continue
+      if (ev.event_type === 'SB') st.sbAllowed += 1
+      else if (ev.event_type === 'CS') st.cs += 1
+      else if (ev.event_type === 'PK') st.pk += 1
+    }
+    const pitcherLines = Array.from(byPitcher.values())
+      .map((st) => ({ ...finalize(st), sbAllowed: st.sbAllowed, cs: st.cs, pk: st.pk }))
+      .sort((a, b) => b.pa - a.pa || a.name.localeCompare(b.name, locale))
+    // fielding by position
+    const positions = emptyPositions()
+    let dp = 0
+    let fcTotal = 0
+    let errorsTotal = 0
+    for (const ab of oppRows) {
+      creditPlay(positions, ab.result, ab.notation)
+      if (ab.result === 'error') errorsTotal += 1
+      if (ab.result === 'fielders_choice') fcTotal += 1
+      if (isDoublePlay(ab.result, ab.notation)) dp += 1
+    }
+    for (const ev of oppEvents) if (ev.is_out) creditRunnerOut(positions, ev.fielders)
+    const sbAllowed = oppEvents.filter((ev) => ev.event_type === 'SB').length
+    const cs = oppEvents.filter((ev) => ev.event_type === 'CS').length
+    const pk = oppEvents.filter((ev) => ev.event_type === 'PK').length
+    const po = positions.reduce((n, p) => n + p.po, 0)
+    const a = positions.reduce((n, p) => n + p.a, 0)
+    const fpct = po + a + errorsTotal > 0 ? (po + a) / (po + a + errorsTotal) : 0
+    return { oppRows, pitcherLines, positions, dp, fcTotal, errorsTotal, sbAllowed, cs, pk, po, a, fpct }
+  }, [atBats, runnerEvents, gameFilter, gameTeamById, playersById, L.unknownPlayer, locale])
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -651,7 +832,22 @@ export default function StatisticsView() {
     <div className="space-y-6">
       <PageHeader
         title={L.title}
-        description={filtered.length > 0 ? L.scope(gamesInScope, filtered.length) : L.description}
+        description={tab === 'defense' ? L.defenseHint : filtered.length > 0 ? L.scope(gamesInScope, filtered.length) : L.description}
+        actions={
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {(['hitting', 'defense'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                aria-pressed={tab === k}
+                className={cn('rounded-md px-4 py-1.5 text-sm font-semibold', tab === k ? 'bg-card shadow-sm' : 'text-slate-500 hover:text-slate-800')}
+              >
+                {k === 'hitting' ? L.tabHitting : L.tabDefense}
+              </button>
+            ))}
+          </div>
+        }
       />
 
       {/* Filters */}
@@ -666,6 +862,8 @@ export default function StatisticsView() {
             ))}
           </Select>
         </FormField>
+        {tab === 'hitting' && (
+        <>
         <FormField label={L.filterSide}>
           <Select value={sideFilter} onChange={(e) => setSideFilter(e.target.value as SideFilter)}>
             <option value="home">{L.sideHome}</option>
@@ -684,8 +882,12 @@ export default function StatisticsView() {
             onBlur={() => setMinAbInput(String(minAb))}
           />
         </FormField>
+        </>
+        )}
       </div>
 
+      {tab === 'hitting' && (
+      <>
       {nothingAtAll && (
         <EmptyState icon={<BarChart3 />} title={L.emptyTitle} description={L.emptyDescription} />
       )}
@@ -854,6 +1056,132 @@ export default function StatisticsView() {
         </>
       )}
 
+      </>
+      )}
+
+      {tab === 'defense' && (
+      <>
+      {defense.oppRows.length === 0 && <EmptyState icon={<BarChart3 />} title={L.noDefense} description={L.noDefenseHint} />}
+
+      {defense.oppRows.length > 0 && (
+        <>
+          {/* Team defense tiles */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: L.fpct, title: L.fpctFull, value: fmtAvg(defense.fpct, defense.po + defense.a + defense.errorsTotal) },
+              { label: L.errorsShort, title: L.errorsFull, value: String(defense.errorsTotal) },
+              { label: L.fcShort, title: L.fcFull, value: String(defense.fcTotal) },
+              { label: L.dpShort, title: L.dpFull, value: String(defense.dp) },
+              { label: L.csShort + ' / ' + L.pkShort, title: L.csFull + ' / ' + L.pkFull, value: defense.cs + ' / ' + defense.pk },
+              { label: L.sbAllowed, title: L.sbAllowedFull, value: String(defense.sbAllowed) },
+            ].map((tile) => (
+              <Card key={tile.label}>
+                <CardContent className="p-4" title={tile.title}>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tile.label}</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums">{tile.value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Pitcher lines */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{L.pitcherLines}</CardTitle>
+              <CardDescription>{L.pitcherLinesHint}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {defense.pitcherLines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">—</p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold">{L.player}</th>
+                        {[
+                          [L.g, L.gFull], [L.bf, L.bfFull], [L.hitsShort, L.hitsFull], [L.doubles, L.doublesFull], [L.triples, L.triplesFull], [L.hrShort, L.hrFull],
+                          [L.bb, L.bbFull], [L.k, L.kFull], [L.runsAllowed, L.runsAllowedFull], [L.sbAllowed, L.sbAllowedFull], [L.csShort, L.csFull], [L.pkShort, L.pkFull], [L.avgAgainst, L.avgFull],
+                        ].map(([label, title]) => (
+                          <th key={label as string} className="px-2 py-2 text-right font-semibold" title={title as string}>{label as string}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {defense.pitcherLines.map((p) => (
+                        <tr key={p.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-3">
+                              <Avatar src={p.photoUrl} alt={p.name} initials={p.initials} size="sm" />
+                              <div className="min-w-0">
+                                <div className="truncate font-medium text-foreground">{p.name}</div>
+                                {p.jersey !== null && <div className="text-xs text-muted-foreground tabular-nums">#{p.jersey}</div>}
+                              </div>
+                            </div>
+                          </td>
+                          {[p.g, p.pa, p.h, p.doubles, p.triples, p.hr, p.bb, p.k, p.r, p.sbAllowed, p.cs, p.pk].map((v, i) => (
+                            <td key={i} className="px-2 py-2 text-right tabular-nums whitespace-nowrap">{v}</td>
+                          ))}
+                          <td className="px-2 py-2 text-right font-medium tabular-nums">{fmtAvg(p.avg, p.ab)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Fielding by position */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{L.fielding}</CardTitle>
+              <CardDescription>{L.fieldingHint}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">{L.position}</th>
+                      {[[L.po, L.poFull], [L.assists, L.assistsFull], [L.errorsShort, L.errorsFull], [L.fcShort, L.fcFull], [L.fpct, L.fpctFull]].map(([label, title]) => (
+                        <th key={label} className="px-2 py-2 text-right font-semibold" title={title}>{label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {defense.positions.map((p) => {
+                      const chances = p.po + p.a + p.e
+                      return (
+                        <tr key={p.pos} className="border-t border-border">
+                          <td className="px-3 py-2 font-medium">
+                            <span className="mr-2 inline-flex size-6 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-600">{p.pos}</span>
+                            {POS_NAMES[p.pos - 1]}
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">{p.po}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{p.a}</td>
+                          <td className={cn('px-2 py-2 text-right tabular-nums', p.e > 0 && 'font-semibold text-red-700')}>{p.e}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{p.fc}</td>
+                          <td className="px-2 py-2 text-right font-medium tabular-nums">{chances > 0 ? fmtAvg((p.po + p.a) / chances, chances) : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                    <tr className="border-t-2 border-border bg-slate-50 font-semibold">
+                      <td className="px-3 py-2">{L.teamDefense}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{defense.po}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{defense.a}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{defense.errorsTotal}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{defense.fcTotal}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtAvg(defense.fpct, defense.po + defense.a + defense.errorsTotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
       {/* Our pitchers: where the opponents' hits and outs landed, and each opposing batter's numbers */}
       {pitching.rows.length > 0 && (
         <Card>
@@ -951,6 +1279,8 @@ export default function StatisticsView() {
             </div>
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   )
