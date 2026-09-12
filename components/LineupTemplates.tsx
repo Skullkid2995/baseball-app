@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Alert, Badge, Button, Card, FormField, Input, LoadingState, Panel, Select } from '@/components/ui'
 
 interface Player {
   id: string
@@ -30,6 +32,8 @@ interface LineupTemplatePlayer {
 interface LineupTemplatesProps {
   onClose: () => void
   teamId?: string
+  /** Rendered inside a page (no surrounding modal): hides the Close button. */
+  embedded?: boolean
 }
 
 const POSITIONS = [
@@ -45,7 +49,7 @@ const POSITIONS = [
   { value: 'DH', label: 'Designated Hitter' }
 ]
 
-export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProps) {
+export default function LineupTemplates({ onClose, teamId, embedded = false }: LineupTemplatesProps) {
   const [templates, setTemplates] = useState<LineupTemplate[]>([])
   const [players, setPlayers] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
@@ -406,21 +410,17 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading lineup templates...</span>
-      </div>
-    )
+    return <LoadingState label="Loading lineup templates..." />
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <h3 className="text-xl font-bold text-gray-800">Lineup Templates</h3>
-        <div className="flex space-x-3">
-          <button
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-base font-semibold tracking-tight">Lineup Templates</h3>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={showCreateForm ? 'outline' : 'primary'}
             onClick={() => {
               if (showCreateForm) {
                 cancelEdit()
@@ -428,62 +428,56 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
                 setShowCreateForm(true)
               }
             }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
+            {showCreateForm ? <X /> : <Plus />}
             {showCreateForm ? 'Cancel' : 'New Template'}
-          </button>
-          <button
-            onClick={onClose}
-            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
-          >
-            Close
-          </button>
+          </Button>
+          {!embedded && (
+            <Button variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Create/Edit Template Form */}
       {showCreateForm && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h4 className="text-lg font-semibold text-gray-800 mb-4">
+        <Panel>
+          <h4 className="mb-5 text-base font-semibold">
             {editingTemplate ? 'Edit Lineup Template' : 'Create New Lineup Template'}
           </h4>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
-              <input
+
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FormField label="Template Name" required>
+              <Input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 placeholder="e.g., Regular Lineup, Playoff Lineup"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <input
+            </FormField>
+            <FormField label="Description">
+              <Input
                 type="text"
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 placeholder="Optional description"
               />
-            </div>
+            </FormField>
           </div>
 
           {/* Lineup Builder */}
-          <div className="space-y-4">
-            <h5 className="text-md font-semibold text-gray-800">Batting Order & Positions</h5>
+          <div className="space-y-3">
+            <h5 className="text-sm font-semibold text-slate-700">Batting Order & Positions</h5>
             {Array.from({ length: 9 }, (_, i) => i + 1).map((order) => (
-              <div key={order} className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm font-medium text-gray-700">
+              <div key={order} className="grid grid-cols-1 items-center gap-3 sm:grid-cols-3">
+                <div className="text-sm font-medium text-slate-700">
                   #{order} - Batting Order {order}
                 </div>
                 <div>
-                  <select
+                  <Select
                     value={lineup[order]?.playerId || ''}
                     onChange={(e) => handleLineupChange(order, e.target.value, lineup[order]?.position || '')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select Player</option>
                     {players.map((player) => (
@@ -491,13 +485,12 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
                         #{player.jersey_number} {player.first_name} {player.last_name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div>
-                  <select
+                  <Select
                     value={lineup[order]?.position || ''}
                     onChange={(e) => handleLineupChange(order, lineup[order]?.playerId || '', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select Position</option>
                     {POSITIONS.map((pos) => (
@@ -505,84 +498,82 @@ export default function LineupTemplates({ onClose, teamId }: LineupTemplatesProp
                         {pos.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="flex justify-end mt-6">
-            <button
-              onClick={createTemplate}
-              className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
-            >
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+            <Button variant="success" onClick={createTemplate}>
               {editingTemplate ? 'Update Template' : 'Create Template'}
-            </button>
+            </Button>
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* Templates List */}
       <div className="space-y-4">
         {templates.length === 0 ? (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-yellow-800">No lineup templates found. Create your first template above.</p>
-          </div>
+          <Alert variant="warning">
+            No lineup templates found. Create your first template above.
+          </Alert>
         ) : (
           templates.map((template) => (
-            <div key={template.id} className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h5 className="text-lg font-semibold text-gray-800">{template.name}</h5>
+            <Card key={template.id} className="p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h5 className="text-base font-semibold tracking-tight">{template.name}</h5>
                   {template.description && (
-                    <p className="text-sm text-gray-600 mt-1">{template.description}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{template.description}</p>
                   )}
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="mt-2 text-xs text-muted-foreground">
                     Created: {new Date(template.created_at).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setSelectedTemplate(template.id)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
-                  >
+                <div className="flex flex-wrap gap-1.5">
+                  <Button size="sm" variant="primary" onClick={() => setSelectedTemplate(template.id)}>
+                    <Eye />
                     View Lineup
-                  </button>
-                  <button
-                    onClick={() => startEditTemplate(template.id)}
-                    className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
-                  >
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => startEditTemplate(template.id)}>
+                    <Pencil />
                     Edit
-                  </button>
-                  <button
-                    onClick={() => deleteTemplate(template.id)}
-                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                  >
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteTemplate(template.id)}>
+                    <Trash2 />
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Show lineup if selected */}
               {selectedTemplate === template.id && templatePlayers.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <h6 className="text-md font-semibold text-gray-700 mb-3">Lineup:</h6>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-                    {templatePlayers.map((tp) => (
-                      <div key={tp.id} className="flex justify-between items-center bg-gray-50 px-3 py-2 rounded">
-                        <span className="font-medium">#{tp.batting_order}</span>
-                        <span>{getPlayerName(tp.player_id)}</span>
-                        <span className="text-blue-600 font-medium">{tp.position}</span>
-                      </div>
-                    ))}
+                <div className="mt-4 border-t border-border pt-4">
+                  <h6 className="mb-3 text-sm font-semibold text-slate-700">Lineup:</h6>
+                  <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {templatePlayers.map((tp) => (
+                          <tr key={tp.id} className="border-t border-border first:border-t-0 hover:bg-slate-50/60">
+                            <td className="w-12 px-3 py-2">
+                              <span className="flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-semibold tabular-nums text-secondary-foreground">#{tp.batting_order}</span>
+                            </td>
+                            <td className="px-3 py-2 font-medium">{getPlayerName(tp.player_id)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <Badge variant="primary">{tp.position}</Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
           ))
         )}
       </div>
     </div>
   )
 }
-

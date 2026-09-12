@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { Save } from 'lucide-react'
+import { Alert, Button, Checkbox, Input, Modal, Select } from '@/components/ui'
 
 interface OpponentPlayer {
   id: string
@@ -14,9 +16,11 @@ interface OpponentLineupEntryProps {
   gameId: string
   opponentName: string
   onClose: () => void
+  /** Render inline (inside another panel) instead of as its own modal. */
+  embedded?: boolean
 }
 
-export default function OpponentLineupEntry({ gameId, opponentName, onClose }: OpponentLineupEntryProps) {
+export default function OpponentLineupEntry({ gameId, opponentName, onClose, embedded = false }: OpponentLineupEntryProps) {
   const [players, setPlayers] = useState<OpponentPlayer[]>([])
   const [hasDH, setHasDH] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -275,66 +279,49 @@ export default function OpponentLineupEntry({ gameId, opponentName, onClose }: O
 
   const maxRows = hasDH ? 10 : 9
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
-      <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] overflow-y-auto">
-        <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Enter {opponentName} Lineup</h3>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 text-xl"
-            >
-              ×
-            </button>
-          </div>
+  const body = (
+    <div className="space-y-4">
+      {error && <Alert variant="error">{error}</Alert>}
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-              <p className="text-red-800 text-sm">{error}</p>
-            </div>
-          )}
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+        <Checkbox
+          checked={hasDH}
+          onChange={(e) => e.target.checked ? addDH() : removeDH()}
+        />
+        <span className="text-slate-700">Usar Bateador Designado (DH)</span>
+      </label>
 
-          <div className="mb-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={hasDH}
-                onChange={(e) => e.target.checked ? addDH() : removeDH()}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm text-gray-700">Use Designated Hitter (DH)</span>
-            </label>
-          </div>
-
-          <div className="space-y-2 mb-4">
-            <div className="grid grid-cols-12 gap-2 font-semibold text-sm text-gray-700 pb-2 border-b">
-              <div className="col-span-1">#</div>
-              <div className="col-span-6">Player Name</div>
-              <div className="col-span-5">Position</div>
-            </div>
-
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="w-12 px-3 py-2 text-center font-semibold">#</th>
+              <th className="px-3 py-2 font-semibold">Nombre del jugador</th>
+              <th className="w-[44%] px-3 py-2 font-semibold">Posición</th>
+            </tr>
+          </thead>
+          <tbody>
             {players.slice(0, maxRows).map((player, index) => (
-              <div key={player.id} className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-1 text-sm font-medium text-gray-600">
-                  {player.batting_order}
-                </div>
-                <div className="col-span-6">
-                  <input
+              <tr key={player.id} className="border-t border-border">
+                <td className="px-3 py-2 text-center">
+                  <span className="inline-flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-bold tabular-nums text-slate-600">
+                    {player.batting_order}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <Input
                     type="text"
                     value={player.name}
                     onChange={(e) => updatePlayer(index, 'name', e.target.value)}
-                    placeholder="Player Name"
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                    placeholder="Nombre del jugador"
                   />
-                </div>
-                <div className="col-span-5">
-                  <select
+                </td>
+                <td className="px-3 py-2">
+                  <Select
                     value={player.position}
                     onChange={(e) => updatePlayer(index, 'position', e.target.value)}
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                   >
-                    <option value="">Select Position</option>
+                    <option value="">Seleccionar posición</option>
                     {fieldPositions
                       .filter(pos => hasDH || pos !== 'Bateador Designado (DH)')
                       .filter(pos => {
@@ -348,30 +335,31 @@ export default function OpponentLineupEntry({ gameId, opponentName, onClose }: O
                       .map(pos => (
                         <option key={pos} value={pos}>{pos}</option>
                       ))}
-                  </select>
-                </div>
-              </div>
+                  </Select>
+                </td>
+              </tr>
             ))}
-          </div>
+          </tbody>
+        </table>
+      </div>
 
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={saveOpponentLineup}
-              disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Lineup'}
-            </button>
-          </div>
-        </div>
+      <div className="flex justify-end gap-2 border-t border-border pt-4">
+        <Button variant="outline" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button onClick={saveOpponentLineup} loading={saving}>
+          <Save />
+          {saving ? 'Guardando...' : 'Guardar alineación'}
+        </Button>
       </div>
     </div>
   )
-}
 
+  if (embedded) return body
+
+  return (
+    <Modal size="lg" tall title={`Alineación de ${opponentName}`} onClose={onClose}>
+      {body}
+    </Modal>
+  )
+}

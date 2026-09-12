@@ -177,6 +177,18 @@ export interface Translations {
   noTeamRemove: string
   playerExistsOnTeam: string
   playerExistsOnTeamMessage: string
+  // Navigation / shell
+  dashboard: string
+  statistics: string
+  lineups: string
+  settings: string
+  navMain: string
+  navAnalysis: string
+  navSystem: string
+  menu: string
+  soon: string
+  comingSoon: string
+  comingSoonDescription: string
 }
 
 const translations: Record<Language, Translations> = {
@@ -357,6 +369,18 @@ const translations: Record<Language, Translations> = {
     noTeamRemove: 'No Team (Remove from team)',
     playerExistsOnTeam: 'This player exists on a different team',
     playerExistsOnTeamMessage: 'This player exists on a different team: {teamName}. Please select them from the list instead.',
+    // Navigation / shell
+    dashboard: 'Dashboard',
+    statistics: 'Statistics',
+    lineups: 'Lineups',
+    settings: 'Settings',
+    navMain: 'Main',
+    navAnalysis: 'Analysis',
+    navSystem: 'System',
+    menu: 'Menu',
+    soon: 'Soon',
+    comingSoon: 'Coming soon',
+    comingSoonDescription: 'This section is on the roadmap and will be built in an upcoming iteration.',
   },
   es: {
     // Header
@@ -535,6 +559,18 @@ const translations: Record<Language, Translations> = {
     noTeamRemove: 'Sin Equipo (Remover del equipo)',
     playerExistsOnTeam: 'Este jugador existe en un equipo diferente',
     playerExistsOnTeamMessage: 'Este jugador existe en un equipo diferente: {teamName}. Por favor, selecciónalo de la lista en su lugar.',
+    // Navigation / shell
+    dashboard: 'Panel',
+    statistics: 'Estadísticas',
+    lineups: 'Alineaciones',
+    settings: 'Configuración',
+    navMain: 'Principal',
+    navAnalysis: 'Análisis',
+    navSystem: 'Sistema',
+    menu: 'Menú',
+    soon: 'Pronto',
+    comingSoon: 'Próximamente',
+    comingSoonDescription: 'Esta sección está en el plan y se construirá en una próxima iteración.',
   },
 }
 

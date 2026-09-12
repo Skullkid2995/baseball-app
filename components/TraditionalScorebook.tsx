@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import DiamondCanvas from './DiamondCanvas'
 import OpponentLineupEntry from './OpponentLineupEntry'
+import { ArrowLeftRight, Lock, Plus, Save } from 'lucide-react'
+import { Button, FormField, Input, LoadingState } from '@/components/ui'
 
 interface Player {
   id: string
@@ -961,126 +963,111 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading scorebook...</span>
-      </div>
-    )
+    return <LoadingState label="Loading scorebook..." />
   }
 
   return (
-    <div className="bg-white p-6 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-7xl space-y-6">
       {/* Game Information Header */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">vs {game.opponent}</h2>
+            <h2 className="text-2xl font-bold tracking-tight">vs {game.opponent}</h2>
             <div className="mt-2">
-              <div className={`inline-block px-4 py-2 text-white rounded-lg font-semibold text-lg ${
-                currentTeamSide === 'home' ? 'bg-blue-600' : 'bg-red-600'
+              <div className={`inline-flex items-center rounded-lg px-4 py-2 text-lg font-semibold text-white shadow-sm ${
+                currentTeamSide === 'home' ? 'bg-primary' : 'bg-destructive'
               }`}>
                 {currentTeamSide === 'home' ? homeTeamName : game.opponent}
               </div>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-gray-900">
+          <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-900 px-5 py-3 text-white sm:flex-col sm:items-end sm:gap-0 sm:text-right">
+            <div className="text-3xl font-bold tabular-nums">
               {currentGame.our_score} - {currentGame.opponent_score}
             </div>
-            <div className="text-sm text-gray-600">Score</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Score</div>
           </div>
         </div>
 
         {/* Team Switcher - Voltear Hoja Button */}
-        <div className="mb-4 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <button
+        <div className="flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 p-3">
+          <Button
+            variant="success"
+            size="lg"
             onClick={() => setCurrentTeamSide(currentTeamSide === 'home' ? 'opponent' : 'home')}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center space-x-2 shadow-md"
+            className="[&_svg]:size-5"
             title="Voltear Hoja - Cambiar de equipo"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
+            <ArrowLeftRight />
             <span className="text-lg">Voltear Hoja</span>
-          </button>
+          </Button>
         </div>
         
         <div style={{display: 'none'}} className="grid grid-cols-6 gap-4 text-sm">
-          <div>
-            <label className="block text-gray-600 mb-1">Date:</label>
-            <input
+          <FormField label="Date:">
+            <Input
               type="date"
               value={gameInfo.date}
               onChange={(e) => setGameInfo({...gameInfo, date: e.target.value})}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-gray-600 mb-1">Start Time:</label>
-            <input
+          </FormField>
+          <FormField label="Start Time:">
+            <Input
               type="time"
               value={gameInfo.startTime}
               onChange={(e) => setGameInfo({...gameInfo, startTime: e.target.value})}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-gray-600 mb-1">Field:</label>
-            <input
+          </FormField>
+          <FormField label="Field:">
+            <Input
               type="text"
               value={gameInfo.field}
               onChange={(e) => setGameInfo({...gameInfo, field: e.target.value})}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-gray-600 mb-1">Length:</label>
-            <input
+          </FormField>
+          <FormField label="Length:">
+            <Input
               type="text"
               value={gameInfo.length}
               onChange={(e) => setGameInfo({...gameInfo, length: e.target.value})}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-gray-600 mb-1">Umpire:</label>
-            <input
+          </FormField>
+          <FormField label="Umpire:">
+            <Input
               type="text"
               value={gameInfo.umpire}
               onChange={(e) => setGameInfo({...gameInfo, umpire: e.target.value})}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
             />
-          </div>
+          </FormField>
           <div className="flex items-end">
             <div className="text-right">
-              <div className="text-lg font-bold text-gray-900">
+              <div className="text-lg font-bold tabular-nums">
                 {game.our_score} - {game.opponent_score}
               </div>
-              <div className="text-sm text-gray-600">Score</div>
+              <div className="text-sm text-muted-foreground">Score</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Scorebook Grid */}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse border border-gray-400 text-xs">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card scrollbar-thin">
+        <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-gray-100">
-              <th className="border border-gray-400 px-2 py-1 w-8">#</th>
-              <th className="border border-gray-400 px-2 py-1 whitespace-nowrap">Batter</th>
-              <th className="border border-gray-400 px-1 py-1 w-6"></th>
+            <tr className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="w-8 border-r border-border px-2 py-2 font-semibold">#</th>
+              <th className="border-r border-border px-2 py-2 text-left font-semibold whitespace-nowrap">Batter</th>
+              <th className="w-6 border-r border-border px-1 py-2"></th>
               {getInningColumns().map((col, i) => (
-                <th key={`inning-${i}`} className="border border-gray-400 px-1 py-1 w-16 text-center">
+                <th key={`inning-${i}`} className="w-16 border-r border-border px-1 py-2 text-center font-semibold tabular-nums">
                   {col.inning}
                 </th>
               ))}
-              <th className="border border-gray-400 px-1 py-1 w-8 text-center">H</th>
-              <th className="border border-gray-400 px-1 py-1 w-8 text-center">BB</th>
-              <th className="border border-gray-400 px-1 py-1 w-8 text-center">R</th>
-              <th className="border border-gray-400 px-1 py-1 w-8 text-center">RBI</th>
-              <th className="border border-gray-400 px-1 py-1 w-8 text-center">E</th>
+              <th className="w-8 border-r border-border px-1 py-2 text-center font-semibold">H</th>
+              <th className="w-8 border-r border-border px-1 py-2 text-center font-semibold">BB</th>
+              <th className="w-8 border-r border-border px-1 py-2 text-center font-semibold">R</th>
+              <th className="w-8 border-r border-border px-1 py-2 text-center font-semibold">RBI</th>
+              <th className="w-8 px-1 py-2 text-center font-semibold">E</th>
             </tr>
           </thead>
           <tbody>
@@ -1090,21 +1077,21 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
               const stats = player ? getPlayerStats(player.id) : { hits: 0, walks: 0, runs: 0, rbi: 0, errors: 0 }
               
               return (
-                <tr key={rowIndex} className="h-12">
+                <tr key={rowIndex} className="h-12 border-t border-border hover:bg-slate-50/60">
                   {/* Jersey Number */}
-                  <td className="border border-gray-400 px-2 py-1 text-center">
+                  <td className="border-r border-border px-2 py-1 text-center font-medium tabular-nums text-muted-foreground">
                     {player ? player.jersey_number : ''}
                   </td>
                   
                   {/* Player Name */}
-                  <td className="border border-gray-400 px-2 py-1 whitespace-nowrap">
+                  <td className="border-r border-border px-2 py-1 font-medium whitespace-nowrap">
                     {player ? `${player.first_name} ${player.last_name}` : ''}
                   </td>
                   
                   {/* Diagonal Line Column */}
-                  <td className="border border-gray-400 px-1 py-1 relative">
+                  <td className="relative border-r border-border px-1 py-1">
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-full h-px bg-gray-400 transform rotate-45"></div>
+                      <div className="w-full h-px bg-slate-300 transform rotate-45"></div>
                     </div>
                   </td>
                   
@@ -1140,12 +1127,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     const isLockedCell = threeOutsForViewedTeam && !playerBatted && hasAtBatsForTeam
                     
                     return (
-                      <td key={inningIndex} className="border border-gray-400 px-1 py-1 relative">
+                      <td key={inningIndex} className="relative border-r border-border px-1 py-1">
                         <div 
                           className={`w-full h-full flex items-center justify-center transition-colors ${
                             isLockedCell 
-                              ? 'cursor-not-allowed bg-gray-200' 
-                              : 'cursor-pointer hover:bg-blue-50 active:bg-blue-100'
+                              ? 'cursor-not-allowed bg-slate-100' 
+                              : 'cursor-pointer rounded-md hover:bg-accent active:bg-blue-100'
                           }`}
                           onClick={() => {
                             if (!isLockedCell && player) {
@@ -1161,8 +1148,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                         >
                           {/* Diamond Shape */}
                           <div className="relative w-8 h-8">
-                            <div className={`absolute inset-0 border border-gray-300 transform rotate-45 ${
-                              atBat?.base_runners?.home ? 'bg-blue-600' : '' // Only blue if run scored (home = true)
+                            <div className={`absolute inset-0 border border-slate-300 transform rotate-45 ${
+                              atBat?.base_runners?.home ? 'bg-primary' : '' // Only blue if run scored (home = true)
                             }`}></div>
                             
                             {/* Base highlighting - show which base the runner is on */}
@@ -1170,19 +1157,19 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                               <>
                                 {/* First base highlight (right side) */}
                                 {atBat.base_runners.first && (
-                                  <div className="absolute top-1/2 right-0 w-2 h-2 bg-yellow-400 transform rotate-45 -translate-y-1/2 translate-x-1/2"></div>
+                                  <div className="absolute top-1/2 right-0 w-2 h-2 bg-amber-400 transform rotate-45 -translate-y-1/2 translate-x-1/2"></div>
                                 )}
                                 {/* Second base highlight (top) */}
                                 {atBat.base_runners.second && (
-                                  <div className="absolute top-0 left-1/2 w-2 h-2 bg-yellow-400 transform rotate-45 -translate-x-1/2 -translate-y-1/2"></div>
+                                  <div className="absolute top-0 left-1/2 w-2 h-2 bg-amber-400 transform rotate-45 -translate-x-1/2 -translate-y-1/2"></div>
                                 )}
                                 {/* Third base highlight (left side) */}
                                 {atBat.base_runners.third && (
-                                  <div className="absolute top-1/2 left-0 w-2 h-2 bg-yellow-400 transform rotate-45 -translate-y-1/2 -translate-x-1/2"></div>
+                                  <div className="absolute top-1/2 left-0 w-2 h-2 bg-amber-400 transform rotate-45 -translate-y-1/2 -translate-x-1/2"></div>
                                 )}
                                 {/* Home plate highlight (bottom) - only if not run scored (blue diamond) */}
                                 {atBat.base_runners.home && (
-                                  <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-yellow-400 transform rotate-45 -translate-x-1/2 translate-y-1/2"></div>
+                                  <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-amber-400 transform rotate-45 -translate-x-1/2 translate-y-1/2"></div>
                                 )}
                               </>
                             )}
@@ -1192,17 +1179,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                               (atBat?.base_runner_outs && (atBat.base_runner_outs.first || atBat.base_runner_outs.second || atBat.base_runner_outs.third || atBat.base_runner_outs.home)) ||
                               (atBat.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(atBat.result))
                             ) && (
-                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white"></div>
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full border border-white"></div>
                             )}
                             
                             {/* Green circle indicator for current batter - only show if no out recorded */}
                             {isCurrentBatter && !atBat && (
-                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border border-white"></div>
                             )}
                             
                             {/* At-bat result notation - only show if not run scored (blue diamond) */}
                             {atBat && !atBat.base_runners?.home && (
-                              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold z-10">
+                              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-foreground z-10">
                                 {atBat.result === 'single' && '1B'}
                                 {atBat.result === 'double' && '2B'}
                                 {atBat.result === 'triple' && '3B'}
@@ -1222,8 +1209,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                             
                             {/* Touch indicator when empty */}
                             {!atBat && player && (
-                              <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-xs">
-                                +
+                              <div className="absolute inset-0 flex items-center justify-center text-slate-300">
+                                <Plus className="size-3" aria-hidden="true" />
                               </div>
                             )}
                           </div>
@@ -1233,19 +1220,19 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   })}
                   
                   {/* Summary Statistics */}
-                  <td className="border border-gray-400 px-1 py-1 text-center font-bold">
+                  <td className="border-r border-border px-1 py-1 text-center font-bold tabular-nums last:border-r-0">
                     {stats.hits}
                   </td>
-                  <td className="border border-gray-400 px-1 py-1 text-center font-bold">
+                  <td className="border-r border-border px-1 py-1 text-center font-bold tabular-nums last:border-r-0">
                     {stats.walks}
                   </td>
-                  <td className="border border-gray-400 px-1 py-1 text-center font-bold">
+                  <td className="border-r border-border px-1 py-1 text-center font-bold tabular-nums last:border-r-0">
                     {stats.runs}
                   </td>
-                  <td className="border border-gray-400 px-1 py-1 text-center font-bold">
+                  <td className="border-r border-border px-1 py-1 text-center font-bold tabular-nums last:border-r-0">
                     {stats.rbi}
                   </td>
-                  <td className="border border-gray-400 px-1 py-1 text-center font-bold">
+                  <td className="border-r border-border px-1 py-1 text-center font-bold tabular-nums last:border-r-0">
                     {stats.errors}
                   </td>
                 </tr>
@@ -1256,33 +1243,39 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       </div>
 
       {/* Action Buttons */}
-      <div className="mt-6">
-        <div className="text-sm text-gray-600 mb-4">
+      <div className="space-y-4">
+        <div className="text-sm text-muted-foreground">
           {isLocked ? (
-            <p className="text-orange-600 font-bold">🔒 Scorebook LOCKED - View only mode</p>
+            <p className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-800">
+              <Lock className="size-4 shrink-0" aria-hidden="true" />
+              Scorebook LOCKED - View only mode
+            </p>
           ) : (
-            <>
+            <div className="space-y-1">
               <p>• Tap diamond cells to draw on the diamond</p>
               <p>• Draw notation with finger or stylus (K, 6-3, arrows, etc.)</p>
               <p>• Summary columns auto-calculate totals</p>
-            </>
+            </div>
           )}
         </div>
         <div className="flex flex-col gap-3 items-stretch sm:flex-row sm:justify-end sm:gap-3">
           {!isLocked && (
-            <button
+            <Button
+              variant="success"
               onClick={saveScorebook}
-              className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-green-700 w-full sm:w-auto"
+              className="w-full sm:w-auto"
             >
-              💾 Save Scorebook
-            </button>
+              <Save />
+              Save Scorebook
+            </Button>
           )}
-          <button
+          <Button
+            variant="outline"
             onClick={onClose}
-            className="bg-gray-600 text-white px-6 py-2.5 rounded-lg hover:bg-gray-700 w-full sm:w-auto"
+            className="w-full sm:w-auto"
           >
             Close Scorebook
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1324,16 +1317,18 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
       {/* Home/Away Team Selection Modal */}
       {showHomeAwayModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 text-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm animate-in fade-in duration-150" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-150">
+            <h3 className="mb-2 text-center text-xl font-semibold tracking-tight">
               ¿Quién batea primero?
             </h3>
-            <p className="text-sm text-gray-600 mb-6 text-center">
+            <p className="mb-6 text-center text-sm text-muted-foreground">
               Selecciona el equipo que batea primero
             </p>
-            <div className="flex flex-col space-y-3">
-              <button
+            <div className="flex flex-col gap-3">
+              <Button
+                variant="destructive"
+                size="lg"
                 onClick={async () => {
                   // Opponent bats first
                   setCurrentTeamSide('opponent')
@@ -1350,11 +1345,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     console.error('Error saving batting_first selection:', error)
                   }
                 }}
-                className="px-6 py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors"
+                className="h-14 text-lg font-semibold"
               >
                 {game.opponent}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
                 onClick={async () => {
                   // Home team (Dodgers) bats first
                   setCurrentTeamSide('home')
@@ -1371,10 +1368,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     console.error('Error saving batting_first selection:', error)
                   }
                 }}
-                className="px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors"
+                className="h-14 text-lg font-semibold"
               >
                 {homeTeamName}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

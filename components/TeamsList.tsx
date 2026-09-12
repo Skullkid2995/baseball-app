@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getBaseballPositions } from '@/lib/translations'
 import LineupTemplates from './LineupTemplates'
+import { ChevronDown, ChevronUp, ClipboardList, MapPin, Pencil, Plus, UserPlus, Users, X } from 'lucide-react'
+import { Alert, Avatar, Badge, Button, Card, CheckChip, Checkbox, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Panel, Select } from '@/components/ui'
 
 interface Team {
   id: string
@@ -615,71 +617,228 @@ export default function TeamsList() {
     }
   }
 
+  // Shared player form fields (used by both the Add and Edit player modals; identical inputs and handlers)
+  const playerFormFields = (
+    <>
+      {/* Photo Upload Section */}
+      <FormField label={t.playerPhoto} hint={uploadingPhoto ? t.uploading : t.takePhotoOrUpload}>
+        <div className="flex items-center gap-4">
+          <Input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handlePhotoUpload}
+            disabled={uploadingPhoto}
+            className="flex-1"
+            style={{ display: 'block' }}
+          />
+          {photoPreview && (
+            <div className="relative shrink-0">
+              <img
+                src={photoPreview}
+                alt="Player preview"
+                className="size-20 rounded-lg border border-border object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setPhotoPreview(null)
+                  setPlayerFormData({ ...playerFormData, photo_url: '' })
+                }}
+                className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-destructive text-white shadow hover:bg-red-700"
+                aria-label="Remove photo"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </FormField>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <FormField label={t.firstName} required>
+          <Input
+            type="text"
+            required
+            value={playerFormData.first_name}
+            onChange={(e) => setPlayerFormData({...playerFormData, first_name: e.target.value})}
+            placeholder="e.g., John"
+          />
+        </FormField>
+        <FormField label={t.lastName} required>
+          <Input
+            type="text"
+            required
+            value={playerFormData.last_name}
+            onChange={(e) => setPlayerFormData({...playerFormData, last_name: e.target.value})}
+            placeholder="e.g., Smith"
+          />
+        </FormField>
+        <FormField label={t.dateOfBirth} required>
+          <Input
+            type="date"
+            required
+            value={playerFormData.date_of_birth}
+            onChange={(e) => setPlayerFormData({...playerFormData, date_of_birth: e.target.value})}
+          />
+        </FormField>
+        <FormField label={t.team}>
+          <Select
+            value={playerFormData.team_id}
+            onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
+          >
+            <option value="">{t.noTeamRemove}</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.city} {team.name}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <FormField label={t.handedness} required>
+          <Select
+            required
+            value={playerFormData.handedness}
+            onChange={(e) => setPlayerFormData({...playerFormData, handedness: e.target.value})}
+          >
+            <option value="Righty">{t.righty}</option>
+            <option value="Lefty">{t.lefty}</option>
+            <option value="Switch">{t.switch}</option>
+          </Select>
+        </FormField>
+        <FormField label={t.jerseyNumber}>
+          <Input
+            type="number"
+            min="0"
+            max="99"
+            value={playerFormData.jersey_number || ''}
+            onChange={(e) => setPlayerFormData({...playerFormData, jersey_number: parseInt(e.target.value) || 0})}
+            placeholder="e.g., 24"
+          />
+        </FormField>
+        <FormField label={t.height}>
+          <Input
+            type="number"
+            min="48"
+            max="84"
+            value={playerFormData.height_inches || ''}
+            onChange={(e) => setPlayerFormData({...playerFormData, height_inches: parseInt(e.target.value) || 0})}
+            placeholder="e.g., 72"
+          />
+        </FormField>
+        <FormField label={t.weight}>
+          <Input
+            type="number"
+            min="100"
+            max="350"
+            value={playerFormData.weight_lbs || ''}
+            onChange={(e) => setPlayerFormData({...playerFormData, weight_lbs: parseInt(e.target.value) || 0})}
+            placeholder="e.g., 180"
+          />
+        </FormField>
+        <FormField label={t.contactNumber}>
+          <Input
+            type="tel"
+            value={playerFormData.contact_number}
+            onChange={(e) => setPlayerFormData({...playerFormData, contact_number: e.target.value})}
+            placeholder="e.g., (555) 123-4567"
+          />
+        </FormField>
+        <FormField label={t.emergencyNumber}>
+          <Input
+            type="tel"
+            value={playerFormData.emergency_number}
+            onChange={(e) => setPlayerFormData({...playerFormData, emergency_number: e.target.value})}
+            placeholder="e.g., (555) 987-6543"
+          />
+        </FormField>
+        <FormField label={t.emergencyContactName}>
+          <Input
+            type="text"
+            value={playerFormData.emergency_contact_name}
+            onChange={(e) => setPlayerFormData({...playerFormData, emergency_contact_name: e.target.value})}
+            placeholder="e.g., Jane Smith"
+          />
+        </FormField>
+      </div>
+
+      <FormField
+        label={
+          <>
+            {t.positions} <span className="text-red-500">*</span>{' '}
+            <span className="font-normal text-muted-foreground">{t.selectAllThatApply}</span>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+          {BASEBALL_POSITIONS.map((position) => (
+            <CheckChip key={position} checked={playerFormData.positions.includes(position)}>
+              <Checkbox
+                checked={playerFormData.positions.includes(position)}
+                onChange={(e) => handlePositionChange(position, e.target.checked)}
+              />
+              <span>{position}</span>
+            </CheckChip>
+          ))}
+        </div>
+      </FormField>
+    </>
+  )
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">{t.loading} {t.teamsCount.toLowerCase()}...</span>
-      </div>
-    )
+    return <LoadingState label={`${t.loading} ${t.teamsCount.toLowerCase()}...`} />
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800">{t.error}: {error}</p>
-      </div>
+      <Alert variant="error">
+        {t.error}: {error}
+      </Alert>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold text-gray-800">{t.teamsCount} ({teams.length})</h3>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          {showAddForm ? t.cancel : t.addTeam}
-        </button>
-      </div>
+      <PageHeader
+        title={t.teamsCount}
+        count={teams.length}
+        actions={
+          <Button variant={showAddForm ? 'outline' : 'primary'} onClick={() => setShowAddForm(!showAddForm)}>
+            {showAddForm ? <X /> : <Plus />}
+            {showAddForm ? t.cancel : t.addTeam}
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">{t.error}: {error}</p>
-        </div>
+        <Alert variant="error">
+          {t.error}: {error}
+        </Alert>
       )}
 
       {(showAddForm || showEditForm) && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-          <h4 className="text-lg font-semibold text-gray-800 mb-4">
+        <Panel>
+          <h4 className="mb-5 text-base font-semibold">
             {showEditForm ? t.editTeam : t.addNewTeam}
           </h4>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* Team Logo Upload Section */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t.teamLogo}</label>
-              <div className="flex items-center space-x-4">
-                <div className="flex-1">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    disabled={uploadingLogo}
-                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-                    style={{ display: 'block' }}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {uploadingLogo ? t.uploading : t.uploadTeamLogo}
-                  </p>
-                </div>
+            <FormField label={t.teamLogo} hint={uploadingLogo ? t.uploading : t.uploadTeamLogo}>
+              <div className="flex items-center gap-4">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={uploadingLogo}
+                  className="flex-1"
+                  style={{ display: 'block' }}
+                />
                 {logoPreview && (
-                  <div className="relative">
+                  <div className="relative shrink-0">
                     <img
                       src={logoPreview}
                       alt="Team logo preview"
-                      className="w-20 h-20 object-contain rounded-lg border-2 border-gray-300"
+                      className="size-20 rounded-lg border border-border bg-card object-contain p-1"
                     />
                     <button
                       type="button"
@@ -687,814 +846,364 @@ export default function TeamsList() {
                         setLogoPreview(null)
                         setFormData({ ...formData, logo_url: '' })
                       }}
-                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                      className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-destructive text-white shadow hover:bg-red-700"
+                      aria-label="Remove logo"
                     >
-                      ×
+                      <X className="size-3.5" />
                     </button>
                   </div>
                 )}
               </div>
-            </div>
+            </FormField>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.teamName} *</label>
-                <input
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FormField label={t.teamName} required>
+                <Input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., Yankees"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.city} *</label>
-                <input
+              </FormField>
+              <FormField label={t.city} required>
+                <Input
                   type="text"
                   required
                   value={formData.city}
                   onChange={(e) => setFormData({...formData, city: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., New York"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.manager}</label>
-                <input
+              </FormField>
+              <FormField label={t.manager}>
+                <Input
                   type="text"
                   value={formData.manager}
                   onChange={(e) => setFormData({...formData, manager: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., Aaron Boone"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.coach}</label>
-                <input
+              </FormField>
+              <FormField label={t.coach}>
+                <Input
                   type="text"
                   value={formData.coach}
                   onChange={(e) => setFormData({...formData, coach: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., Matt Blake"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.foundedYear}</label>
-                <input
+              </FormField>
+              <FormField label={t.foundedYear}>
+                <Input
                   type="number"
                   value={formData.founded_year}
                   onChange={(e) => setFormData({...formData, founded_year: parseInt(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   min="1800"
                   max={new Date().getFullYear()}
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t.stadium}</label>
-                <input
+              </FormField>
+              <FormField label={t.stadium}>
+                <Input
                   type="text"
                   value={formData.stadium}
                   onChange={(e) => setFormData({...formData, stadium: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., Yankee Stadium"
                 />
-              </div>
+              </FormField>
             </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button type="button" variant="outline" onClick={resetForm}>
                 {t.cancel}
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" loading={submitting}>
                 {submitting ? (showEditForm ? t.updating : t.adding) : (showEditForm ? t.updateTeam : t.addTeam)}
-              </button>
+              </Button>
             </div>
           </form>
-        </div>
+        </Panel>
       )}
 
       {teams.length === 0 ? (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-yellow-800">{t.noItemsFound} {t.teamsCount.toLowerCase()}. {t.addFirstItem}</p>
-        </div>
+        <EmptyState
+          icon={<Users />}
+          title={`${t.noItemsFound} ${t.teamsCount.toLowerCase()}`}
+          description={t.addFirstItem}
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {teams.map((team) => (
-            <div key={team.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {team.logo_url && (
+            <Card key={team.id} className="flex flex-col overflow-hidden">
+              <div className="flex items-start justify-between gap-4 p-5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-lg font-semibold tracking-tight">{team.name}</h4>
+                    <Badge variant="primary">
+                      <MapPin />
+                      {team.city}
+                    </Badge>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                    {team.manager && (
+                      <>
+                        <dt className="text-muted-foreground">{t.manager}</dt>
+                        <dd className="font-medium text-slate-800">{team.manager}</dd>
+                      </>
+                    )}
+                    {team.coach && (
+                      <>
+                        <dt className="text-muted-foreground">{t.coach}</dt>
+                        <dd className="font-medium text-slate-800">{team.coach}</dd>
+                      </>
+                    )}
+                    <dt className="text-muted-foreground">{t.founded}</dt>
+                    <dd className="text-slate-700">{team.founded_year}</dd>
+                    {team.stadium && (
+                      <>
+                        <dt className="text-muted-foreground">{t.stadium}</dt>
+                        <dd className="text-slate-700">{team.stadium}</dd>
+                      </>
+                    )}
+                  </dl>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-3">
+                  {team.logo_url ? (
                     <img
                       src={team.logo_url}
                       alt={`${team.name} logo`}
-                      className="w-10 h-10 object-contain rounded"
+                      className="size-24 rounded-xl border border-border bg-card object-contain p-1.5 shadow-sm sm:size-28"
                       onError={(e) => {
                         // Hide image if it fails to load
                         e.currentTarget.style.display = 'none'
                       }}
                     />
+                  ) : (
+                    <div className="flex size-24 items-center justify-center rounded-xl bg-secondary text-3xl font-bold text-slate-400 sm:size-28">
+                      {team.name.charAt(0)}
+                    </div>
                   )}
-                  <h4 className="font-semibold text-gray-900">{team.name}</h4>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                    {team.city}
-                  </span>
-                  <button
-                    onClick={() => editTeam(team)}
-                    className="text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => editTeam(team)}>
+                    <Pencil />
                     {t.editTeam}
-                  </button>
+                  </Button>
                 </div>
-              </div>
-              {team.manager && (
-                <p className="text-sm text-gray-600 mb-1">{t.manager}: {team.manager}</p>
-              )}
-              {team.coach && (
-                <p className="text-sm text-gray-600 mb-1">{t.coach}: {team.coach}</p>
-              )}
-              <div className="text-xs text-gray-400 mt-2 mb-3">
-                <p>{t.founded}: {team.founded_year}</p>
-                {team.stadium && <p>{t.stadium}: {team.stadium}</p>}
               </div>
 
               {/* Players Section */}
-              <div className="border-t pt-3">
-                <div className="flex justify-between items-center mb-2">
-                  <h5 className="text-sm font-medium text-gray-700">
-                    {t.playersCount} ({team.players?.length || 0})
+              <div className="mt-auto border-t border-border bg-slate-50/70 px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h5 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    {t.playersCount}
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs tabular-nums text-secondary-foreground">
+                      {team.players?.length || 0}
+                    </span>
                   </h5>
-                  <div className="flex space-x-1">
-                    <button
-                      onClick={() => toggleTeamPlayers(team.id)}
-                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
-                    >
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" variant="outline" onClick={() => toggleTeamPlayers(team.id)}>
+                      {expandedTeams.has(team.id) ? <ChevronUp /> : <ChevronDown />}
                       {expandedTeams.has(team.id) ? t.viewLess : t.viewPlayers}
-                    </button>
-                    <button
-                      onClick={() => openAddPlayerForm(team.id)}
-                      className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
-                    >
+                    </Button>
+                    <Button size="sm" variant="success" onClick={() => openAddPlayerForm(team.id)}>
+                      <UserPlus />
                       {t.addPlayer}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="accent"
                       onClick={() => {
                         setSelectedTeamForTemplates(team.id)
                         setShowTemplateManagement(true)
                       }}
-                      className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
                     >
+                      <ClipboardList />
                       Edit Templates
-                    </button>
+                    </Button>
                   </div>
                 </div>
-                
+
                 {expandedTeams.has(team.id) && (
                   <>
                     {team.players && team.players.length > 0 ? (
-                      <div className="space-y-1">
+                      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
                         {team.players.map((player) => (
-                          <div key={player.id} className="text-xs bg-gray-50 p-2 rounded">
-                            <div className="flex items-center space-x-2">
-                              {player.photo_url ? (
-                                <img
-                                  src={player.photo_url}
-                                  alt={`${player.first_name} ${player.last_name}`}
-                                  className="w-10 h-10 object-cover rounded-full border border-gray-300"
-                                  onError={(e) => {
-                                    // Hide image if it fails to load
-                                    e.currentTarget.style.display = 'none'
-                                  }}
-                                />
-                              ) : (
-                                <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-xs font-semibold">
-                                  {player.first_name.charAt(0)}{player.last_name.charAt(0)}
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex justify-between items-center gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <span className="font-medium">
-                                      {player.first_name} {player.last_name}
-                                    </span>
-                                    <span className="text-gray-400 ml-2">• {team.city} {team.name}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    {player.jersey_number && (
-                                      <span className="text-gray-500 whitespace-nowrap">#{player.jersey_number}</span>
-                                    )}
-                                    <button
-                                      onClick={() => editPlayer(player, team.id)}
-                                      className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 whitespace-nowrap"
-                                    >
-                                      {t.editPlayer}
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="text-gray-500">
-                                  {player.positions?.join(', ')} • {player.handedness}
-                                </div>
+                          <li key={player.id} className="flex items-center gap-3 px-3 py-2">
+                            <Avatar
+                              src={player.photo_url}
+                              alt={`${player.first_name} ${player.last_name}`}
+                              initials={`${player.first_name.charAt(0)}${player.last_name.charAt(0)}`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium">
+                                  {player.first_name} {player.last_name}
+                                </span>
+                                {player.jersey_number ? (
+                                  <span className="text-xs font-semibold tabular-nums text-muted-foreground">#{player.jersey_number}</span>
+                                ) : null}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {player.positions?.join(', ')} • {player.handedness}
                               </div>
                             </div>
-                          </div>
+                            <Button size="xs" variant="ghost" onClick={() => editPlayer(player, team.id)}>
+                              <Pencil />
+                              {t.editPlayer}
+                            </Button>
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     ) : (
-                      <p className="text-xs text-gray-500">{t.noItemsFound} {t.playersCount.toLowerCase()}</p>
+                      <p className="mt-3 text-xs text-muted-foreground">{t.noItemsFound} {t.playersCount.toLowerCase()}</p>
                     )}
                   </>
                 )}
               </div>
-
-
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
       {/* Player Selection Modal */}
       {showPlayerSelectionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-              <h4 className="text-lg font-semibold text-gray-800">
-                {t.selectPlayerToAdd} {teams.find(t => t.id === showPlayerSelectionModal)?.name || t.team}
-              </h4>
-              <button
-                onClick={() => {
-                  setShowPlayerSelectionModal(null)
-                  setSelectedTeamForPlayer(null)
-                }}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6">
-              {playersWithoutTeams.length > 0 ? (
-                <div className="space-y-4 mb-6">
-                  <h5 className="text-md font-semibold text-gray-700 mb-3">{t.playersWithoutTeams}</h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {playersWithoutTeams.map((player) => (
-                      <div
-                        key={player.id}
-                        className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => selectExistingPlayerForTeam(player, showPlayerSelectionModal)}
-                      >
-                        <div className="flex items-center space-x-3">
-                          {player.photo_url ? (
-                            <img
-                              src={player.photo_url}
-                              alt={`${player.first_name} ${player.last_name}`}
-                              className="w-12 h-12 object-cover rounded-full border border-gray-300"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center text-gray-500 text-sm font-semibold">
-                              {player.first_name.charAt(0)}{player.last_name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">
-                              {player.first_name} {player.last_name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              DOB: {player.date_of_birth}
-                            </div>
-                            {player.positions && player.positions.length > 0 && (
-                              <div className="text-xs text-gray-400 mt-1">
-                                {player.positions.join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+        <Modal
+          size="lg"
+          title={`${t.selectPlayerToAdd} ${teams.find(t => t.id === showPlayerSelectionModal)?.name || t.team}`}
+          onClose={() => {
+            setShowPlayerSelectionModal(null)
+            setSelectedTeamForPlayer(null)
+          }}
+          footer={
+            <Button variant="success" onClick={() => openNewPlayerForm(showPlayerSelectionModal)}>
+              <UserPlus />
+              {t.newPlayer}
+            </Button>
+          }
+        >
+          {playersWithoutTeams.length > 0 ? (
+            <div className="space-y-3">
+              <h5 className="text-sm font-semibold text-slate-700">{t.playersWithoutTeams}</h5>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {playersWithoutTeams.map((player) => (
+                  <button
+                    type="button"
+                    key={player.id}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => selectExistingPlayerForTeam(player, showPlayerSelectionModal)}
+                  >
+                    <Avatar
+                      size="lg"
+                      src={player.photo_url}
+                      alt={`${player.first_name} ${player.last_name}`}
+                      initials={`${player.first_name.charAt(0)}${player.last_name.charAt(0)}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">
+                        {player.first_name} {player.last_name}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-gray-600 text-center">{t.noPlayersWithoutTeams}</p>
-                </div>
-              )}
-              <div className="flex justify-center">
-                <button
-                  onClick={() => openNewPlayerForm(showPlayerSelectionModal)}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                >
-                  {t.newPlayer}
-                </button>
+                      <div className="text-sm text-muted-foreground">
+                        DOB: {player.date_of_birth}
+                      </div>
+                      {player.positions && player.positions.length > 0 && (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {player.positions.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-        </div>
+          ) : (
+            <EmptyState icon={<Users />} title={t.noPlayersWithoutTeams} className="py-10" />
+          )}
+        </Modal>
       )}
 
       {/* Add Player Form Modal */}
       {showAddPlayerForm && !editingPlayer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-              <h4 className="text-lg font-semibold text-gray-800">
-                {t.addPlayerTo} {teams.find(t => t.id === showAddPlayerForm)?.name || 'Team'}
-              </h4>
-              <button
-                onClick={resetPlayerForm}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+        <Modal
+          size="lg"
+          title={`${t.addPlayerTo} ${teams.find(t => t.id === showAddPlayerForm)?.name || 'Team'}`}
+          onClose={resetPlayerForm}
+        >
+          <form onSubmit={handlePlayerSubmit} className="space-y-5">
+            {playerFormFields}
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button type="button" variant="outline" onClick={resetPlayerForm}>
+                {t.cancel}
+              </Button>
+              <Button
+                type="submit"
+                variant="success"
+                loading={submittingPlayer}
+                disabled={playerFormData.positions.length === 0}
               >
-                ×
-              </button>
+                {submittingPlayer ? t.adding : t.addPlayer}
+              </Button>
             </div>
-            <div className="p-6">
-              <form onSubmit={handlePlayerSubmit} className="space-y-4">
-                {/* Photo Upload Section */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.playerPhoto}</label>
-                  <div className="flex items-center space-x-4">
-                    <div className="flex-1">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handlePhotoUpload}
-                        disabled={uploadingPhoto}
-                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 disabled:opacity-50"
-                        style={{ display: 'block' }}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {uploadingPhoto ? t.uploading : t.takePhotoOrUpload}
-                      </p>
-                    </div>
-                    {photoPreview && (
-                      <div className="relative">
-                        <img
-                          src={photoPreview}
-                          alt="Player preview"
-                          className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPhotoPreview(null)
-                            setPlayerFormData({ ...playerFormData, photo_url: '' })
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.firstName} *</label>
-                    <input
-                      type="text"
-                      required
-                      value={playerFormData.first_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, first_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., John"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.lastName} *</label>
-                    <input
-                      type="text"
-                      required
-                      value={playerFormData.last_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, last_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., Smith"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.dateOfBirth} *</label>
-                    <input
-                      type="date"
-                      required
-                      value={playerFormData.date_of_birth}
-                      onChange={(e) => setPlayerFormData({...playerFormData, date_of_birth: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.team}</label>
-                    <select
-                      value={playerFormData.team_id}
-                      onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    >
-                      <option value="">{t.noTeamRemove}</option>
-                      {teams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.city} {team.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.handedness} *</label>
-                    <select
-                      required
-                      value={playerFormData.handedness}
-                      onChange={(e) => setPlayerFormData({...playerFormData, handedness: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    >
-                      <option value="Righty">{t.righty}</option>
-                      <option value="Lefty">{t.lefty}</option>
-                      <option value="Switch">{t.switch}</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.jerseyNumber}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99"
-                      value={playerFormData.jersey_number || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, jersey_number: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., 24"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.height}</label>
-                    <input
-                      type="number"
-                      min="48"
-                      max="84"
-                      value={playerFormData.height_inches || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, height_inches: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., 72"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.weight}</label>
-                    <input
-                      type="number"
-                      min="100"
-                      max="350"
-                      value={playerFormData.weight_lbs || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, weight_lbs: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., 180"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.contactNumber}</label>
-                    <input
-                      type="tel"
-                      value={playerFormData.contact_number}
-                      onChange={(e) => setPlayerFormData({...playerFormData, contact_number: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., (555) 123-4567"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyNumber}</label>
-                    <input
-                      type="tel"
-                      value={playerFormData.emergency_number}
-                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_number: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., (555) 987-6543"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyContactName}</label>
-                    <input
-                      type="text"
-                      value={playerFormData.emergency_contact_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_contact_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., Jane Smith"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.positions} * {t.selectAllThatApply}</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {BASEBALL_POSITIONS.map((position) => (
-                      <label key={position} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={playerFormData.positions.includes(position)}
-                          onChange={(e) => handlePositionChange(position, e.target.checked)}
-                          className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                        />
-                        <span className="text-sm text-gray-700">{position}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4 border-t">
-                  <button
-                    type="button"
-                    onClick={resetPlayerForm}
-                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    {t.cancel}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submittingPlayer || playerFormData.positions.length === 0}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                  >
-                    {submittingPlayer ? t.adding : t.addPlayer}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
       {/* Edit Player Modal */}
       {editingPlayer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-              <h4 className="text-lg font-semibold text-gray-800">
-                {t.editPlayer}: {editingPlayer.first_name} {editingPlayer.last_name}
-              </h4>
-              <button
-                onClick={resetPlayerForm}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+        <Modal
+          size="lg"
+          title={`${t.editPlayer}: ${editingPlayer.first_name} ${editingPlayer.last_name}`}
+          onClose={resetPlayerForm}
+        >
+          <form onSubmit={handlePlayerSubmit} className="space-y-5">
+            {playerFormFields}
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+              <Button type="button" variant="outline" onClick={resetPlayerForm}>
+                {t.cancel}
+              </Button>
+              {editingPlayer && editingPlayer.team_id && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleRemovePlayerFromTeam}
+                  disabled={submittingPlayer}
+                >
+                  {submittingPlayer ? t.removing : t.removeFromTeam}
+                </Button>
+              )}
+              <Button
+                type="submit"
+                loading={submittingPlayer}
+                disabled={playerFormData.positions.length === 0}
               >
-                ×
-              </button>
+                {submittingPlayer ? t.updating : t.updatePlayer}
+              </Button>
             </div>
-            <div className="p-6">
-              <form onSubmit={handlePlayerSubmit} className="space-y-4">
-                {/* Photo Upload Section */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.playerPhoto}</label>
-                  <div className="flex items-center space-x-4">
-                    <div className="flex-1">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handlePhotoUpload}
-                        disabled={uploadingPhoto}
-                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-                        style={{ display: 'block' }}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {uploadingPhoto ? t.uploading : t.takePhotoOrUpload}
-                      </p>
-                    </div>
-                    {photoPreview && (
-                      <div className="relative">
-                        <img
-                          src={photoPreview}
-                          alt="Player preview"
-                          className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPhotoPreview(null)
-                            setPlayerFormData({ ...playerFormData, photo_url: '' })
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.firstName} *</label>
-                    <input
-                      type="text"
-                      required
-                      value={playerFormData.first_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, first_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., John"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.lastName} *</label>
-                    <input
-                      type="text"
-                      required
-                      value={playerFormData.last_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, last_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., Smith"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.dateOfBirth} *</label>
-                    <input
-                      type="date"
-                      required
-                      value={playerFormData.date_of_birth}
-                      onChange={(e) => setPlayerFormData({...playerFormData, date_of_birth: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.team}</label>
-                    <select
-                      value={playerFormData.team_id}
-                      onChange={(e) => setPlayerFormData({...playerFormData, team_id: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">{t.noTeamRemove}</option>
-                      {teams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.city} {team.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.handedness} *</label>
-                    <select
-                      required
-                      value={playerFormData.handedness}
-                      onChange={(e) => setPlayerFormData({...playerFormData, handedness: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="Righty">{t.righty}</option>
-                      <option value="Lefty">{t.lefty}</option>
-                      <option value="Switch">{t.switch}</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.jerseyNumber}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="99"
-                      value={playerFormData.jersey_number || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, jersey_number: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., 24"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.height}</label>
-                    <input
-                      type="number"
-                      min="48"
-                      max="84"
-                      value={playerFormData.height_inches || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, height_inches: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., 72"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.weight}</label>
-                    <input
-                      type="number"
-                      min="100"
-                      max="350"
-                      value={playerFormData.weight_lbs || ''}
-                      onChange={(e) => setPlayerFormData({...playerFormData, weight_lbs: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., 180"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.contactNumber}</label>
-                    <input
-                      type="tel"
-                      value={playerFormData.contact_number}
-                      onChange={(e) => setPlayerFormData({...playerFormData, contact_number: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., (555) 123-4567"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyNumber}</label>
-                    <input
-                      type="tel"
-                      value={playerFormData.emergency_number}
-                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_number: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., (555) 987-6543"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t.emergencyContactName}</label>
-                    <input
-                      type="text"
-                      value={playerFormData.emergency_contact_name}
-                      onChange={(e) => setPlayerFormData({...playerFormData, emergency_contact_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="e.g., Jane Smith"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t.positions} * {t.selectAllThatApply}</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {BASEBALL_POSITIONS.map((position) => (
-                      <label key={position} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={playerFormData.positions.includes(position)}
-                          onChange={(e) => handlePositionChange(position, e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">{position}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4 border-t">
-                  <button
-                    type="button"
-                    onClick={resetPlayerForm}
-                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    {t.cancel}
-                  </button>
-                  {editingPlayer && editingPlayer.team_id && (
-                    <button
-                      type="button"
-                      onClick={handleRemovePlayerFromTeam}
-                      disabled={submittingPlayer}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {submittingPlayer ? t.removing : t.removeFromTeam}
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={submittingPlayer || playerFormData.positions.length === 0}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {submittingPlayer ? t.updating : t.updatePlayer}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
       {/* Template Management Modal */}
       {showTemplateManagement && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
-              <h2 className="text-2xl font-bold text-gray-800">
-                Manage Lineup Templates
-                {selectedTeamForTemplates && (
-                  <span className="text-lg font-normal text-gray-600 ml-2">
-                    - {teams.find(t => t.id === selectedTeamForTemplates)?.name}
-                  </span>
-                )}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowTemplateManagement(false)
-                  setSelectedTeamForTemplates(null)
-                }}
-                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6">
-              <LineupTemplates 
-                onClose={() => {
-                  setShowTemplateManagement(false)
-                  setSelectedTeamForTemplates(null)
-                }}
-                teamId={selectedTeamForTemplates || undefined}
-              />
-            </div>
-          </div>
-        </div>
+        <Modal
+          size="xl"
+          title={
+            <>
+              Manage Lineup Templates
+              {selectedTeamForTemplates && (
+                <span className="ml-2 font-normal text-muted-foreground">
+                  – {teams.find(t => t.id === selectedTeamForTemplates)?.name}
+                </span>
+              )}
+            </>
+          }
+          onClose={() => {
+            setShowTemplateManagement(false)
+            setSelectedTeamForTemplates(null)
+          }}
+        >
+          <LineupTemplates
+            onClose={() => {
+              setShowTemplateManagement(false)
+              setSelectedTeamForTemplates(null)
+            }}
+            teamId={selectedTeamForTemplates || undefined}
+          />
+        </Modal>
       )}
     </div>
   )

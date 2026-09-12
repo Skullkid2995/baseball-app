@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { BarChart3, X } from 'lucide-react'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, FormField, LoadingState, Select } from '@/components/ui'
 
 interface AtBat {
   id: string
@@ -328,68 +330,44 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
   }
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
-          <div className="space-y-3">
-            <div className="h-4 bg-gray-200 rounded"></div>
-            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-          </div>
-        </div>
-      </div>
-    )
+    return <LoadingState />
   }
 
   if (!stats) {
-    return (
-      <div className="p-6 text-center text-gray-500">
-        {t.noStatisticsAvailable}
-      </div>
-    )
+    return <EmptyState icon={<BarChart3 />} title={t.noStatisticsAvailable} />
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">{t.hitStatistics}</h2>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-          >
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold tracking-tight">{t.hitStatistics}</h2>
+          <Button variant="outline" onClick={onClose}>
+            <X />
             {t.close}
-          </button>
+          </Button>
         </div>
-        
+
         {/* Team and Player Filters */}
-        <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t.filterByTeam}:
-            </label>
-            <select
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField label={<>{t.filterByTeam}:</>}>
+            <Select
               value={selectedTeam}
               onChange={(e) => {
                 setSelectedTeam(e.target.value)
                 setSelectedPlayer('all') // Reset player filter when team changes
               }}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="our_team">Dodgers</option>
               <option value="opponent">
                 {game?.opponent || t.opponent}
               </option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t.filterByPlayer}:
-            </label>
-            <select
+            </Select>
+          </FormField>
+          <FormField label={<>{t.filterByPlayer}:</>}>
+            <Select
               value={selectedPlayer}
               onChange={(e) => setSelectedPlayer(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">{t.allPlayers}</option>
               {getUniquePlayers().map(player => (
@@ -397,222 +375,228 @@ export default function HitStatistics({ gameId, onClose }: { gameId: string, onC
                   #{player.jersey} {player.name}
                 </option>
               ))}
-            </select>
-          </div>
+            </Select>
+          </FormField>
         </div>
       </div>
 
       {/* Basic Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
-        <div className="bg-blue-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-blue-600">{stats.totalAtBats}</div>
-          <div className="text-sm text-blue-800">{t.totalAtBats}</div>
-        </div>
-        <div className="bg-green-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-green-600">{stats.hits}</div>
-          <div className="text-sm text-green-800">{t.hits}</div>
-        </div>
-        <div className="bg-pink-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-pink-600">{stats.totalRBIs}</div>
-          <div className="text-sm text-pink-800">{t.rbis}</div>
-        </div>
-        <div className="bg-red-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-red-600">{stats.totalStrikeouts}</div>
-          <div className="text-sm text-red-800">{t.strikeouts}</div>
-        </div>
-        <div className="bg-yellow-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-yellow-600">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-primary">{stats.totalAtBats}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.totalAtBats}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-emerald-600">{stats.hits}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.hits}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-pink-600">{stats.totalRBIs}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.rbis}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-red-600">{stats.totalStrikeouts}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.strikeouts}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-amber-600">
             {stats.battingAverage.toFixed(3)}
           </div>
-          <div className="text-sm text-yellow-800">{t.battingAverage}</div>
-        </div>
-        <div className="bg-purple-50 p-4 rounded-lg">
-          <div className="text-2xl font-bold text-purple-600">
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.battingAverage}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl font-bold tabular-nums text-violet-600">
             {stats.sluggingPercentage.toFixed(3)}
           </div>
-          <div className="text-sm text-purple-800">{t.sluggingPercent}</div>
-        </div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t.sluggingPercent}</div>
+        </Card>
       </div>
 
       {/* Hit Types Breakdown */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.hitTypes}</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gray-50 p-4 rounded-lg text-center">
-            <div className="text-xl font-bold text-gray-700">{stats.singles}</div>
-            <div className="text-sm text-gray-600">{t.singles}</div>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg text-center">
-            <div className="text-xl font-bold text-orange-600">{stats.doubles}</div>
-            <div className="text-sm text-orange-800">{t.doubles}</div>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg text-center">
-            <div className="text-xl font-bold text-red-600">{stats.triples}</div>
-            <div className="text-sm text-red-800">{t.triples}</div>
-          </div>
-          <div className="bg-indigo-50 p-4 rounded-lg text-center">
-            <div className="text-xl font-bold text-indigo-600">{stats.homeRuns}</div>
-            <div className="text-sm text-indigo-800">{t.homeRuns}</div>
-          </div>
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold tracking-tight">{t.hitTypes}</h3>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Card className="p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-slate-700">{stats.singles}</div>
+            <div className="text-sm text-muted-foreground">{t.singles}</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-orange-600">{stats.doubles}</div>
+            <div className="text-sm text-muted-foreground">{t.doubles}</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-red-600">{stats.triples}</div>
+            <div className="text-sm text-muted-foreground">{t.triples}</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-indigo-600">{stats.homeRuns}</div>
+            <div className="text-sm text-muted-foreground">{t.homeRuns}</div>
+          </Card>
         </div>
       </div>
 
       {/* Field Distribution */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.whereHitsLand}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">{t.fieldAreas}</h4>
-            <div className="space-y-2">
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold tracking-tight">{t.whereHitsLand}</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.fieldAreas}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
               {Object.entries(stats.fieldDistribution).map(([area, count]) => (
-                <div key={area} className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 capitalize">
+                <div key={area} className="flex items-center justify-between gap-3">
+                  <span className="text-sm capitalize text-slate-700">
                     {area.replace(/_/g, ' ').toLowerCase()}
                   </span>
-                  <div className="flex items-center">
-                    <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
-                      <div 
-                        className="bg-blue-500 h-2 rounded-full" 
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-24 rounded-full bg-slate-200">
+                      <div
+                        className="h-2 rounded-full bg-primary"
                         style={{ width: `${(count / stats.hits) * 100}%` }}
                       ></div>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{count}</span>
+                    <span className="min-w-6 text-right text-sm font-semibold tabular-nums">{count}</span>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">{t.hitDistance}</h4>
-            <div className="space-y-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.hitDistance}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
               {Object.entries(stats.distanceDistribution).map(([distance, count]) => (
-                <div key={distance} className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 capitalize">{distance}</span>
-                  <div className="flex items-center">
-                    <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
-                      <div 
-                        className="bg-green-500 h-2 rounded-full" 
+                <div key={distance} className="flex items-center justify-between gap-3">
+                  <span className="text-sm capitalize text-slate-700">{distance}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-24 rounded-full bg-slate-200">
+                      <div
+                        className="h-2 rounded-full bg-emerald-500"
                         style={{ width: `${(count / stats.hits) * 100}%` }}
                       ></div>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{count}</span>
+                    <span className="min-w-6 text-right text-sm font-semibold tabular-nums">{count}</span>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       {/* Hit Angle Analysis */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.hitDirection}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">{t.hitAngles}</h4>
-            <div className="space-y-2">
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold tracking-tight">{t.hitDirection}</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.hitAngles}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
               {Object.entries(stats.angleDistribution).map(([angle, count]) => (
-                <div key={angle} className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 capitalize">{angle}</span>
-                  <div className="flex items-center">
-                    <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
-                      <div 
-                        className="bg-purple-500 h-2 rounded-full" 
+                <div key={angle} className="flex items-center justify-between gap-3">
+                  <span className="text-sm capitalize text-slate-700">{angle}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-24 rounded-full bg-slate-200">
+                      <div
+                        className="h-2 rounded-full bg-violet-500"
                         style={{ width: `${(count / stats.hits) * 100}%` }}
                       ></div>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{count}</span>
+                    <span className="min-w-6 text-right text-sm font-semibold tabular-nums">{count}</span>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">{t.specificZones}</h4>
-            <div className="space-y-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.specificZones}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
               {Object.entries(stats.zoneDistribution).map(([zone, count]) => (
-                <div key={zone} className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 capitalize">
+                <div key={zone} className="flex items-center justify-between gap-3">
+                  <span className="text-sm capitalize text-slate-700">
                     {zone.replace(/_/g, ' ').toLowerCase()}
                   </span>
-                  <div className="flex items-center">
-                    <div className="w-20 bg-gray-200 rounded-full h-2 mr-2">
-                      <div 
-                        className="bg-orange-500 h-2 rounded-full" 
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-24 rounded-full bg-slate-200">
+                      <div
+                        className="h-2 rounded-full bg-orange-500"
                         style={{ width: `${(count / stats.hits) * 100}%` }}
                       ></div>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{count}</span>
+                    <span className="min-w-6 text-right text-sm font-semibold tabular-nums">{count}</span>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       {/* Recent At-Bats Log */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t.recentAtBats}</h3>
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.player}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.result}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.fieldArea}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.distance}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.angle}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t.rbis}
-                  </th>
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold tracking-tight">{t.recentAtBats}</h3>
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold">
+                  {t.player}
+                </th>
+                <th className="px-4 py-3 text-left font-semibold">
+                  {t.result}
+                </th>
+                <th className="px-4 py-3 text-left font-semibold">
+                  {t.fieldArea}
+                </th>
+                <th className="px-4 py-3 text-left font-semibold">
+                  {t.distance}
+                </th>
+                <th className="px-4 py-3 text-left font-semibold">
+                  {t.angle}
+                </th>
+                <th className="px-4 py-3 text-right font-semibold">
+                  {t.rbis}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {atBats.slice(-10).map((atBat) => (
+                <tr key={atBat.id} className="border-t border-border hover:bg-slate-50/60">
+                  <td className="whitespace-nowrap px-4 py-3 font-medium">
+                    #{atBat.players.jersey_number} {atBat.players.first_name} {atBat.players.last_name}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <Badge variant={
+                      ['single', 'double', 'triple', 'home_run'].includes(atBat.result)
+                        ? 'success'
+                        : 'danger'
+                    }>
+                      {atBat.notation || atBat.result}
+                    </Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                    {atBat.field_area ? atBat.field_area.replace(/_/g, ' ').toLowerCase() : '-'}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                    {atBat.hit_distance || '-'}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                    {atBat.hit_angle || '-'}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                    {typeof atBat.rbi === 'number' ? atBat.rbi : 0}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {atBats.slice(-10).map((atBat) => (
-                  <tr key={atBat.id}>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                      #{atBat.players.jersey_number} {atBat.players.first_name} {atBat.players.last_name}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        ['single', 'double', 'triple', 'home_run'].includes(atBat.result)
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {atBat.notation || atBat.result}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                      {atBat.field_area ? atBat.field_area.replace(/_/g, ' ').toLowerCase() : '-'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                      {atBat.hit_distance || '-'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                      {atBat.hit_angle || '-'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                      {typeof atBat.rbi === 'number' ? atBat.rbi : 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
