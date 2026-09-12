@@ -11,6 +11,7 @@ import { env } from '@/lib/env'
 import { ALLOWED_EMAILS } from '@/lib/auth'
 import { useLanguage } from '@/contexts/LanguageContext'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
+import ViewModeSwitcher from '@/components/ViewModeSwitcher'
 import { Avatar, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PageHeader } from '@/components/ui'
 
 interface OurTeam {
@@ -36,8 +37,10 @@ export default function SettingsView() {
           title: 'Configuración',
           description: 'Preferencias, cuenta y datos del sistema.',
           preferences: 'Preferencias',
-          preferencesHint: 'El idioma se guarda en este navegador.',
+          preferencesHint: 'El idioma y la vista se guardan en este navegador.',
           languageLabel: 'Idioma de la aplicación',
+          viewLabel: 'Modo de vista',
+          viewHint: 'Auto sigue el tamaño de la pantalla. Móvil fuerza el menú desplegable y una sola columna; Escritorio fuerza la barra lateral.',
           ourTeam: 'Nuestro equipo',
           ourTeamHint: 'El equipo cuyas estadísticas se registran en cada juego.',
           players: 'jugadores',
@@ -58,8 +61,10 @@ export default function SettingsView() {
           title: 'Settings',
           description: 'Preferences, account and system details.',
           preferences: 'Preferences',
-          preferencesHint: 'Language is remembered in this browser.',
+          preferencesHint: 'Language and view are remembered in this browser.',
           languageLabel: 'App language',
+          viewLabel: 'View mode',
+          viewHint: 'Auto follows the screen size. Mobile forces the drawer menu and a single column; Desktop forces the sidebar.',
           ourTeam: 'Our team',
           ourTeamHint: 'The team whose stats are tracked in every game.',
           players: 'players',
@@ -132,9 +137,16 @@ export default function SettingsView() {
               <CardDescription>{L.preferencesHint}</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4 pt-2">
-            <span className="text-sm font-medium text-slate-700">{L.languageLabel}</span>
-            <LanguageSwitcher />
+          <CardContent className="space-y-4 pt-2">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm font-medium text-slate-700">{L.languageLabel}</span>
+              <LanguageSwitcher />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-sm font-medium text-slate-700">{L.viewLabel}</span>
+              <ViewModeSwitcher className="sm:w-72" />
+            </div>
+            <p className="text-xs text-muted-foreground">{L.viewHint}</p>
           </CardContent>
         </Card>
 

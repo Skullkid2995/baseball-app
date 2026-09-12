@@ -92,3 +92,16 @@
     border-radius: 9999px;
   }
 }
+
+/*
+  Forced mobile view (view-mode switch in the menu). Screens are written mobile-first with
+  sm:/lg: breakpoints, so on a wide screen we collapse the multi-column layouts inside <main>
+  to mimic a phone or tablet.
+*/
+[data-view="mobile"] main .grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+[data-view="mobile"] main [class*="sm:flex-row"],
+[data-view="mobile"] main [class*="lg:flex-row"] {
+  flex-direction: column !important;
+}

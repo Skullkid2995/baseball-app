@@ -6,6 +6,8 @@ import Link from 'next/link'
 import type { User, Session } from '@supabase/supabase-js'
 import { LogOut, Menu, X } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
+import ViewModeSwitcher from '@/components/ViewModeSwitcher'
+import { useViewMode } from '@/contexts/ViewModeContext'
 import BaseballMark from '@/components/BaseballMark'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase-browser'
@@ -24,6 +26,10 @@ export default function Layout({ children }: LayoutProps) {
   const pathname = usePathname()
   const supabase = createClient()
   const { t } = useLanguage()
+  const { mode } = useViewMode()
+  // 'mobile' forces the drawer layout everywhere; 'desktop' forces the sidebar everywhere
+  const forceMobile = mode === 'mobile'
+  const forceDesktop = mode === 'desktop'
 
   useEffect(() => {
     // Get current user
@@ -118,8 +124,9 @@ export default function Layout({ children }: LayoutProps) {
         ))}
       </nav>
 
-      {/* User */}
-      <div className="border-t border-border p-3">
+      {/* View mode + user */}
+      <div className="space-y-2 border-t border-border p-3">
+        <ViewModeSwitcher />
         {user && (
           <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-xs font-bold text-accent-foreground">
@@ -139,15 +146,24 @@ export default function Layout({ children }: LayoutProps) {
   )
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" data-view={mode}>
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-border bg-card lg:block">
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 w-64 border-r border-border bg-card',
+          forceMobile ? 'hidden' : forceDesktop ? 'block' : 'hidden lg:block'
+        )}
+      >
         {sidebar}
       </aside>
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
+        <div
+          className={cn('fixed inset-0 z-50', forceDesktop ? 'hidden' : forceMobile ? '' : 'lg:hidden')}
+          role="dialog"
+          aria-modal="true"
+        >
           <div
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-150"
             onClick={() => setMobileOpen(false)}
@@ -167,26 +183,37 @@ export default function Layout({ children }: LayoutProps) {
       )}
 
       {/* Content column */}
-      <div className="flex min-h-screen flex-col lg:pl-64">
+      <div className={cn('flex min-h-screen flex-col', forceMobile ? '' : forceDesktop ? 'pl-64' : 'lg:pl-64')}>
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/70 sm:px-6 lg:px-8">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
+            className={cn(forceMobile ? '' : forceDesktop ? 'hidden' : 'lg:hidden')}
             onClick={() => setMobileOpen(true)}
             aria-label={t.menu}
           >
             <Menu />
           </Button>
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground lg:hidden">
+            <span
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground',
+                forceMobile ? '' : forceDesktop ? 'hidden' : 'lg:hidden'
+              )}
+            >
               <BaseballMark className="size-4" />
             </span>
             <h1 className="truncate text-lg font-semibold tracking-tight">{pageTitle}</h1>
           </div>
           <LanguageSwitcher />
           {user && (
-            <Button variant="ghost" size="sm" onClick={handleLogout} title={t.logout} className="lg:hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              title={t.logout}
+              className={cn(forceMobile ? '' : forceDesktop ? 'hidden' : 'lg:hidden')}
+            >
               <LogOut />
               <span className="hidden sm:inline">{t.logout}</span>
             </Button>
@@ -194,7 +221,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className={cn('mx-auto w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>{children}</div>
         </main>
       </div>
     </div>
