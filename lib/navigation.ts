@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   PenTool,
+  Scale,
   Settings,
   UserRound,
   Users,
@@ -44,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/statistics', labelKey: 'statistics', Icon: BarChart3 },
       { href: '/lineups', labelKey: 'lineups', Icon: ClipboardList },
+      { href: '/rules', labelKey: 'rules', Icon: Scale },
     ],
   },
   {
