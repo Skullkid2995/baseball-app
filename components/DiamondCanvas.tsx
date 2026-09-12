@@ -643,11 +643,6 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 <button type="button" onClick={() => switchMode('classic')} className="rounded-md px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-800">Clásico</button>
                 <button type="button" aria-pressed className="rounded-md bg-white px-3 py-1 text-xs font-semibold shadow-sm">Digital</button>
               </div>
-              {canRunnerPlay && (
-                <button type="button" onClick={() => setShowRunnerPlay(true)} className="whitespace-nowrap rounded-lg border border-amber-500 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-100" title="Stolen base, pickoff, wild pitch…">
-                  SB/PK
-                </button>
-              )}
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 text-xl sm:text-2xl"
@@ -740,6 +735,20 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 title={`Out ${outNumber}`}
               >
                 {outNumber}
+              </div>
+            )}
+
+            {/* Runner play (stolen base, pickoff...) - right column, with the other buttons */}
+            {canRunnerPlay && (
+              <div className="absolute right-2 top-24 sm:right-4">
+                <button
+                  type="button"
+                  onClick={() => setShowRunnerPlay(true)}
+                  className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white shadow-lg hover:bg-amber-600 active:bg-amber-700 sm:px-6 sm:py-3 sm:text-sm"
+                  title="Stolen base, pickoff, wild pitch…"
+                >
+                  SB/PK
+                </button>
               </div>
             )}
 

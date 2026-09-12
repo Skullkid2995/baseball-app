@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { matchupLine, type MatchupSummary } from '@/lib/matchup'
 import RunnerPlayModal, { type RunnerOption } from './RunnerPlayModal'
 import { RUNNER_TOKENS, runnerBaseOf, type RunnerEventInput, type RunnerEventType, type ToBase } from '@/lib/runnerEvents'
+import { FIRST, SECOND, THIRD } from '@/lib/scorecard/geometry'
 
 /**
  * Classic (paper) scoring dialog for one plate appearance. The box itself and
@@ -175,20 +176,38 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
               <button type="button" aria-pressed className="rounded-md bg-card px-3 py-1 text-xs font-semibold shadow-sm">{L.classic}</button>
               <button type="button" onClick={onSwitchMode} className="rounded-md px-3 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground">{L.digital}</button>
             </div>
-            {canRunnerPlay && (
-              <Button variant="warning" size="sm" onClick={() => setRunnerPlay({ type: null, toBase: null })}>{L.runnerPlay}</Button>
-            )}
             <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={L.close}><X /></Button>
           </div>
         </div>
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:p-6">
           <div className="space-y-2">
-            <ScorecardBox actions={actions} onChange={setActions} marks={marks} disabled={isLocked || saved} />
+            <div className="relative">
+              <ScorecardBox actions={actions} onChange={setActions} marks={marks} disabled={isLocked || saved} />
+              {/* Runners on base from the other boxes: who is where */}
+              {activeRunners.length > 0 && (
+                <div className="pointer-events-none absolute inset-0">
+                  {activeRunners.map((r) => {
+                    const at = r.base === 'first' ? FIRST : r.base === 'second' ? SECOND : THIRD
+                    const parts = r.playerName.trim().split(/s+/)
+                    const short = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]
+                    return (
+                      <div key={r.atBatId} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${at[0]}%`, top: `${at[1]}%` }}>
+                        <span className="size-4 rounded-full border-2 border-white bg-blue-800 shadow" />
+                        <span className="mt-0.5 whitespace-nowrap rounded bg-blue-800/90 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow">{short}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-1.5">
                 <Button variant="outline" size="sm" disabled={actions.length === 0} onClick={() => setActions(actions.slice(0, -1))}><Undo2 />{L.undo}</Button>
                 <Button variant="outline" size="sm" onClick={() => { setActions([]); setToken(null); setOutOverride(null) }}><Eraser />{L.clear}</Button>
+                {canRunnerPlay && (
+                  <Button variant="warning" size="sm" onClick={() => setRunnerPlay({ type: null, toBase: null })}>{L.runnerPlay}</Button>
+                )}
               </div>
               <div className="flex flex-wrap gap-1.5 text-xs">
                 <Badge variant={effectiveBases.home ? 'success' : 'outline'}>{L.run}{effectiveBases.home ? ' ✓' : ''}</Badge>
