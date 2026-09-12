@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import ClassicAtBatPad from './ClassicAtBatPad'
 import FieldSvg, { type BaseName } from './FieldSvg'
 import { fieldAreaAt } from '@/lib/scorecard/geometry'
+import { matchupLine, type MatchupSummary } from '@/lib/matchup'
 
 type BaseFlags = { first: boolean, second: boolean, third: boolean, home: boolean }
 type RunnerBase = 'first' | 'second' | 'third'
@@ -104,6 +105,8 @@ interface DiamondCanvasProps {
   onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) => void
   /** Runners on base from other boxes of this inning, so the play can move them too */
   activeRunners?: ActiveRunner[]
+  /** This batter's history against the pitcher on the mound */
+  matchup?: MatchupSummary | null
   onClose: () => void
   playerName: string
   inning: number
@@ -111,7 +114,7 @@ interface DiamondCanvasProps {
   isLocked?: boolean // Game is locked and view-only
 }
 
-export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [] }: DiamondCanvasProps) {
+export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [], matchup = null }: DiamondCanvasProps) {
   // Classic (paper box, stylus/finger) or Digital (buttons). Remembered per browser.
   const [scoringMode, setScoringMode] = useState<'classic' | 'digital'>(() => {
     try { return localStorage.getItem('scoringMode') === 'digital' ? 'digital' : 'classic' } catch { return 'classic' }
@@ -593,6 +596,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         onSave={onSave}
         onClose={onClose}
         onSwitchMode={() => switchMode('digital')}
+        matchup={matchup}
       />
     )
   }
@@ -619,6 +623,11 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             </button>
             </div>
           </div>
+          {matchup && (
+            <p className="mt-1 text-xs text-blue-900">
+              <span className="font-semibold">vs {matchup.pitcherName}</span> · {matchupLine(matchup, 'en')}
+            </p>
+          )}
           <p className="text-xs sm:text-sm text-gray-600 mt-1 hidden sm:block">
             Draw on the diamond: K for strikeout, 6-3 for groundout, arrows for base paths, etc.
           </p>

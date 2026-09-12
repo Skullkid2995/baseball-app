@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/contexts/LanguageContext'
 import DiamondCanvas, { type ActiveRunner, type RunnerUpdate } from './DiamondCanvas'
+import PitcherPicker, { type RosterPlayer } from './PitcherPicker'
+import { loadMatchup, type MatchupSummary } from '@/lib/matchup'
 import OpponentLineupEntry from './OpponentLineupEntry'
 import { ArrowLeftRight, Lock, Plus, Save } from 'lucide-react'
 import { Button, FormField, Input, LoadingState } from '@/components/ui'
@@ -23,6 +26,15 @@ interface Game {
   opponent_score: number
   innings_played: number
   game_status: string
+}
+
+/** A pitching appearance: who took the mound for a side and when (game_pitchers) */
+interface GamePitcher {
+  id: string
+  team_side: 'home' | 'opponent'
+  pitcher_id: string
+  sequence: number
+  from_inning: number
 }
 
 interface AtBat {
@@ -65,6 +77,28 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [showHomeAwayModal, setShowHomeAwayModal] = useState(false)
   const [opponentLineupChecked, setOpponentLineupChecked] = useState(false)
   const [homeAwayChecked, setHomeAwayChecked] = useState(false)
+  const { language: uiLang } = useLanguage()
+  // Pitcher on record: who is on the mound for each side (game_pitchers) and the rosters to pick from.
+  // Every at-bat is stamped with the pitcher it was against, so batter-vs-pitcher history builds up.
+  const [ourTeamId, setOurTeamId] = useState<string | null>(null)
+  const [opponentTeamId, setOpponentTeamId] = useState<string | null>(null)
+  const [ourRoster, setOurRoster] = useState<RosterPlayer[]>([])
+  const [opponentRoster, setOpponentRoster] = useState<RosterPlayer[]>([])
+  const [gamePitchers, setGamePitchers] = useState<GamePitcher[]>([])
+  const [pitcherPicker, setPitcherPicker] = useState<{ side: 'home' | 'opponent'; reason: 'start' | 'change' } | null>(null)
+  const [pendingCell, setPendingCell] = useState<{ playerId: string; inning: number; playerName: string } | null>(null)
+  const [matchup, setMatchup] = useState<MatchupSummary | null>(null)
+
+  useEffect(() => {
+    fetchGamePitchers()
+  }, [game.id])
+
+  useEffect(() => {
+    if (ourTeamId) loadRoster(ourTeamId, setOurRoster)
+  }, [ourTeamId])
+  useEffect(() => {
+    if (opponentTeamId) loadRoster(opponentTeamId, setOpponentRoster)
+  }, [opponentTeamId])
 
   useEffect(() => {
     fetchPlayers()
@@ -185,6 +219,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           .eq('id', gameData.lineup_template_id)
           .single()
 
+        if (ourLineupTemplate?.team_id) setOurTeamId(ourLineupTemplate.team_id)
         console.log('Lineup template data:', ourLineupTemplate)
         console.log('Template error:', templateError)
 
@@ -269,6 +304,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           .maybeSingle()
         
         if (opponentTeam?.id) {
+          setOpponentTeamId(opponentTeam.id)
           const { data: opponentTemplate } = await supabase
             .from('lineup_templates')
             .select('id')
@@ -284,6 +320,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       }
       
       if (opponentTemplateId) {
+        const { data: oppTemplate } = await supabase.from('lineup_templates').select('team_id').eq('id', opponentTemplateId).maybeSingle()
+        if (oppTemplate?.team_id) setOpponentTeamId(oppTemplate.team_id)
         const { data: opponentLineupPlayers } = await supabase
           .from('lineup_template_players')
           .select(`
@@ -384,6 +422,75 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     } catch (err) {
       console.error('Failed to fetch at-bats:', err)
       setLoading(false)
+    }
+  }
+
+  async function fetchGamePitchers() {
+    const { data, error } = await supabase
+      .from('game_pitchers')
+      .select('id, team_side, pitcher_id, sequence, from_inning')
+      .eq('game_id', game.id)
+      .order('sequence')
+    if (error) console.error('game_pitchers load failed:', error.message)
+    setGamePitchers((data as GamePitcher[]) ?? [])
+  }
+
+  async function loadRoster(teamId: string, set: (rows: RosterPlayer[]) => void) {
+    const { data } = await supabase
+      .from('players')
+      .select('id, first_name, last_name, jersey_number, positions')
+      .eq('team_id', teamId)
+      .order('jersey_number')
+    set((data as RosterPlayer[]) ?? [])
+  }
+
+  /** The side on the mound while battingSide bats */
+  const fieldingSide = (battingSide: 'home' | 'opponent'): 'home' | 'opponent' => (battingSide === 'home' ? 'opponent' : 'home')
+
+  function currentPitcher(side: 'home' | 'opponent'): RosterPlayer | null {
+    const rows = gamePitchers.filter((g) => g.team_side === side)
+    const last = rows[rows.length - 1]
+    if (!last) return null
+    const roster = side === 'home' ? ourRoster : opponentRoster
+    return roster.find((p) => p.id === last.pitcher_id) ?? { id: last.pitcher_id, first_name: '?', last_name: '', jersey_number: null }
+  }
+
+  /** Inning the given side is currently pitching in (the batting side's latest inning) */
+  function currentInningFor(pitchingSide: 'home' | 'opponent'): number {
+    const battingSide = fieldingSide(pitchingSide)
+    const innings = atBats
+      .filter((ab) => ab.team_side === battingSide || (!ab.team_side && battingSide === 'home'))
+      .map((ab) => ab.inning)
+    return innings.length ? Math.max(...innings) : 1
+  }
+
+  async function pickPitcher(side: 'home' | 'opponent', player: RosterPlayer) {
+    const sequence = gamePitchers.filter((g) => g.team_side === side).length + 1
+    const { error } = await supabase
+      .from('game_pitchers')
+      .insert([{ game_id: game.id, team_side: side, pitcher_id: player.id, sequence, from_inning: currentInningFor(side) }])
+    if (error) {
+      alert('Could not save the pitcher: ' + error.message)
+      return
+    }
+    await fetchGamePitchers()
+    setPitcherPicker(null)
+    if (pendingCell) {
+      const cell = pendingCell
+      setPendingCell(null)
+      openCell(cell.playerId, cell.inning, cell.playerName, player)
+    }
+  }
+
+  /** Open the at-bat dialog and load this batter's history against the pitcher on the mound */
+  async function openCell(playerId: string, inning: number, playerName: string, pitcher?: RosterPlayer | null) {
+    setSelectedCell({ playerId, inning, playerName })
+    setShowCanvasModal(true)
+    setMatchup(null)
+    const p = pitcher ?? currentPitcher(fieldingSide(currentTeamSide))
+    if (p) {
+      const existing = getAtBatForPlayer(playerId, inning)
+      setMatchup(await loadMatchup(supabase, playerId, p.id, `${p.first_name} ${p.last_name}`.trim(), existing?.id))
     }
   }
 
@@ -540,9 +647,15 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
-    // Allow viewing (but not editing) when locked
-    setSelectedCell({ playerId, inning, playerName })
-    setShowCanvasModal(true)
+    void existingAtBat
+    const side = fieldingSide(currentTeamSide)
+    // Allow viewing (but not editing) when locked; otherwise we must know who is pitching first
+    if (!isLocked && !currentPitcher(side)) {
+      setPendingCell({ playerId, inning, playerName })
+      setPitcherPicker({ side, reason: 'start' })
+      return
+    }
+    openCell(playerId, inning, playerName)
   }
 
   async function saveScorebook() {
@@ -773,6 +886,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     const result = interpretHandwriting(notation)
     const runsScored = baseRunners?.home ? 1 : 0
     const teamSide = selectedCell.teamSide || currentTeamSide || 'home'
+    const pitcherOnRecord = currentPitcher(fieldingSide(teamSide))
+    const landingX = typeof fieldLocationData?.xCoordinate === 'number' ? (fieldLocationData.xCoordinate as number) : null
+    const landingY = typeof fieldLocationData?.yCoordinate === 'number' ? (fieldLocationData.yCoordinate as number) : null
     
     // Log the at-bat data when Save is clicked
     console.log('=== AT-BAT SAVED ===')
@@ -809,6 +925,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             base_runners: baseRunners || { first: false, second: false, third: false, home: false },
             base_runner_outs: baseRunnerOuts || { first: false, second: false, third: false, home: false },
             out_type: baseRunnerOutTypes ? Object.values(baseRunnerOutTypes).find(type => type !== '') || '' : '',
+            pitcher_id: pitcherOnRecord?.id ?? null,
+            hit_x: landingX,
+            hit_y: landingY,
             field_area: fieldLocationData?.fieldArea || '',
             field_zone: fieldLocationData?.fieldZone || '',
             hit_distance: fieldLocationData?.hitDistance || '',
@@ -870,6 +989,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             x_coordinate?: number
             y_coordinate?: number
             team_side?: string
+            pitcher_id?: string | null
+            hit_x?: number | null
+            hit_y?: number | null
           } = {
             game_id: game.id,
             player_id: selectedCell.playerId,
@@ -883,6 +1005,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             base_runners: baseRunners || { first: false, second: false, third: false, home: false },
             base_runner_outs: baseRunnerOuts || { first: false, second: false, third: false, home: false },
             out_type: baseRunnerOutTypes ? Object.values(baseRunnerOutTypes).find(type => type !== '') || '' : '',
+            pitcher_id: pitcherOnRecord?.id ?? null,
+            hit_x: landingX,
+            hit_y: landingY,
             field_area: (fieldLocationData?.fieldArea ? String(fieldLocationData.fieldArea) : ''),
             field_zone: (fieldLocationData?.fieldZone ? String(fieldLocationData.fieldZone) : ''),
             hit_distance: (fieldLocationData?.hitDistance ? String(fieldLocationData.hitDistance) : ''),
@@ -1038,6 +1163,40 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             <span className="text-lg">Voltear Hoja</span>
           </Button>
         </div>
+
+        {/* Pitcher on the mound for the fielding side: every at-bat is recorded against them */}
+        {(() => {
+          const side = fieldingSide(currentTeamSide)
+          const p = currentPitcher(side)
+          const teamName = side === 'home' ? homeTeamName : game.opponent
+          const appearances = gamePitchers.filter((g) => g.team_side === side).length
+          const es = uiLang === 'es'
+          return (
+            <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${p ? 'border-border bg-card' : 'border-amber-300 bg-amber-50'}`}>
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
+                {p?.jersey_number ?? 'P'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {es ? 'Pitcher en la loma' : 'Pitcher on the mound'} · {teamName}
+                </div>
+                <div className="truncate text-sm font-semibold">
+                  {p ? `${p.first_name} ${p.last_name}` : es ? 'Sin pitcher registrado' : 'No pitcher set yet'}
+                </div>
+                {appearances > 1 && (
+                  <div className="text-xs text-muted-foreground">
+                    {es ? `Pitcher #${appearances} del juego` : `Pitcher #${appearances} of the game`}
+                  </div>
+                )}
+              </div>
+              {!isLocked && (
+                <Button variant={p ? 'outline' : 'warning'} size="sm" onClick={() => setPitcherPicker({ side, reason: p ? 'change' : 'start' })}>
+                  {p ? (es ? 'Cambio de pitcher' : 'Pitching change') : es ? 'Elegir pitcher' : 'Choose pitcher'}
+                </Button>
+              )}
+            </div>
+          )
+        })()}
         
         <div style={{display: 'none'}} className="grid grid-cols-6 gap-4 text-sm">
           <FormField label="Date:">
@@ -1315,6 +1474,22 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         </div>
       </div>
 
+      {/* Who is pitching (required before the first at-bat of a side; also for pitching changes) */}
+      {pitcherPicker && (
+        <PitcherPicker
+          teamName={pitcherPicker.side === 'home' ? homeTeamName : game.opponent}
+          roster={pitcherPicker.side === 'home' ? ourRoster : opponentRoster}
+          currentPitcherId={currentPitcher(pitcherPicker.side)?.id ?? null}
+          inning={currentInningFor(pitcherPicker.side)}
+          reason={pitcherPicker.reason}
+          onPick={(p) => pickPitcher(pitcherPicker.side, p)}
+          onClose={() => {
+            setPitcherPicker(null)
+            setPendingCell(null)
+          }}
+        />
+      )}
+
       {/* Canvas Drawing Modal */}
       {showCanvasModal && selectedCell && (
         <DiamondCanvas
@@ -1322,6 +1497,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates)
           }}
           activeRunners={getActiveRunners(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
+          matchup={matchup}
           onClose={() => {
             setShowCanvasModal(false)
             setSelectedCell(null)

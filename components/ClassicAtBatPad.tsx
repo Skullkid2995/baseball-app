@@ -11,6 +11,7 @@ import { normalize, type Stroke, type Template } from '@/lib/handwriting/recogni
 import { NO_BASES, OUT_TOKENS, basesForToken, interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
 import { landingData, type Pt } from '@/lib/scorecard/geometry'
 import { cn } from '@/lib/utils'
+import { matchupLine, type MatchupSummary } from '@/lib/matchup'
 
 /**
  * Classic (paper) scoring dialog for one plate appearance. The box itself and
@@ -19,6 +20,8 @@ import { cn } from '@/lib/utils'
  */
 export interface ClassicAtBatPadProps {
   playerName: string
+  /** This batter's history against the pitcher on the mound */
+  matchup?: MatchupSummary | null
   inning: number
   existingAtBat?: Record<string, unknown>
   isLocked?: boolean
@@ -42,7 +45,7 @@ function toScorebookNotation(token: string): string {
   return token
 }
 
-export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isLocked = false, onSave, onClose, onSwitchMode }: ClassicAtBatPadProps) {
+export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isLocked = false, onSave, onClose, onSwitchMode, matchup = null }: ClassicAtBatPadProps) {
   const { language } = useLanguage()
   const [actions, setActions] = useState<BoxAction[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
@@ -123,6 +126,11 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold leading-tight">{L.title} · {playerName} <span className="text-muted-foreground">({language === 'es' ? 'Entrada' : 'Inning'} {inning})</span></h3>
+            {matchup && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">vs {matchup.pitcherName}</span> · {matchupLine(matchup, language === 'es' ? 'es' : 'en')}
+              </p>
+            )}
             <p className="mt-1 hidden text-xs text-muted-foreground sm:block">{L.hint}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
