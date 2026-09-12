@@ -115,3 +115,40 @@ export function landingData(p: Pt): LandingData {
     yCoordinate: Math.round(p[1] * 100) / 100,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Zone -> approximate point, for at-bats recorded before exact coordinates
+// existed (only a field_zone name). Deterministic jitter so dots do not stack.
+// ---------------------------------------------------------------------------
+function hash01(seed: string, salt: number): number {
+  let h = 2166136261 ^ salt
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
+  return ((h >>> 0) % 1000) / 1000
+}
+
+/** Approximate landing point for a stored zone name (e.g. LEFT_FIELD_DEEP_LINE, INFIELD, FOUL_RIGHT). */
+export function pointForZone(zone: string, seed = ''): Pt | null {
+  const z = (zone || '').toUpperCase()
+  if (!z) return null
+  const j1 = (hash01(seed, 1) - 0.5) * 2 // -1..1
+  const j2 = (hash01(seed, 2) - 0.5) * 2
+  let angle: number
+  let d: number
+  if (z === 'INFIELD' || z.startsWith('INFIELD')) {
+    angle = j1 * 38
+    d = 18 + hash01(seed, 3) * 16
+  } else if (z.startsWith('FOUL')) {
+    angle = (z.includes('RIGHT') ? 52 : -52) + j1 * 4
+    d = 22 + hash01(seed, 3) * 25
+  } else {
+    const depth = z.includes('SHALLOW') ? 43 : z.includes('DEEP') ? 57 : 50
+    let a = 0
+    if (z.startsWith('LEFT')) a = z.includes('LINE') ? -40 : z.includes('GAP') ? -30 : -20
+    else if (z.startsWith('RIGHT')) a = z.includes('LINE') ? 40 : z.includes('GAP') ? 30 : 20
+    else a = z.includes('LEFT_GAP') ? -10 : z.includes('RIGHT_GAP') ? 10 : 0
+    angle = a + j1 * 4
+    d = depth + j2 * 3
+  }
+  const rad = (angle * Math.PI) / 180
+  return [HOME[0] + d * Math.sin(rad), HOME[1] - d * Math.cos(rad)]
+}

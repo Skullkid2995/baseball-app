@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, BarChart3 } from 'lucide-react'
+import { ArrowDown, ArrowUp, BarChart3, X } from 'lucide-react'
+import SprayChart from './SprayChart'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import {
@@ -48,7 +49,11 @@ interface AtBatRow {
   stolen_bases?: number | null
   team_side?: string | null
   field_area?: string | null
+  field_zone?: string | null
   hit_distance?: string | null
+  hit_x?: number | string | null
+  hit_y?: number | string | null
+  notation?: string | null
   players: AtBatPlayer | null
 }
 
@@ -202,6 +207,11 @@ function finalize(s: PlayerStats): PlayerStats {
 // ---------------------------------------------------------------------------
 
 const EN = {
+  sprayChart: 'Spray chart',
+  sprayChartHint: 'Every batted ball as the line registered at the at-bat: home plate to where it landed. Tap a player in the table to filter.',
+  filteredBy: 'Showing',
+  clearPlayer: 'All players',
+  tapToFilter: 'Tap a row to filter the spray chart',
   title: 'Statistics',
   description: 'Cumulative batting across every scored game.',
   loading: 'Loading statistics…',
@@ -271,6 +281,11 @@ const EN = {
 }
 
 const ES: typeof EN = {
+  sprayChart: 'Mapa de batazos',
+  sprayChartHint: 'Cada batazo como la línea registrada en el turno: de home a donde cayó. Toca un jugador en la tabla para filtrar.',
+  filteredBy: 'Mostrando',
+  clearPlayer: 'Todos los jugadores',
+  tapToFilter: 'Toca una fila para filtrar el mapa',
   title: 'Estadísticas',
   description: 'Bateo acumulado de todos los juegos anotados.',
   loading: 'Cargando estadísticas…',
@@ -390,6 +405,7 @@ export default function StatisticsView() {
   const [minAbInput, setMinAbInput] = useState<string>('1')
   const [sortKey, setSortKey] = useState<SortKey>('avg')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
 
   const minAb = Math.max(0, Math.floor(Number(minAbInput)) || 0)
 
@@ -510,6 +526,13 @@ export default function StatisticsView() {
   }, [filtered])
 
   const gamesInScope = useMemo(() => new Set(filtered.map((ab) => ab.game_id)).size, [filtered])
+
+  // Spray chart: the filtered at-bats, narrowed to one player when a row is tapped
+  const sprayAtBats = useMemo(
+    () => (selectedPlayerId ? filtered.filter((ab) => ab.player_id === selectedPlayerId) : filtered),
+    [filtered, selectedPlayerId]
+  )
+  const selectedPlayer = useMemo(() => players.find((p) => p.id === selectedPlayerId) ?? null, [players, selectedPlayerId])
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -634,12 +657,36 @@ export default function StatisticsView() {
             </Card>
           </div>
 
+          {/* Spray chart: hit lines as registered, green hits / red outs */}
+          <Card>
+            <CardHeader className="flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>{L.sprayChart}</CardTitle>
+                <CardDescription>{L.sprayChartHint}</CardDescription>
+              </div>
+              {selectedPlayer && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlayerId(null)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary bg-accent px-3 py-1 text-xs font-semibold text-accent-foreground hover:bg-blue-100"
+                  title={L.clearPlayer}
+                >
+                  {L.filteredBy}: {selectedPlayer.name}
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </CardHeader>
+            <CardContent>
+              <SprayChart atBats={sprayAtBats} lang={locale.startsWith('es') ? 'es' : 'en'} />
+            </CardContent>
+          </Card>
+
           {/* Leaderboard */}
           <section className="space-y-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
               <h3 className="text-base font-semibold tracking-tight">{L.leaderboard}</h3>
               <p className="text-xs text-muted-foreground">
-                {L.playersShown(leaderboard.length)} · {L.leaderboardHint}
+                {L.playersShown(leaderboard.length)} · {L.leaderboardHint} · {L.tapToFilter}
               </p>
             </div>
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -676,7 +723,15 @@ export default function StatisticsView() {
                     </tr>
                   )}
                   {leaderboard.map((p) => (
-                    <tr key={p.id} className="border-t border-border hover:bg-slate-50/60">
+                    <tr
+                      key={p.id}
+                      onClick={() => setSelectedPlayerId((cur) => (cur === p.id ? null : p.id))}
+                      aria-selected={selectedPlayerId === p.id}
+                      className={cn(
+                        'cursor-pointer border-t border-border hover:bg-slate-50/60',
+                        selectedPlayerId === p.id && 'bg-accent/60 hover:bg-accent/60'
+                      )}
+                    >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
                           <Avatar src={p.photoUrl} alt={p.name} initials={p.initials} size="sm" />
