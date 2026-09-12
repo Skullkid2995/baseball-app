@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
+import ClassicAtBatPad from './ClassicAtBatPad'
 
 interface DiamondCanvasProps {
   onSave: (notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number) => void
@@ -12,6 +13,14 @@ interface DiamondCanvasProps {
 }
 
 export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false }: DiamondCanvasProps) {
+  // Classic (paper box, stylus/finger) or Digital (buttons). Remembered per browser.
+  const [scoringMode, setScoringMode] = useState<'classic' | 'digital'>(() => {
+    try { return localStorage.getItem('scoringMode') === 'digital' ? 'digital' : 'classic' } catch { return 'classic' }
+  })
+  const switchMode = (m: 'classic' | 'digital') => {
+    setScoringMode(m)
+    try { localStorage.setItem('scoringMode', m) } catch { /* ignore */ }
+  }
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 })
@@ -763,6 +772,20 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     }
   }
 
+  if (scoringMode === 'classic') {
+    return (
+      <ClassicAtBatPad
+        playerName={playerName}
+        inning={inning}
+        existingAtBat={existingAtBat}
+        isLocked={isLocked}
+        onSave={onSave}
+        onClose={onClose}
+        onSwitchMode={() => switchMode('digital')}
+      />
+    )
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
       <div className="bg-white rounded-lg w-full max-w-4xl h-[95vh] max-h-[700px] flex flex-col overflow-hidden">
@@ -772,12 +795,18 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             <h3 className="text-base sm:text-xl font-bold text-gray-800">
               Score At-Bat - {playerName} (Inning {inning})
             </h3>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center rounded-lg bg-gray-100 p-0.5">
+                <button type="button" onClick={() => switchMode('classic')} className="rounded-md px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-800">Clásico</button>
+                <button type="button" aria-pressed className="rounded-md bg-white px-3 py-1 text-xs font-semibold shadow-sm">Digital</button>
+              </div>
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 text-xl sm:text-2xl"
             >
               ×
             </button>
+            </div>
           </div>
           <p className="text-xs sm:text-sm text-gray-600 mt-1 hidden sm:block">
             Draw on the diamond: K for strikeout, 6-3 for groundout, arrows for base paths, etc.

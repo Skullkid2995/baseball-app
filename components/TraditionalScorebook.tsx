@@ -586,6 +586,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       
       // Strikeouts
       'K': 'strikeout',
+      'KC': 'strikeout', // strikeout looking (classic pad)
+      'DP': 'ground_out', // double play (classic pad)
+      '6-4-3': 'ground_out',
+      '4-6-3': 'ground_out',
       'SO': 'strikeout',
       'STRIKEOUT': 'strikeout',
       
