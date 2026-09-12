@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ClassicAtBatPad from './ClassicAtBatPad'
-import FieldSvg from './FieldSvg'
+import FieldSvg, { type BaseName } from './FieldSvg'
 import { fieldAreaAt } from '@/lib/scorecard/geometry'
 
 interface DiamondCanvasProps {
@@ -23,9 +23,6 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setScoringMode(m)
     try { localStorage.setItem('scoringMode', m) } catch { /* ignore */ }
   }
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 })
   const [count, setCount] = useState({ strikes: 0, balls: 0, fouls: 0 })
   const [pitchCount, setPitchCount] = useState(0)
   const [selectedBase, setSelectedBase] = useState<'first' | 'second' | 'third' | 'home' | null>(null)
@@ -187,346 +184,28 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     // Don't reset state when existingAtBat is undefined - let user set base runners manually
   }, [existingAtBat])
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    console.log('Canvas redrawing, selectedBase:', selectedBase, 'baseRunners:', baseRunners)
-
-    // Set up canvas
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.lineWidth = 4
-    ctx.strokeStyle = '#000000'
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    
-    // Draw baseball field design
-      drawBaseballField(ctx, canvas.width, canvas.height, baseRunners, runScored)
-
-    // Draw count in top right corner
-    ctx.fillStyle = '#000000'
-    ctx.font = 'bold 20px Arial'
-    ctx.textAlign = 'right'
-    ctx.fillText(`${count.balls}-${count.strikes}`, canvas.width - 15, 30)
-    
-    // Draw pitch count underneath
-    ctx.font = 'bold 14px Arial'
-    ctx.fillText(`Pitches: ${pitchCount}`, canvas.width - 15, 55)
-    
-    // Draw foul count if any
-    if (count.fouls > 0) {
-      ctx.font = 'bold 12px Arial'
-      ctx.fillText(`Fouls: ${count.fouls}`, canvas.width - 15, 75)
-    }
-
-    // Reset stroke style for drawing
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 4
-  }, [count, pitchCount, baseRunners, runScored, selectedBase])
-
-  function drawBaseballField(ctx: CanvasRenderingContext2D, width: number, height: number, baseRunners: {first: boolean, second: boolean, third: boolean, home: boolean}, runScored: boolean = false) {
-    const centerX = width / 2
-    const centerY = height / 2
-    
-    // Field dimensions - leave space for buttons (top-left and bottom-left)
-    const fieldWidth = Math.min(width - 120, height - 80) // Leave space for buttons
-    const fieldHeight = fieldWidth * 0.8 // Slightly shorter than wide
-    
-    // Position field to avoid button areas
-    const fieldX = centerX - fieldWidth / 2
-    const fieldY = centerY - fieldHeight / 2 + 20 // Slightly lower to avoid top buttons
-    
-    // No outfield background - just the infield diamond
-    
-    // Draw infield dirt area (diamond shape)
-    const diamondSize = fieldWidth * 0.6
-    const diamondX = centerX - diamondSize / 2
-    const diamondY = centerY + fieldHeight * 0.1
-    
-    // Fill diamond with blue if run scored, otherwise dirt color
-    ctx.fillStyle = runScored ? '#1E3A8A' : '#DEB887' // Dodgers blue or light orange/tan dirt color
-    ctx.beginPath()
-    ctx.moveTo(centerX, diamondY + diamondSize / 2) // Home plate (bottom)
-    ctx.lineTo(centerX + diamondSize / 2, diamondY) // First base (right)
-    ctx.lineTo(centerX, diamondY - diamondSize / 2) // Second base (top)
-    ctx.lineTo(centerX - diamondSize / 2, diamondY) // Third base (left)
-    ctx.closePath()
-    ctx.fill()
-    
-    // Draw base paths
-    ctx.strokeStyle = '#DEB887'
-    ctx.lineWidth = 8
-    ctx.beginPath()
-    // Home to first
-    ctx.moveTo(centerX, diamondY + diamondSize / 2)
-    ctx.lineTo(centerX + diamondSize / 2, diamondY)
-    // First to second
-    ctx.moveTo(centerX + diamondSize / 2, diamondY)
-    ctx.lineTo(centerX, diamondY - diamondSize / 2)
-    // Second to third
-    ctx.moveTo(centerX, diamondY - diamondSize / 2)
-    ctx.lineTo(centerX - diamondSize / 2, diamondY)
-    // Third to home
-    ctx.moveTo(centerX - diamondSize / 2, diamondY)
-    ctx.lineTo(centerX, diamondY + diamondSize / 2)
-    ctx.stroke()
-    
-    // No base runner lines - just highlight the selected base
-    
-    // Draw pitcher's mound
-    const moundRadius = diamondSize * 0.08
-    ctx.fillStyle = '#DEB887'
-    ctx.beginPath()
-    ctx.arc(centerX, diamondY, moundRadius, 0, 2 * Math.PI)
-    ctx.fill()
-    
-    // Draw pitcher's rubber (white line)
-    ctx.strokeStyle = '#FFFFFF'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.moveTo(centerX - moundRadius * 0.6, diamondY)
-    ctx.lineTo(centerX + moundRadius * 0.6, diamondY)
-    ctx.stroke()
-    
-    // Draw home plate (white pentagon)
-    const homePlateSize = diamondSize * 0.08
-    ctx.fillStyle = '#FFFFFF'
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(centerX, diamondY + diamondSize / 2 + homePlateSize)
-    ctx.lineTo(centerX + homePlateSize / 2, diamondY + diamondSize / 2)
-    ctx.lineTo(centerX + homePlateSize, diamondY + diamondSize / 2 + homePlateSize / 2)
-    ctx.lineTo(centerX + homePlateSize / 2, diamondY + diamondSize / 2 + homePlateSize)
-    ctx.lineTo(centerX - homePlateSize / 2, diamondY + diamondSize / 2 + homePlateSize)
-    ctx.lineTo(centerX - homePlateSize, diamondY + diamondSize / 2 + homePlateSize / 2)
-    ctx.lineTo(centerX - homePlateSize / 2, diamondY + diamondSize / 2)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-    
-    // Draw bases (white squares with runner status)
-    const baseSize = diamondSize * 0.15 // Make bases larger for easier clicking
-    ctx.fillStyle = '#FFFFFF'
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 2
-    
-    // First base (right) - with selection indicator
-    ctx.fillRect(centerX + diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, baseSize, baseSize)
-    ctx.strokeRect(centerX + diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, baseSize, baseSize)
-    if (selectedBase === 'first' || baseRunners.first) {
-      console.log('Drawing yellow first base - SELECTED or RUNNER')
-      ctx.fillStyle = '#FCD34D' // Yellow for selected base or runner
-      ctx.fillRect(centerX + diamondSize / 2 - baseSize / 2 + 1, diamondY - baseSize / 2 + 1, baseSize - 2, baseSize - 2)
-    }
-    
-    // Second base (top) - with selection indicator
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(centerX - baseSize / 2, diamondY - diamondSize / 2 - baseSize / 2, baseSize, baseSize)
-    ctx.strokeRect(centerX - baseSize / 2, diamondY - diamondSize / 2 - baseSize / 2, baseSize, baseSize)
-    if (selectedBase === 'second' || baseRunners.second) {
-      ctx.fillStyle = '#FCD34D' // Yellow for selected base or runner
-      ctx.fillRect(centerX - baseSize / 2 + 1, diamondY - diamondSize / 2 - baseSize / 2 + 1, baseSize - 2, baseSize - 2)
-    }
-    
-    // Third base (left) - with selection indicator
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(centerX - diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, baseSize, baseSize)
-    ctx.strokeRect(centerX - diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, baseSize, baseSize)
-    if (selectedBase === 'third' || baseRunners.third) {
-      ctx.fillStyle = '#FCD34D' // Yellow for selected base or runner
-      ctx.fillRect(centerX - diamondSize / 2 - baseSize / 2 + 1, diamondY - baseSize / 2 + 1, baseSize - 2, baseSize - 2)
-    }
-    
-    // Home plate - with selection indicator
-    if (selectedBase === 'home' || baseRunners.home) {
-      ctx.fillStyle = '#FCD34D' // Yellow for selected home plate or runner
-      ctx.beginPath()
-      ctx.moveTo(centerX, diamondY + diamondSize / 2 + homePlateSize)
-      ctx.lineTo(centerX + homePlateSize / 2, diamondY + diamondSize / 2)
-      ctx.lineTo(centerX + homePlateSize, diamondY + diamondSize / 2 + homePlateSize / 2)
-      ctx.lineTo(centerX + homePlateSize / 2, diamondY + diamondSize / 2 + homePlateSize)
-      ctx.lineTo(centerX - homePlateSize / 2, diamondY + diamondSize / 2 + homePlateSize)
-      ctx.lineTo(centerX - homePlateSize, diamondY + diamondSize / 2 + homePlateSize / 2)
-      ctx.lineTo(centerX - homePlateSize / 2, diamondY + diamondSize / 2)
-      ctx.closePath()
-      ctx.fill()
-    }
-    
-    // No field border - just the diamond
-  }
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    
+  /** Tap on a base of the infield view: the batter (or the runner) is on that base. */
+  const handleBaseClick = (base: BaseName) => {
     // Don't allow interaction if locked (view only)
     if (isLocked) return
-    
     // Don't allow base selection if it's an out
     if (isOut) return
-    
     // Lock everything if a run has been scored
     if (runScored) return
-    
     // Allow base selection for hit-like outcomes even when at-bat is locked
     const hitLikeOutcomes = ['E', 'FC', 'BUNT', 'H1', 'H2', 'H3', 'HR']
     const isHitLikeOutcome = hitLikeOutcomes.includes(handwritingInput)
-    
     // Check if there are active runners (for marking outs on existing at-bats)
     const hasActiveRunners = (baseRunners.first && !baseRunnerOuts.first && !runScored) ||
                              (baseRunners.second && !baseRunnerOuts.second && !runScored) ||
                              (baseRunners.third && !baseRunnerOuts.third && !runScored) ||
                              (baseRunners.home && !baseRunnerOuts.home && !runScored)
-    
-    // Allow base selection if:
-    // 1. It's a hit-like outcome (even when locked), OR
-    // 2. There are active runners (to allow marking outs on existing at-bats)
     if (atBatLocked && !isHitLikeOutcome && !hasActiveRunners) return
-
-    const rect = canvas.getBoundingClientRect()
-    const clientX = e.clientX
-    const clientY = e.clientY
-    
-    // Scale click coordinates to match internal canvas size (600x600)
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-    
-    console.log('Click coordinates:', x, y)
-    
-    // Check if click is on a base
-    const centerX = canvas.width / 2
-    const centerY = canvas.height / 2
-    const diamondSize = 300
-    const baseSize = diamondSize * 0.15 // Make bases larger for easier clicking
-    const diamondY = centerY + 20
-    
-    console.log('Base positions:')
-    console.log('1st base:', centerX + diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, 'to', centerX + diamondSize / 2 + baseSize / 2, diamondY + baseSize / 2)
-    console.log('2nd base:', centerX - baseSize / 2, diamondY - diamondSize / 2 - baseSize / 2, 'to', centerX + baseSize / 2, diamondY - diamondSize / 2 + baseSize / 2)
-    console.log('3rd base:', centerX - diamondSize / 2 - baseSize / 2, diamondY - baseSize / 2, 'to', centerX - diamondSize / 2 + baseSize / 2, diamondY + baseSize / 2)
-    
-    // First base (right)
-    if (x >= centerX + diamondSize / 2 - baseSize / 2 && 
-        x <= centerX + diamondSize / 2 + baseSize / 2 &&
-        y >= diamondY - baseSize / 2 && 
-        y <= diamondY + baseSize / 2) {
-      console.log('Clicked first base, current selectedBase:', selectedBase)
-      setSelectedBase('first')
-      setBaseRunners(prev => ({ ...prev, first: true, second: false, third: false, home: false }))
-      return
-    }
-    
-    // Second base (top) - Fixed coordinates to match drawing
-    if (x >= centerX - baseSize / 2 && 
-        x <= centerX + baseSize / 2 &&
-        y >= diamondY - diamondSize / 2 - baseSize / 2 && 
-        y <= diamondY - diamondSize / 2 + baseSize / 2) {
-      console.log('Clicked second base, current selectedBase:', selectedBase)
-      setSelectedBase('second')
-      setBaseRunners(prev => ({ ...prev, first: false, second: true, third: false, home: false }))
-      return
-    }
-    
-    // Third base (left)
-    if (x >= centerX - diamondSize / 2 - baseSize / 2 && 
-        x <= centerX - diamondSize / 2 + baseSize / 2 &&
-        y >= diamondY - baseSize / 2 && 
-        y <= diamondY + baseSize / 2) {
-      console.log('Clicked third base, current selectedBase:', selectedBase)
-      setSelectedBase('third')
-      setBaseRunners(prev => ({ ...prev, first: false, second: false, third: true, home: false }))
-      return
-    }
-    
-    // Home plate - Fixed coordinates to match drawing
-    const homePlateSize = diamondSize * 0.08
-    if (x >= centerX - homePlateSize && 
-        x <= centerX + homePlateSize &&
-        y >= diamondY + diamondSize / 2 && 
-        y <= diamondY + diamondSize / 2 + homePlateSize) {
-      console.log('Clicked home plate, current selectedBase:', selectedBase)
-      setSelectedBase('home')
-      setBaseRunners(prev => ({ ...prev, first: false, second: false, third: false, home: true }))
-      return
-    }
-    
-    // Base selection only - no drawing
+    setSelectedBase(base)
+    setBaseRunners({ first: base === 'first', second: base === 'second', third: base === 'third', home: base === 'home' })
   }
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    // This will be called by handleCanvasClick if not clicking on a base
-  }
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return
-    
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-    
-    const currentX = clientX - rect.left
-    const currentY = clientY - rect.top
-
-    ctx.beginPath()
-    ctx.moveTo(lastPoint.x, lastPoint.y)
-    ctx.lineTo(currentX, currentY)
-    ctx.stroke()
-
-    setLastPoint({ x: currentX, y: currentY })
-  }
-
-  const stopDrawing = () => {
-    setIsDrawing(false)
-  }
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    
-    // Draw baseball field design
-      drawBaseballField(ctx, canvas.width, canvas.height, baseRunners, runScored)
-
-    // Draw count in top right corner
-    ctx.fillStyle = '#000000'
-    ctx.font = 'bold 20px Arial'
-    ctx.textAlign = 'right'
-    ctx.fillText(`${count.balls}-${count.strikes}`, canvas.width - 15, 30)
-    
-    // Draw pitch count underneath
-    ctx.font = 'bold 14px Arial'
-    ctx.fillText(`Pitches: ${pitchCount}`, canvas.width - 15, 55)
-    
-    // Draw foul count if any
-    if (count.fouls > 0) {
-      ctx.font = 'bold 12px Arial'
-      ctx.fillText(`Fouls: ${count.fouls}`, canvas.width - 15, 75)
-    }
-
-    // Reset for drawing
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 4
-  }
+  const clearSelection = () => setSelectedBase(null)
 
   const addStrike = () => {
     setCount(prev => {
@@ -796,25 +475,60 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         {/* Canvas Area */}
         <div className="flex-1 p-2 sm:p-6 flex items-center justify-center bg-gray-50 overflow-auto">
           <div className="relative">
-            <canvas
-              ref={canvasRef}
-              width={600}
-              height={600}
-              className="border border-gray-300 rounded-lg bg-white cursor-pointer max-w-full max-h-full w-auto h-auto"
+            {/* Same field as the classic box, zoomed into the infield so the runners and home plate are big.
+                Hit / Out zoom it out to the whole field to tap where the ball went. */}
+            <div
+              id="field-container"
+              className={`relative overflow-hidden rounded-lg border border-gray-300 bg-[#fffdf7] shadow-inner ${showFieldSelection ? 'cursor-crosshair' : ''}`}
               style={{ width: 'min(100vw - 2rem, 400px)', height: 'min(100vw - 2rem, 400px)' }}
-              onClick={handleCanvasClick}
-              onTouchEnd={(e) => {
-                e.preventDefault()
-                const touch = e.changedTouches[0]
-                const mouseEvent = new MouseEvent('click', {
-                  clientX: touch.clientX,
-                  clientY: touch.clientY,
-                  bubbles: true,
-                  cancelable: true
-                })
-                canvasRef.current?.dispatchEvent(mouseEvent)
-              }}
-            />
+              onClick={showFieldSelection ? (e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const x = ((e.clientX - rect.left) / rect.width) * 100
+                const y = ((e.clientY - rect.top) / rect.height) * 100
+                handleFieldClick(fieldAreaAt([x, y]), e)
+              } : undefined}
+            >
+              <FieldSvg
+                className="absolute inset-0 h-full w-full"
+                view={showFieldSelection ? 'full' : 'infield'}
+                runners={baseRunners}
+                selectedBase={selectedBase}
+                runnerOuts={baseRunnerOuts}
+                runScored={runScored}
+                landing={ballLandingPosition ? [ballLandingPosition.x, ballLandingPosition.y] : null}
+                onBaseClick={showFieldSelection ? undefined : handleBaseClick}
+              />
+            </div>
+
+            {/* Picking where the ball landed: caption + cancel over the full field */}
+            {showFieldSelection && (
+              <>
+                <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900/85 px-3 py-1 text-xs font-semibold text-white shadow">
+                  {selectedFieldArea === 'OUT' ? 'Tap where the ball was fielded' : 'Tap where the ball landed'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFieldSelection(false)
+                    setBallLandingPosition(null)
+                  }}
+                  className="absolute bottom-2 left-2 z-10 rounded-lg bg-gray-500 px-3 py-1.5 text-xs font-bold text-white shadow hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+
+            {/* Everything below sits on top of the infield view and hides while picking a landing spot */}
+            <div hidden={showFieldSelection}>
+
+            {/* Count - top right (new at-bats; existing ones show the locked play there) */}
+            {!existingAtBat && (
+              <div className="pointer-events-none absolute right-1 top-1 rounded-lg border border-gray-200 bg-white/90 px-2 py-1 text-right shadow sm:right-2 sm:top-2">
+                <div className="text-lg font-bold leading-tight text-gray-900">{count.balls}-{count.strikes}</div>
+                <div className="text-[10px] font-semibold text-gray-500">Pitches: {pitchCount}{count.fouls > 0 ? ` · Fouls: ${count.fouls}` : ''}</div>
+              </div>
+            )}
             
     {/* Hit/Out Buttons - Top Center */}
     {(() => {
@@ -833,7 +547,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
       if (!shouldShowHitOutButtons && !shouldShowOutButtonForRunners) return null
       
       return (
-        <div className="absolute top-1 sm:top-4 left-1/2 transform -translate-x-1/2 flex space-x-2 sm:space-x-4">
+        <div className="absolute top-3 sm:top-4 left-1/2 transform -translate-x-1/2 flex gap-5 sm:gap-8">
           {shouldShowHitOutButtons && (
             <button
               onClick={() => {
@@ -940,7 +654,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
 
             {/* Count Buttons - Top Left (only show for new at-bats, not scored, and not out and not locked) */}
             {!existingAtBat && !runScored && !isOut && !isLocked && !atBatLocked && (
-              <div className="absolute top-20 left-1 sm:left-4 flex flex-col space-y-2 sm:space-y-4">
+              <div className="absolute top-24 left-2 sm:left-4 flex flex-col gap-4 sm:gap-5">
                 <button
                   onClick={addStrike}
                   disabled={atBatLocked}
@@ -955,6 +669,12 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 >
                   Ball
                 </button>
+              </div>
+            )}
+            
+            {/* Foul - same column, lower: between third base and Reset Count */}
+            {!existingAtBat && !runScored && !isOut && !isLocked && !atBatLocked && (
+              <div className="absolute left-2 top-[64%] sm:left-4">
                 <button
                   onClick={addFoul}
                   disabled={atBatLocked}
@@ -964,7 +684,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 </button>
               </div>
             )}
-            
+
             {/* Show locked count for existing at-bats, scored runs, or outs or locked at-bat */}
             {(existingAtBat || runScored || isOut || atBatLocked) && (
               <div className="absolute top-2 left-2 sm:top-4 sm:left-4">
@@ -1038,6 +758,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 )
               })()
             )}
+            </div>
           </div>
         </div>
 
@@ -1131,62 +852,6 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
                 <button
                   onClick={() => setShowOutTypeModal(false)}
                   className="w-full bg-gray-500 text-white px-6 py-3 rounded-lg text-sm font-bold hover:bg-gray-600 active:bg-gray-700 shadow-lg"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Field Selection Modal */}
-        {showFieldSelection && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60 p-2">
-            <div className="bg-white rounded-lg p-3 sm:p-6 max-w-4xl w-full mx-2 sm:mx-4 max-h-[95vh] overflow-auto">
-              <h3 className="text-base sm:text-xl font-bold mb-2 sm:mb-4 text-center">
-                Click where the ball landed on the field
-              </h3>
-              
-              {/* Simple Field Selection */}
-              {/* Proportioned field: home plate at the bottom, foul lines, infield diamond and the outfield to the fence.
-                  Click anywhere; the area name comes from the shared geometry so Classic and Digital agree. */}
-              <div
-                id="field-container"
-                className="relative mx-auto aspect-square w-full max-w-[460px] cursor-crosshair overflow-hidden rounded-2xl border-2 border-slate-400 bg-[#fffdf7] shadow-inner"
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  const x = ((e.clientX - rect.left) / rect.width) * 100
-                  const y = ((e.clientY - rect.top) / rect.height) * 100
-                  handleFieldClick(fieldAreaAt([x, y]), e)
-                }}
-              >
-                <FieldSvg className="pointer-events-none absolute inset-0 h-full w-full" />
-                {/* Visual Ball Marker - shows where ball landed */}
-                {ballLandingPosition && (
-                  <div
-                    className="absolute"
-                    style={{
-                      left: `${ballLandingPosition.x}%`,
-                      top: `${ballLandingPosition.y}%`,
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: 100,
-                      pointerEvents: 'none'
-                    }}
-                  >
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-900 bg-white shadow-lg">
-                      <div className="h-2 w-2 rounded-full bg-red-500"></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="mt-2 sm:mt-4 flex justify-center">
-                <button
-                  onClick={() => {
-                    setShowFieldSelection(false)
-                    setBallLandingPosition(null)
-                  }}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600"
                 >
                   Cancel
                 </button>
@@ -1393,7 +1058,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
         {/* Action Buttons */}
         <div className="p-4 border-t border-gray-200 flex justify-between">
           <button
-            onClick={clearCanvas}
+            onClick={clearSelection}
             disabled={isLocked}
             className="px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
