@@ -46,8 +46,11 @@ const FIRST: Pt = [82, 52]
 const SECOND: Pt = [50, 20]
 const THIRD: Pt = [18, 52]
 const OUT_MARK: Pt = [88, 89]
-const BALLS_MARK: Pt = [11, 11]
-const STRIKES_MARK: Pt = [89, 11]
+const TALLY = 5.5 // tally box size in units
+const TALLY_GAP = 1.5
+const BALL_BOXES: Pt[] = [0, 1, 2].map((i) => [5 + i * (TALLY + TALLY_GAP), 5])
+const STRIKE_BOXES: Pt[] = [0, 1].map((i) => [95 - TALLY - i * (TALLY + TALLY_GAP), 5])
+const inBox = (p: Pt, b: Pt) => p[0] >= b[0] - 1 && p[0] <= b[0] + TALLY + 1 && p[1] >= b[1] - 1 && p[1] <= b[1] + TALLY + 1
 const TAP_LENGTH = 3 // units: shorter strokes are taps
 const HIT_START_RADIUS = 13
 const HIT_MIN_LENGTH = 18
@@ -112,7 +115,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
   const L = language === 'es'
     ? {
         title: 'Anotar turno', classic: 'Clásico', digital: 'Digital',
-        hint: 'Escribe la jugada en la casilla. Toca una base para marcarla, la esquina inferior derecha para el out, las esquinas superiores para bolas y strikes. Traza la línea del batazo desde home.',
+        hint: 'Escribe la jugada en la casilla. Toca una base para marcarla, el círculo para el out, y rellena las cajitas de bolas (B) y strikes (S). Traza la línea del batazo desde home.',
         recognized: 'Reconocido', nothing: 'Escribe la jugada…', noSamples: 'Sin muestras: elige la jugada de la lista.',
         correct: 'Correcto', fix: 'Corregir', redo: 'Repetir', pick: 'Elige la jugada', bases: 'Bases', out: 'Out', run: 'Carrera',
         landing: 'Batazo', noLanding: 'sin trazo', rbiLabel: 'Carreras impulsadas', save: 'Guardar turno', close: 'Cerrar', undo: 'Deshacer', clear: 'Borrar',
@@ -120,7 +123,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
       }
     : {
         title: 'Score at-bat', classic: 'Classic', digital: 'Digital',
-        hint: 'Write the play in the box. Tap a base to mark it, the lower-right corner for the out, the upper corners for balls and strikes. Draw the batted-ball line from home.',
+        hint: 'Write the play in the box. Tap a base to mark it, the circle for the out, and fill the small ball (B) and strike (S) boxes. Draw the batted-ball line from home.',
         recognized: 'Recognized', nothing: 'Write the play…', noSamples: 'No samples yet: pick the play from the list.',
         correct: 'Correct', fix: 'Fix', redo: 'Redo', pick: 'Pick the play', bases: 'Bases', out: 'Out', run: 'Run',
         landing: 'Batted ball', noLanding: 'no line', rbiLabel: 'Runs batted in', save: 'Save at-bat', close: 'Close', undo: 'Undo', clear: 'Clear',
@@ -213,21 +216,25 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
     ctx.font = `700 ${Math.round(u(8))}px ui-sans-serif, system-ui`
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText(outNumber ? String(outNumber) : 'O', u(OUT_MARK[0]), u(OUT_MARK[1]) + u(0.5))
-    // ball / strike dots
-    const dots = (origin: Pt, n: number, max: number, color: string, dir: 1 | -1) => {
-      for (let i = 0; i < max; i++) {
+    // ball / strike tally boxes, filled with pencil like on paper
+    const boxes = (list: Pt[], n: number) => {
+      list.forEach((b, i) => {
         ctx.beginPath()
-        ctx.arc(u(origin[0]) + dir * u(i * 5), u(origin[1]), u(1.7), 0, Math.PI * 2)
-        ctx.fillStyle = i < n ? color : 'rgba(148,163,184,0.35)'
+        ctx.rect(u(b[0]), u(b[1]), u(TALLY), u(TALLY))
+        ctx.fillStyle = i < n ? 'rgba(31,41,55,0.85)' : '#fffdf7'
         ctx.fill()
-      }
+        ctx.strokeStyle = 'rgba(100,116,139,0.8)'
+        ctx.lineWidth = Math.max(1, u(0.5))
+        ctx.stroke()
+      })
     }
-    dots(BALLS_MARK, balls, 3, '#2563eb', 1)
-    dots(STRIKES_MARK, strikes, 2, '#dc2626', -1)
-    ctx.fillStyle = 'rgba(100,116,139,0.8)'
+    boxes(BALL_BOXES, balls)
+    boxes(STRIKE_BOXES, strikes)
+    ctx.fillStyle = 'rgba(100,116,139,0.9)'
     ctx.font = `600 ${Math.round(u(3.5))}px ui-sans-serif, system-ui`
-    ctx.textAlign = 'left'; ctx.fillText('B', u(BALLS_MARK[0]) - u(1), u(BALLS_MARK[1]) + u(6))
-    ctx.textAlign = 'right'; ctx.fillText('S', u(STRIKES_MARK[0]) + u(1), u(STRIKES_MARK[1]) + u(6))
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'left'; ctx.fillText('B', u(BALL_BOXES[0][0]), u(BALL_BOXES[0][1] + TALLY + 3.5))
+    ctx.textAlign = 'right'; ctx.fillText('S', u(STRIKE_BOXES[0][0] + TALLY), u(STRIKE_BOXES[0][1] + TALLY + 3.5))
     // hit line
     const strokePath = (s: Stroke, color: string, width: number) => {
       if (!s.length) return
@@ -304,8 +311,10 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
     if (dist(p, THIRD) < r) return setBases((b) => ({ ...b, third: !b.third, home: false }))
     if (dist(p, HOME) < r || dist(p, [50, 52]) < 9) return setBases((b) => (b.home ? NONE : { first: true, second: true, third: true, home: true }))
     if (dist(p, OUT_MARK) < r) return setOutNumber((n) => (n + 1) % 4)
-    if (dist(p, BALLS_MARK) < 10) return setBalls((n) => (n + 1) % 4)
-    if (dist(p, STRIKES_MARK) < 10) return setStrikes((n) => (n + 1) % 3)
+    const bi = BALL_BOXES.findIndex((b) => inBox(p, b))
+    if (bi >= 0) return setBalls((n) => (n >= bi + 1 ? bi : bi + 1))
+    const si = STRIKE_BOXES.findIndex((b) => inBox(p, b))
+    if (si >= 0) return setStrikes((n) => (n >= si + 1 ? si : si + 1))
   }
 
   // Bases implied by the confirmed token (unless the scorer already tapped bases)
