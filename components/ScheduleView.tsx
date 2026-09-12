@@ -20,6 +20,8 @@ interface GameRow {
   our_score: number
   opponent_score: number
   team_id?: string | null
+  opponent_team_id?: string | null
+  league_id?: string | null
 }
 
 const TEXT = {
@@ -86,7 +88,7 @@ export default function ScheduleView() {
     let cancelled = false
     async function load() {
       const [g, t] = await Promise.all([
-        supabase.from('games').select('id, opponent, game_date, game_time, stadium, game_status, our_score, opponent_score, team_id').order('game_date'),
+        supabase.from('games').select('id, opponent, game_date, game_time, stadium, game_status, our_score, opponent_score, team_id, opponent_team_id, league_id').order('game_date'),
         supabase.from('teams').select('id, name, league_id'),
       ])
       if (cancelled) return

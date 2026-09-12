@@ -20,6 +20,8 @@ export interface ScopedGame {
   id: string
   opponent: string
   team_id?: string | null
+  opponent_team_id?: string | null
+  league_id?: string | null
 }
 
 export interface ScopedTeam {
@@ -49,12 +51,13 @@ export function gameInScope(game: ScopedGame, level: ScopeLevel, u: ScopeUser, t
   if (level === 'all') return true
   const byId = new Map(teams.map((t) => [t.id, t]))
   const ours = game.team_id ? byId.get(game.team_id) : undefined
-  const theirs = teams.find((t) => t.name.toLowerCase() === game.opponent.toLowerCase())
+  const theirs = (game.opponent_team_id ? byId.get(game.opponent_team_id) : undefined) ?? teams.find((t) => t.name.toLowerCase() === game.opponent.toLowerCase())
   if (level === 'team') {
     if (!u.teamId) return true
     return ours?.id === u.teamId || theirs?.id === u.teamId
   }
   // league
   if (!u.leagueId) return true
+  if (game.league_id) return game.league_id === u.leagueId
   return ours?.league_id === u.leagueId || theirs?.league_id === u.leagueId
 }

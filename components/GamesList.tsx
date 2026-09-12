@@ -33,6 +33,7 @@ interface Team {
   id: string
   name: string
   city: string
+  league_id?: string | null
 }
 
 export default function GamesList() {
@@ -41,7 +42,7 @@ export default function GamesList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { t, language } = useLanguage()
-  const { canEdit } = usePermissions()
+  const { canEdit, teamId: myTeamId, leagueId: myLeagueId, isSuperAdmin } = usePermissions()
   const [showNewGameForm, setShowNewGameForm] = useState(false)
   const [showScorebook, setShowScorebook] = useState<string | null>(null)
   const [showStatistics, setShowStatistics] = useState<string | null>(null)
@@ -52,6 +53,10 @@ export default function GamesList() {
   // Stadiums belong to leagues: the game is played at one of them (free text stays as a fallback)
   const [stadiums, setStadiums] = useState<{ id: string; name: string; city: string | null; league: string }[]>([])
   const [stadiumChoice, setStadiumChoice] = useState<string>('')
+  // A game is between two teams of a league: the board picks among the teams of its league, super admins any team
+  const [leagues, setLeagues] = useState<{ id: string; name: string }[]>([])
+  const [homeTeamId, setHomeTeamId] = useState<string>('')
+  const [awayTeamId, setAwayTeamId] = useState<string>('')
   const [formData, setFormData] = useState({
     opponent: '',
     game_date: '',
@@ -90,7 +95,7 @@ export default function GamesList() {
     try {
       const { data, error } = await supabase
         .from('teams')
-        .select('id, name, city')
+        .select('id, name, city, league_id')
         .order('name')
 
       if (error) {
@@ -117,17 +122,40 @@ export default function GamesList() {
         }))
         setStadiums(rows)
       })
+    supabase
+      .from('leagues')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => setLeagues((data as { id: string; name: string }[]) ?? []))
   }, [])
+
+  const schedulableTeams = teams.filter((tm) => (isSuperAdmin || !myLeagueId ? true : tm.league_id === myLeagueId))
+  const leagueName = (id?: string | null) => leagues.find((l) => l.id === id)?.name ?? ''
+
+  // Default home team: the user's own team, else our first non-opponent team
+  useEffect(() => {
+    if (!showNewGameForm || homeTeamId) return
+    const mine = schedulableTeams.find((tm) => tm.id === myTeamId)
+    const first = schedulableTeams.find((tm) => tm.city !== 'Opponent') ?? schedulableTeams[0]
+    setHomeTeamId((mine ?? first)?.id ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNewGameForm, teams, myTeamId])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     
     try {
+      const homeTeam = teams.find((tm) => tm.id === homeTeamId)
+      const awayTeam = awayTeamId && awayTeamId !== 'other' ? teams.find((tm) => tm.id === awayTeamId) : undefined
       const { data, error } = await supabase
         .from('games')
         .insert([{
           ...formData,
+          opponent: awayTeam ? awayTeam.name : formData.opponent,
+          team_id: homeTeam?.id ?? null,
+          opponent_team_id: awayTeam?.id ?? null,
+          league_id: homeTeam?.league_id ?? null,
           stadium_id: stadiumChoice && stadiumChoice !== 'other' ? stadiumChoice : null,
           our_score: 0,
           opponent_score: 0,
@@ -166,6 +194,8 @@ export default function GamesList() {
         stadium: '',
         weather_conditions: ''
       })
+      setAwayTeamId('')
+      setStadiumChoice('')
       setShowNewGameForm(false)
       setShowLineupSelection(null)
       setShowOpponentLineup(null)
@@ -303,7 +333,7 @@ export default function GamesList() {
         title={t.gamesCount}
         count={games.length}
         actions={
-          canEdit('games') && <Button
+          canEdit('gamesCreate') && <Button
             variant={showNewGameForm ? 'outline' : 'primary'}
             onClick={() => setShowNewGameForm(!showNewGameForm)}
             className="w-full sm:w-auto"
@@ -319,14 +349,37 @@ export default function GamesList() {
           <h4 className="mb-5 text-base font-semibold">{t.createNewGame}</h4>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormField label={t.opponent} required>
-                <Input
-                  type="text"
-                  required
-                  value={formData.opponent}
-                  onChange={(e) => setFormData({...formData, opponent: e.target.value})}
-                  placeholder="e.g., Yankees, Red Sox, etc."
-                />
+              <FormField label={language === 'es' ? 'Equipo local' : 'Home team'} required>
+                <Select required value={homeTeamId} onChange={(e) => setHomeTeamId(e.target.value)}>
+                  <option value="">—</option>
+                  {schedulableTeams.map((tm) => (
+                    <option key={tm.id} value={tm.id}>
+                      {tm.name}{leagueName(tm.league_id) ? ` · ${leagueName(tm.league_id)}` : ''}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <FormField label={language === 'es' ? 'Visitante' : 'Away team'} required>
+                <div className="space-y-2">
+                  <Select required value={awayTeamId} onChange={(e) => setAwayTeamId(e.target.value)}>
+                    <option value="">—</option>
+                    {schedulableTeams.filter((tm) => tm.id !== homeTeamId).map((tm) => (
+                      <option key={tm.id} value={tm.id}>
+                        {tm.name}{leagueName(tm.league_id) ? ` · ${leagueName(tm.league_id)}` : ''}
+                      </option>
+                    ))}
+                    <option value="other">{language === 'es' ? 'Otro equipo…' : 'Other team…'}</option>
+                  </Select>
+                  {awayTeamId === 'other' && (
+                    <Input
+                      type="text"
+                      required
+                      value={formData.opponent}
+                      onChange={(e) => setFormData({...formData, opponent: e.target.value})}
+                      placeholder={language === 'es' ? 'Nombre del equipo visitante' : 'Away team name'}
+                    />
+                  )}
+                </div>
               </FormField>
               <FormField label={t.gameDate} required>
                 <Input
@@ -536,7 +589,7 @@ export default function GamesList() {
                             {t.startScoring}
                           </Button>
                         )}
-                        <Button variant="accent" size="sm" disabled={!canEdit('games')} onClick={() => setShowLineupSelection(game.id)}>
+                        <Button variant="accent" size="sm" disabled={!canEdit('gamesLineups')} onClick={() => setShowLineupSelection(game.id)}>
                           <ClipboardList />
                           {t.selectLineup}
                         </Button>
@@ -573,7 +626,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" disabled={!canEdit('games')} onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!canEdit('gamesDelete')} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearGameData}
                       </Button>
@@ -589,7 +642,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" disabled={!canEdit('games')} onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!canEdit('gamesDelete')} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearData}
                       </Button>
