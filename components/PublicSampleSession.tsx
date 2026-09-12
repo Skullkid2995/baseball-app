@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, ChevronRight, Eraser, PenTool, RotateCcw } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { LETTER_TOKENS, TOKENS, describeToken, type Token } from '@/lib/handwriting/vocabulary'
+import { LETTER_TOKENS, TOKENS, type Token } from '@/lib/handwriting/vocabulary'
 import type { Stroke } from '@/lib/handwriting/recognizer'
 import BaseballMark from '@/components/BaseballMark'
 import { Button, InkPad, Input } from '@/components/ui'
@@ -20,7 +20,7 @@ interface InviteInfo {
 const TEXT = {
   es: {
     title: 'Ayúdanos con tu letra',
-    intro: 'Estamos enseñando a la app a leer la anotación de béisbol escrita a mano. Escribe cada símbolo como lo harías en una hoja de anotación, con el dedo o un lápiz.',
+    intro: 'Estamos enseñando a la app a leer la anotación de béisbol escrita a mano. Te iremos mostrando números, letras y jugadas: escribe solo eso, tal cual, con el dedo o un lápiz.',
     sessionOf: (n: number) => `Una sesión son ${n} símbolos, unos 3 minutos.`,
     name: 'Tu nombre o apodo',
     namePlaceholder: 'Ej. Miguel',
@@ -29,6 +29,7 @@ const TEXT = {
     notFound: 'Este enlace no existe.',
     loading: 'Cargando…',
     write: 'Escribe:',
+    exactly: 'Tal cual, como lo escribirías en tu hoja.',
     next: 'Siguiente',
     skip: 'Saltar',
     clear: 'Borrar',
@@ -43,7 +44,7 @@ const TEXT = {
   },
   en: {
     title: 'Help us with your handwriting',
-    intro: 'We are teaching the app to read handwritten baseball scoring. Write each symbol the way you would on a scorecard, with a finger or a stylus.',
+    intro: 'We are teaching the app to read handwritten baseball scoring. We will show you numbers, letters and plays: write just that, as is, with a finger or a stylus.',
     sessionOf: (n: number) => `A session is ${n} symbols, about 3 minutes.`,
     name: 'Your name or nickname',
     namePlaceholder: 'e.g. Mike',
@@ -52,6 +53,7 @@ const TEXT = {
     notFound: 'This link does not exist.',
     loading: 'Loading…',
     write: 'Write:',
+    exactly: 'Just that, the way you would write it on your sheet.',
     next: 'Next',
     skip: 'Skip',
     clear: 'Clear',
@@ -235,7 +237,7 @@ export default function PublicSampleSession({ code }: { code: string }) {
             <div className="rounded-2xl border border-border bg-card p-4 text-center shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.write}</p>
               <div className="my-1 text-6xl font-bold tabular-nums tracking-tight">{current.value}</div>
-              <p className="text-sm text-muted-foreground">{describeToken(current.value, lang)}</p>
+              <p className="text-sm text-muted-foreground">{L.exactly}</p>
             </div>
             <InkPad strokes={strokes} onChange={setStrokes} onStrokeEnd={setPointerType} className="aspect-square w-full" />
             {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
