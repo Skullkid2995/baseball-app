@@ -494,6 +494,22 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
+  /** Outs already on the board in this inning for this side before the given at-bat (batter outs + runner outs). */
+  function outsBefore(playerId: string, inning: number, teamSide: 'home' | 'opponent'): number {
+    const own = atBats.find((ab) => ab.player_id === playerId && ab.inning === inning && (ab.team_side === teamSide || (!ab.team_side && teamSide === 'home')))
+    const outResults = ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt']
+    let outs = 0
+    for (const ab of atBats) {
+      if (ab.inning !== inning || ab.id === own?.id) continue
+      if (!(ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))) continue
+      if (own?.created_at && ab.created_at && ab.created_at > own.created_at) continue
+      if (outResults.includes(ab.result)) outs++
+      const ro = ab.base_runner_outs
+      if (ro) outs += [ro.first, ro.second, ro.third, ro.home].filter(Boolean).length
+    }
+    return Math.min(3, outs)
+  }
+
   function getAtBatForPlayer(playerId: string, inning: number) {
     return atBats.find(ab => 
       ab.player_id === playerId && 
@@ -1498,6 +1514,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           }}
           activeRunners={getActiveRunners(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
           matchup={matchup}
+          outsBefore={outsBefore(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
           onClose={() => {
             setShowCanvasModal(false)
             setSelectedCell(null)

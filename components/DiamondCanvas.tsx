@@ -107,6 +107,8 @@ interface DiamondCanvasProps {
   activeRunners?: ActiveRunner[]
   /** This batter's history against the pitcher on the mound */
   matchup?: MatchupSummary | null
+  /** Outs already recorded in this inning for this side before this at-bat (live game data) */
+  outsBefore?: number
   onClose: () => void
   playerName: string
   inning: number
@@ -114,7 +116,7 @@ interface DiamondCanvasProps {
   isLocked?: boolean // Game is locked and view-only
 }
 
-export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [], matchup = null }: DiamondCanvasProps) {
+export default function DiamondCanvas({ onSave, onClose, playerName, inning, existingAtBat, isLocked = false, activeRunners = [], matchup = null, outsBefore = 0 }: DiamondCanvasProps) {
   // Classic (paper box, stylus/finger) or Digital (buttons). Remembered per browser.
   const [scoringMode, setScoringMode] = useState<'classic' | 'digital'>(() => {
     try { return localStorage.getItem('scoringMode') === 'digital' ? 'digital' : 'classic' } catch { return 'classic' }
@@ -241,9 +243,12 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
           fieldZone: (existingAtBat.field_zone as string) || '',
           hitDistance: (existingAtBat.hit_distance as string) || '',
           hitAngle: (existingAtBat.hit_angle as string) || '',
-          xCoordinate: (existingAtBat.x_coordinate as number) || 0,
-          yCoordinate: (existingAtBat.y_coordinate as number) || 0
+          xCoordinate: Number(existingAtBat.hit_x ?? existingAtBat.x_coordinate) || 0,
+          yCoordinate: Number(existingAtBat.hit_y ?? existingAtBat.y_coordinate) || 0
         })
+        const hx = Number(existingAtBat.hit_x)
+        const hy = Number(existingAtBat.hit_y)
+        if (Number.isFinite(hx) && Number.isFinite(hy) && (hx !== 0 || hy !== 0)) setBallLandingPosition({ x: hx, y: hy })
         console.log('Loaded field location data:', {
           fieldArea: existingAtBat.field_area,
           fieldZone: existingAtBat.field_zone,
@@ -417,6 +422,13 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
     setShowOutcomeSelection(false)
     setPendingRunnerUpdates([])
   }
+
+  // Out number of this play: outs already in the inning + batter out + runners put out here
+  const BATTER_OUT_CODES = ['K', 'KC', 'GO', 'FO', 'LO', 'PO', 'SF', 'SAC', 'BUNT_OUT', 'DP']
+  const batterOut = BATTER_OUT_CODES.includes(handwritingInput.toUpperCase()) || ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt'].includes(handwritingInput.toLowerCase())
+  const runnerOutsHere = Object.values(baseRunnerOuts).filter(Boolean).length + pendingRunnerUpdates.filter((u) => u.move === 'out').length
+  const outsThisPlay = (batterOut ? 1 : 0) + runnerOutsHere
+  const outNumber = outsThisPlay > 0 ? Math.min(3, outsBefore + outsThisPlay) : 0
 
   // Bases occupied by the other runners (after the play once it is decided, before it otherwise)
   const occupiedBases = (() => {
@@ -667,7 +679,7 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
             >
               <FieldSvg
                 className="absolute inset-0 h-full w-full"
-                view={showFieldSelection ? 'full' : 'infield'}
+                view={showFieldSelection || ballLandingPosition ? 'full' : 'infield'}
                 runners={baseRunners}
                 selectedBase={selectedBase}
                 runnerOuts={baseRunnerOuts}
@@ -699,6 +711,16 @@ export default function DiamondCanvas({ onSave, onClose, playerName, inning, exi
 
             {/* Everything below sits on top of the infield view and hides while picking a landing spot */}
             <div hidden={showFieldSelection}>
+
+            {/* Out circle, bottom right like the paper box: which out of the inning this play made */}
+            {outNumber > 0 && (
+              <div
+                className={`pointer-events-none absolute right-2 flex size-12 items-center justify-center rounded-full border-[3px] border-gray-800 bg-white/95 text-2xl font-black leading-none text-gray-900 shadow-lg ${isOut || isLocked ? 'bottom-2' : 'bottom-14'}`}
+                title={`Out ${outNumber}`}
+              >
+                {outNumber}
+              </div>
+            )}
 
             {/* Count - top right (new at-bats; existing ones show the locked play there) */}
             {!existingAtBat && (
