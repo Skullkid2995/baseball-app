@@ -9,7 +9,7 @@ import OpponentLineupEntry from './OpponentLineupEntry'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePermissions } from '@/contexts/PermissionsContext'
 import { AlertTriangle, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ClipboardList, Clock, CloudSun, MapPin, Play, Plus, Trash2, X } from 'lucide-react'
-import { Alert, Badge, Button, Card, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Panel } from '@/components/ui'
+import { Alert, Badge, Button, Card, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Panel, Select } from '@/components/ui'
 
 interface Game {
   id: string
@@ -49,6 +49,9 @@ export default function GamesList() {
   const [showOpponentLineup, setShowOpponentLineup] = useState<string | null>(null)
   const [gameCreationStep, setGameCreationStep] = useState<'info' | 'ourLineup' | 'opponentLineup'>('info')
   const [newGameId, setNewGameId] = useState<string | null>(null)
+  // Stadiums belong to leagues: the game is played at one of them (free text stays as a fallback)
+  const [stadiums, setStadiums] = useState<{ id: string; name: string; city: string | null; league: string }[]>([])
+  const [stadiumChoice, setStadiumChoice] = useState<string>('')
   const [formData, setFormData] = useState({
     opponent: '',
     game_date: '',
@@ -100,6 +103,22 @@ export default function GamesList() {
     }
   }
 
+  useEffect(() => {
+    supabase
+      .from('stadiums')
+      .select('id, name, city, leagues ( name )')
+      .order('name')
+      .then(({ data }) => {
+        const rows = ((data ?? []) as unknown as { id: string; name: string; city: string | null; leagues: { name: string } | null }[]).map((r) => ({
+          id: r.id,
+          name: r.name,
+          city: r.city,
+          league: r.leagues?.name ?? '',
+        }))
+        setStadiums(rows)
+      })
+  }, [])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -109,6 +128,7 @@ export default function GamesList() {
         .from('games')
         .insert([{
           ...formData,
+          stadium_id: stadiumChoice && stadiumChoice !== 'other' ? stadiumChoice : null,
           our_score: 0,
           opponent_score: 0,
           innings_played: 0,
@@ -324,12 +344,49 @@ export default function GamesList() {
                 />
               </FormField>
               <FormField label={t.stadium}>
-                <Input
-                  type="text"
-                  value={formData.stadium}
-                  onChange={(e) => setFormData({...formData, stadium: e.target.value})}
-                  placeholder="e.g., Yankee Stadium"
-                />
+                {stadiums.length > 0 ? (
+                  <div className="space-y-2">
+                    <Select
+                      value={stadiumChoice}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setStadiumChoice(v)
+                        const st = stadiums.find((x) => x.id === v)
+                        setFormData({ ...formData, stadium: st ? st.name : v === 'other' ? formData.stadium : '' })
+                      }}
+                    >
+                      <option value="">—</option>
+                      {Array.from(new Set(stadiums.map((x) => x.league))).map((league) => (
+                        <optgroup key={league || 'none'} label={league || '—'}>
+                          {stadiums
+                            .filter((x) => x.league === league)
+                            .map((x) => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                                {x.city ? ` · ${x.city}` : ''}
+                              </option>
+                            ))}
+                        </optgroup>
+                      ))}
+                      <option value="other">{language === 'es' ? 'Otro lugar…' : 'Other place…'}</option>
+                    </Select>
+                    {stadiumChoice === 'other' && (
+                      <Input
+                        type="text"
+                        value={formData.stadium}
+                        onChange={(e) => setFormData({ ...formData, stadium: e.target.value })}
+                        placeholder={language === 'es' ? 'Nombre del campo' : 'Field name'}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <Input
+                    type="text"
+                    value={formData.stadium}
+                    onChange={(e) => setFormData({...formData, stadium: e.target.value})}
+                    placeholder="e.g., Yankee Stadium"
+                  />
+                )}
               </FormField>
               <FormField label={t.weather}>
                 <Input

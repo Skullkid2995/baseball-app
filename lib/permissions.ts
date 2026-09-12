@@ -41,6 +41,9 @@ export const FEATURES: FeatureDef[] = [
   { key: 'teams', href: '/teams', group: 'main', label: { es: 'Equipos', en: 'Teams' }, hint: { es: 'Equipos, plantillas y fotos. Editar = alta y cambios de jugadores', en: 'Teams, rosters and photos. Edit = add and change players' } },
   { key: 'players', href: '/players', group: 'main', label: { es: 'Jugadores', en: 'Players' }, hint: { es: 'Directorio de jugadores', en: 'Player directory' } },
   { key: 'games', href: '/games', group: 'main', label: { es: 'Juegos', en: 'Games' }, hint: { es: 'Calendario y resultados. Editar = crear juegos y preparar alineaciones', en: 'Schedule and results. Edit = create games and prepare lineups' } },
+  { key: 'live', href: '/live', group: 'main', label: { es: 'Juego actual', en: 'Current game' }, hint: { es: 'El juego en curso de tu equipo, listo para anotar (menú rápido)', en: "Your team's game in progress, ready to score (quick menu)" } },
+  { key: 'schedule', href: '/schedule', group: 'main', label: { es: 'Calendario', en: 'Schedule' }, hint: { es: 'Calendario de juegos según tu equipo o tu liga (menú rápido)', en: 'Calendar of games for your team or league (quick menu)' } },
+  { key: 'leagues', href: '/leagues', group: 'main', label: { es: 'Ligas', en: 'Leagues' }, hint: { es: 'Ligas, estadios, equipos y directiva. Editar = crear y cambiar', en: 'Leagues, stadiums, teams and officers. Edit = create and change' } },
   { key: 'scorebook', group: 'actions', label: { es: 'Anotar juegos', en: 'Score games' }, hint: { es: 'Abrir el scorebook en vivo. Editar = anotar turnos', en: 'Open the live scorebook. Edit = score at-bats' } },
   { key: 'statistics', href: '/statistics', group: 'analysis', label: { es: 'Estadísticas', en: 'Statistics' }, hint: { es: 'Números del equipo y de cada jugador', en: 'Team and player numbers' } },
   { key: 'lineups', href: '/lineups', group: 'analysis', label: { es: 'Alineaciones', en: 'Lineups' }, hint: { es: 'Plantillas de alineación. Editar = crear y cambiar', en: 'Lineup templates. Edit = create and change' } },
@@ -70,6 +73,8 @@ export interface AppUser {
   role: Role
   player_id: string | null
   active: boolean
+  team_id?: string | null
+  league_id?: string | null
   created_at?: string
 }
 

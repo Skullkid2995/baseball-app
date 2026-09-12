@@ -1,7 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   BarChart3,
+  CalendarCheck,
   CalendarDays,
+  Radio,
+  Trophy,
   ClipboardList,
   LayoutDashboard,
   NotebookPen,
@@ -41,6 +44,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/teams', labelKey: 'teams', feature: 'teams', Icon: Users },
       { href: '/players', labelKey: 'players', feature: 'players', Icon: UserRound },
       { href: '/games', labelKey: 'games', feature: 'games', Icon: CalendarDays },
+      { href: '/live', labelKey: 'liveGame', feature: 'live', Icon: Radio },
+      { href: '/schedule', labelKey: 'schedule', feature: 'schedule', Icon: CalendarCheck },
+      { href: '/leagues', labelKey: 'leagues', feature: 'leagues', Icon: Trophy },
     ],
   },
   {

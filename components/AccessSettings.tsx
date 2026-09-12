@@ -32,10 +32,12 @@ interface UserForm {
   display_name: string
   role: Role
   player_id: string
+  team_id: string
+  league_id: string
   active: boolean
 }
 
-const EMPTY_FORM: UserForm = { email: '', display_name: '', role: 'player', player_id: '', active: true }
+const EMPTY_FORM: UserForm = { email: '', display_name: '', role: 'player', player_id: '', team_id: '', league_id: '', active: true }
 
 const TEXT = {
   es: {
@@ -48,6 +50,10 @@ const TEXT = {
     role: 'Rol',
     player: 'Jugador ligado (opcional)',
     noPlayer: 'Sin jugador',
+    team: 'Equipo (coach / jugador)',
+    noTeam: 'Sin equipo (los jugadores lo heredan del jugador ligado)',
+    league: 'Liga (presidencia)',
+    noLeague: 'Sin liga (se hereda del equipo)',
     active: 'Puede entrar',
     inactive: 'Desactivado',
     owner: 'Dueño',
@@ -86,6 +92,10 @@ const TEXT = {
     role: 'Role',
     player: 'Linked player (optional)',
     noPlayer: 'No player',
+    team: 'Team (coach / player)',
+    noTeam: 'No team (players inherit it from the linked player)',
+    league: 'League (board)',
+    noLeague: 'No league (inherited from the team)',
     active: 'Can sign in',
     inactive: 'Disabled',
     owner: 'Owner',
@@ -135,15 +145,21 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
   const { email: myEmail, refresh } = usePermissions()
   const [users, setUsers] = useState<AppUser[]>([])
   const [players, setPlayers] = useState<RosterPlayer[]>([])
+  const [teamsList, setTeamsList] = useState<{ id: string; name: string; city: string }[]>([])
+  const [leaguesList, setLeaguesList] = useState<{ id: string; name: string }[]>([])
   const [form, setForm] = useState<UserForm | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [u, p] = await Promise.all([
-      supabase.from('app_users').select('id, email, display_name, role, player_id, active, created_at').order('created_at'),
+    const [u, p, tm, lg] = await Promise.all([
+      supabase.from('app_users').select('id, email, display_name, role, player_id, active, team_id, league_id, created_at').order('created_at'),
       supabase.from('players').select('id, first_name, last_name, jersey_number, teams ( name, city )').order('last_name'),
+      supabase.from('teams').select('id, name, city').order('name'),
+      supabase.from('leagues').select('id, name').order('name'),
     ])
+    setTeamsList((tm.data as { id: string; name: string; city: string }[]) ?? [])
+    setLeaguesList((lg.data as { id: string; name: string }[]) ?? [])
     setUsers((u.data as AppUser[]) ?? [])
     const roster = ((p.data ?? []) as unknown as RosterPlayer[]).filter((pl) => pl.teams?.city !== 'Opponent')
     setPlayers(roster)
@@ -165,7 +181,7 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
   }
   const openEdit = (u: AppUser) => {
     setError(null)
-    setForm({ id: u.id, email: u.email, display_name: u.display_name ?? '', role: u.role, player_id: u.player_id ?? '', active: u.active })
+    setForm({ id: u.id, email: u.email, display_name: u.display_name ?? '', role: u.role, player_id: u.player_id ?? '', team_id: u.team_id ?? '', league_id: u.league_id ?? '', active: u.active })
   }
 
   const save = async () => {
@@ -186,6 +202,8 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
       display_name: form.display_name.trim() || null,
       role: form.role,
       player_id: form.player_id || null,
+      team_id: form.team_id || null,
+      league_id: form.league_id || null,
       active: form.active,
     }
     const res = form.id
@@ -260,6 +278,8 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
                       {u.display_name ? `${u.email} · ` : ''}
                       {ROLE_LABELS[u.role][lang]}
                       {linked ? ` · ${linked}` : ''}
+                      {u.team_id ? ` · ${teamsList.find((t) => t.id === u.team_id)?.name ?? ''}` : ''}
+                      {u.league_id ? ` · ${leaguesList.find((l) => l.id === u.league_id)?.name ?? ''}` : ''}
                     </div>
                   </div>
                   <Button size="icon-sm" variant="ghost" onClick={() => openEdit(u)} aria-label={L.editUser}>
@@ -333,6 +353,28 @@ function UsersCard({ L, lang }: { L: Text; lang: 'es' | 'en' }) {
                     {p.first_name} {p.last_name}
                     {p.jersey_number != null ? ` #${p.jersey_number}` : ''}
                     {p.teams?.name ? ` · ${p.teams.name}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.team}</label>
+              <Select value={form.team_id} onChange={(e) => setForm({ ...form, team_id: e.target.value })}>
+                <option value="">{L.noTeam}</option>
+                {teamsList.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.city && t.city !== 'Opponent' ? ` · ${t.city}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.league}</label>
+              <Select value={form.league_id} onChange={(e) => setForm({ ...form, league_id: e.target.value })}>
+                <option value="">{L.noLeague}</option>
+                {leaguesList.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
                   </option>
                 ))}
               </Select>

@@ -10,6 +10,10 @@ interface PermissionsState {
   appUser: AppUser | null
   role: Role | null
   isSuperAdmin: boolean
+  /** Team of a coach / player (own, or inherited from the linked player) */
+  teamId: string | null
+  /** League of a president / VP / treasurer (own, or inherited from the team) */
+  leagueId: string | null
   perms: PermissionMap
   canView: (feature: string) => boolean
   canEdit: (feature: string) => boolean
@@ -28,6 +32,8 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [perms, setPerms] = useState<PermissionMap>({})
+  const [teamId, setTeamId] = useState<string | null>(null)
+  const [leagueId, setLeagueId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -41,10 +47,24 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       return
     }
     const [userRes, permRes] = await Promise.all([
-      supabase.from('app_users').select('id, email, display_name, role, player_id, active, created_at').ilike('email', userEmail).maybeSingle(),
+      supabase.from('app_users').select('id, email, display_name, role, player_id, active, team_id, league_id, created_at').ilike('email', userEmail).maybeSingle(),
       supabase.from('role_permissions').select('role, feature, can_view, can_edit'),
     ])
-    setAppUser((userRes.data as AppUser | null) ?? null)
+    const me = (userRes.data as AppUser | null) ?? null
+    setAppUser(me)
+    // Where the user belongs: own team, else the linked player's team; own league, else the team's league
+    let tId = me?.team_id ?? null
+    let lId = me?.league_id ?? null
+    if (!tId && me?.player_id) {
+      const { data: pl } = await supabase.from('players').select('team_id').eq('id', me.player_id).maybeSingle()
+      tId = (pl?.team_id as string | null) ?? null
+    }
+    if (!lId && tId) {
+      const { data: tm } = await supabase.from('teams').select('league_id').eq('id', tId).maybeSingle()
+      lId = (tm?.league_id as string | null) ?? null
+    }
+    setTeamId(tId)
+    setLeagueId(lId)
     const map: PermissionMap = {}
     for (const row of permRes.data ?? []) {
       const role = row.role as ConfigurableRole
@@ -73,12 +93,14 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       appUser,
       role,
       isSuperAdmin,
+      teamId,
+      leagueId,
       perms,
       canView: (feature) => can(role, perms, feature, 'view'),
       canEdit: (feature) => can(role, perms, feature, 'edit'),
       refresh: load,
     }
-  }, [loading, email, appUser, perms, load])
+  }, [loading, email, appUser, perms, teamId, leagueId, load])
 
   return <PermissionsContext.Provider value={value}>{children}</PermissionsContext.Provider>
 }

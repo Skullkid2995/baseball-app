@@ -9,6 +9,9 @@ export interface Translations {
   teams: string
   players: string
   games: string
+  liveGame: string
+  schedule: string
+  leagues: string
   // Teams
   teamsCount: string
   addTeam: string
@@ -204,6 +207,9 @@ const translations: Record<Language, Translations> = {
     teams: 'Teams',
     players: 'Players',
     games: 'Games',
+    liveGame: 'Current game',
+    schedule: 'Schedule',
+    leagues: 'Leagues',
     // Teams
     teamsCount: 'Teams',
     addTeam: 'Add Team',
@@ -397,6 +403,9 @@ const translations: Record<Language, Translations> = {
     teams: 'Equipos',
     players: 'Jugadores',
     games: 'Juegos',
+    liveGame: 'Juego actual',
+    schedule: 'Calendario',
+    leagues: 'Ligas',
     // Teams
     teamsCount: 'Equipos',
     addTeam: 'Agregar Equipo',

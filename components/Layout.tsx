@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import type { User, Session } from '@supabase/supabase-js'
-import { LogOut, Menu, X, Lock } from 'lucide-react'
+import { BarChart3, CalendarDays, Lock, LogOut, Menu, Radio, X } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import ViewModeSwitcher from '@/components/ViewModeSwitcher'
 import { useViewMode } from '@/contexts/ViewModeContext'
@@ -69,6 +69,12 @@ export default function Layout({ children }: LayoutProps) {
   const current = findNavItem(pathname)
   const visibleGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => canView(i.feature)) })).filter((g) => g.items.length > 0)
   const blocked = !permsLoading && !!current && !canView(current.feature)
+  // Bottom quick menu (phone layout): current game, schedule, statistics
+  const quickItems = [
+    { href: '/live', label: t.liveGame, Icon: Radio, feature: 'live' },
+    { href: '/schedule', label: t.schedule, Icon: CalendarDays, feature: 'schedule' },
+    { href: '/statistics', label: t.statistics, Icon: BarChart3, feature: 'statistics' },
+  ].filter((i) => canView(i.feature))
   const pageTitle = current ? t[current.labelKey] : t.appTitle
   const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : ''
 
@@ -225,7 +231,7 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className={cn('flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8', quickItems.length > 0 && (forceMobile ? 'pb-24' : forceDesktop ? '' : 'pb-24 lg:pb-8'))}>
           <div className={cn('mx-auto w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>
             {permsLoading && current ? (
               <div className="py-16 text-center text-sm text-muted-foreground">…</div>
@@ -244,6 +250,37 @@ export default function Layout({ children }: LayoutProps) {
             )}
           </div>
         </main>
+
+        {quickItems.length > 0 && (
+          <nav
+            className={cn(
+              'fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85',
+              forceMobile ? '' : forceDesktop ? 'hidden' : 'lg:hidden'
+            )}
+            aria-label="quick menu"
+          >
+            <ul className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${quickItems.length}, minmax(0, 1fr))` }}>
+              {quickItems.map(({ href, label, Icon }) => {
+                const active = pathname === href || pathname.startsWith(href + '/')
+                return (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'flex flex-col items-center gap-0.5 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-[11px] font-semibold',
+                        active ? 'text-primary' : 'text-slate-500 hover:text-slate-800'
+                      )}
+                    >
+                      <Icon className="size-5" aria-hidden="true" />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </nav>
+        )}
       </div>
     </div>
   )
