@@ -67,7 +67,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
   const L = language === 'es'
     ? {
         title: 'Anotar turno', classic: 'Clásico', digital: 'Digital',
-        hint: 'Escribe la jugada en la casilla. Marca las bases con una línea o un toque, el out con un círculo abajo a la derecha, rellena las cajitas de bolas (B) y strikes (S) y traza el batazo desde home.',
+        hint: 'Escribe la jugada en la casilla. Marca las bases con una línea o un toque, el out con un círculo abajo a la derecha, marca las cajitas de bolas (B) y strikes (S) con un toque o una raya encima, y traza el batazo desde home.',
         recognized: 'Reconocido', nothing: 'Escribe la jugada…', noSamples: 'Sin muestras: elige la jugada de la lista.',
         correct: 'Correcto', fix: 'Corregir', redo: 'Repetir', pick: 'Elige la jugada', out: 'Out', run: 'Carrera',
         landing: 'Batazo', noLanding: 'sin trazo', rbiLabel: 'Carreras impulsadas', save: 'Guardar turno', close: 'Cerrar', undo: 'Deshacer', clear: 'Borrar',
@@ -76,7 +76,7 @@ export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isL
       }
     : {
         title: 'Score at-bat', classic: 'Classic', digital: 'Digital',
-        hint: 'Write the play in the box. Mark bases with a line or a tap, the out with a circle in the lower right, fill the ball (B) and strike (S) boxes and draw the batted ball from home.',
+        hint: 'Write the play in the box. Mark bases with a line or a tap, the out with a circle in the lower right, mark the ball (B) and strike (S) boxes with a tap or a line over them, and draw the batted ball from home.',
         recognized: 'Recognized', nothing: 'Write the play…', noSamples: 'No samples yet: pick the play from the list.',
         correct: 'Correct', fix: 'Fix', redo: 'Redo', pick: 'Pick the play', out: 'Out', run: 'Run',
         landing: 'Batted ball', noLanding: 'no line', rbiLabel: 'Runs batted in', save: 'Save at-bat', close: 'Close', undo: 'Undo', clear: 'Clear',

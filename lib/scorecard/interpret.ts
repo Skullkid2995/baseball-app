@@ -12,8 +12,8 @@
 import { recognize, type Match, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import {
   BALL_BOXES, BASE_PATH, BASE_RADIUS, FIRST, HIT_MIN_LENGTH, HIT_START_RADIUS, HOME, OUT_AREA_RADIUS, OUT_MARK,
-  PATH_END_RADIUS, PATH_MAX_DEVIATION, SECOND, STRIKE_BOXES, TALLY, TAP_LENGTH, THIRD, bbox, dist, distToSegment, inBox,
-  strokeLength, type Pt,
+  PATH_END_RADIUS, PATH_MAX_DEVIATION, SECOND, STRIKE_BOXES, TALLY, TALLY_BAND, TALLY_SLACK, TAP_LENGTH, THIRD, bbox, dist,
+  distToSegment, inBox, strokeLength, type Pt,
 } from './geometry'
 
 export interface BaseRunners { first: boolean; second: boolean; third: boolean; home: boolean }
@@ -21,8 +21,11 @@ export const NO_BASES: BaseRunners = { first: false, second: false, third: false
 
 export type BoxAction = { type: 'stroke'; points: Stroke } | { type: 'tap'; point: Pt }
 
+export type TallySide = 'balls' | 'strikes'
+
 export type StrokeKind =
   | { kind: 'tap'; point: Pt }
+  | { kind: 'tally'; side: TallySide; boxes: number[] }
   | { kind: 'base_path'; toBase: 1 | 2 | 3 | 4 }
   | { kind: 'hit_line'; end: Pt }
   | { kind: 'out_circle' }
@@ -32,8 +35,12 @@ export type StrokeKind =
 export interface BoxMarks {
   bases: BaseRunners
   outNumber: number
+  /** number of ball / strike boxes marked (derived from ballMarks / strikeMarks) */
   balls: number
   strikes: number
+  /** which of the 3 ball boxes and 2 strike boxes carry a mark; each box is independent, like on paper */
+  ballMarks: boolean[]
+  strikeMarks: boolean[]
   hitLine: Stroke | null
   /** notation strokes (what the recognizer sees) */
   ink: Stroke[]
@@ -42,6 +49,8 @@ export interface BoxMarks {
   outCircles: Stroke[]
   /** digit strokes written inside the out circle */
   outDigitStrokes: Stroke[]
+  /** ticks, slashes and lines drawn over the ball / strike boxes (shown as drawn, like on paper) */
+  tallyStrokes: Stroke[]
 }
 
 export interface Interpretation {
@@ -71,6 +80,32 @@ const baseIndex = (p: Pt): number => {
   return best
 }
 
+/**
+ * A stroke over the ball / strike boxes: a tick, an X or a slash over one box,
+ * or one line drawn across several boxes, the way a scorer marks the count on
+ * paper. Returns the boxes the ink covers, or null when the stroke is not in
+ * the row of boxes.
+ */
+export function tallyStroke(s: Stroke): { side: TallySide; boxes: number[] } | null {
+  if (s.length === 0) return null
+  const b = bbox(s)
+  if (b.maxY > TALLY_BAND) return null
+  const rows: [TallySide, Pt[]][] = [['balls', BALL_BOXES], ['strikes', STRIKE_BOXES]]
+  for (const [side, list] of rows) {
+    const left = Math.min(...list.map((k) => k[0])) - TALLY_SLACK
+    const right = Math.max(...list.map((k) => k[0])) + TALLY + TALLY_SLACK
+    if (b.minX < left || b.maxX > right) continue
+    // Boxes the ink passes over (a little tolerance for a shaky hand)
+    const boxes = list.map((_, i) => i).filter((i) => s.some((p) => p[0] >= list[i][0] - 1 && p[0] <= list[i][0] + TALLY + 1))
+    if (boxes.length > 0) return { side, boxes }
+    // Ink in a gap between boxes: the nearest box to its center
+    let best = 0, bestD = Infinity
+    list.forEach((k, i) => { const d = Math.abs(b.cx - (k[0] + TALLY / 2)); if (d < bestD) { best = i; bestD = d } })
+    return { side, boxes: [best] }
+  }
+  return null
+}
+
 /** Classify one stroke. Pure. */
 export function classifyStroke(s: Stroke): StrokeKind {
   if (s.length === 0) return { kind: 'ink' }
@@ -78,11 +113,9 @@ export function classifyStroke(s: Stroke): StrokeKind {
   const end = s[s.length - 1] as Pt
   const length = strokeLength(s)
   const b = bbox(s)
-  // A tap, a tick or an X inside a ball/strike box counts as a tap on that box
-  if (b.w <= TALLY + 2 && b.h <= TALLY + 2) {
-    const c: Pt = [b.cx, b.cy]
-    if (BALL_BOXES.some((k) => inBox(c, k)) || STRIKE_BOXES.some((k) => inBox(c, k))) return { kind: 'tap', point: c }
-  }
+  // A tick, an X, a slash or a line over the ball/strike boxes marks them
+  const tally = tallyStroke(s)
+  if (tally) return { kind: 'tally', ...tally }
   if (length < TAP_LENGTH || (b.w < 2.5 && b.h < 2.5)) return { kind: 'tap', point: start }
 
   // Base path: starts at a base (or home plate) and ends at a later base, hugging the path
@@ -123,10 +156,23 @@ export function applyTap(marks: BoxMarks, p: Pt): BoxMarks {
   }
   if (dist(p, OUT_MARK) < BASE_RADIUS) { m.outNumber = (m.outNumber + 1) % 4; return m }
   const bi = BALL_BOXES.findIndex((b) => inBox(p, b))
-  if (bi >= 0) { m.balls = m.balls >= bi + 1 ? bi : bi + 1; return m }
+  if (bi >= 0) return applyTally(m, 'balls', [bi], true)
   const si = STRIKE_BOXES.findIndex((b) => inBox(p, b))
-  if (si >= 0) { m.strikes = m.strikes >= si + 1 ? si : si + 1; return m }
+  if (si >= 0) return applyTally(m, 'strikes', [si], true)
   return m
+}
+
+/**
+ * Mark ball / strike boxes (returns a copy). Every box stands on its own, as on
+ * paper: marking one box never fills the boxes before it, and the count is the
+ * number of marked boxes. Ink over a box always marks it (so an X drawn in two
+ * strokes stays marked); a tap toggles, so tapping a marked box clears it.
+ */
+export function applyTally(marks: BoxMarks, side: TallySide, boxes: number[], toggle = false): BoxMarks {
+  const arr = [...(side === 'balls' ? marks.ballMarks : marks.strikeMarks)]
+  for (const i of boxes) if (i >= 0 && i < arr.length) arr[i] = toggle ? !arr[i] : true
+  const count = arr.filter(Boolean).length
+  return side === 'balls' ? { ...marks, ballMarks: arr, balls: count } : { ...marks, strikeMarks: arr, strikes: count }
 }
 
 function markBase(bases: BaseRunners, toBase: 1 | 2 | 3 | 4): BaseRunners {
@@ -139,7 +185,11 @@ function markBase(bases: BaseRunners, toBase: 1 | 2 | 3 | 4): BaseRunners {
 }
 
 export function emptyMarks(): BoxMarks {
-  return { bases: { ...NO_BASES }, outNumber: 0, balls: 0, strikes: 0, hitLine: null, ink: [], pathStrokes: [], outCircles: [], outDigitStrokes: [] }
+  return {
+    bases: { ...NO_BASES }, outNumber: 0, balls: 0, strikes: 0,
+    ballMarks: BALL_BOXES.map(() => false), strikeMarks: STRIKE_BOXES.map(() => false),
+    hitLine: null, ink: [], pathStrokes: [], outCircles: [], outDigitStrokes: [], tallyStrokes: [],
+  }
 }
 
 /**
@@ -157,6 +207,7 @@ export function interpretBox(actions: BoxAction[], templates: Template[], digitT
     kinds.push(k)
     switch (k.kind) {
       case 'tap': marks = applyTap(marks, k.point); break
+      case 'tally': marks = { ...applyTally(marks, k.side, k.boxes), tallyStrokes: [...marks.tallyStrokes, a.points] }; break
       case 'base_path': marks = { ...marks, bases: markBase(marks.bases, k.toBase), pathStrokes: [...marks.pathStrokes, a.points] }; break
       case 'hit_line': marks = { ...marks, hitLine: a.points }; break
       case 'out_circle': circles += 1; marks = { ...marks, outCircles: [...marks.outCircles, a.points] }; break

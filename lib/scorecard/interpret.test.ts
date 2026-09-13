@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyStroke, interpretBox, type BoxAction } from './interpret'
-import { FIRST, HOME, OUT_MARK, SECOND, THIRD } from './geometry'
+import { BALL_BOXES, FIRST, HOME, OUT_MARK, SECOND, STRIKE_BOXES, TALLY, THIRD } from './geometry'
 
 const line = (a: [number, number], b: [number, number], n = 12): [number, number][] =>
   Array.from({ length: n }, (_, i) => [a[0] + ((b[0] - a[0]) * i) / (n - 1), a[1] + ((b[1] - a[1]) * i) / (n - 1)])
@@ -58,5 +58,54 @@ describe('interpretBox', () => {
     const home: BoxAction = { type: 'tap', point: [HOME[0], HOME[1]] }
     expect(interpretBox([home], []).marks.bases.home).toBe(true)
     expect(interpretBox([home, home], []).marks.bases.home).toBe(false)
+  })
+})
+
+describe('ball and strike boxes', () => {
+  const center = (b: [number, number]): [number, number] => [b[0] + TALLY / 2, b[1] + TALLY / 2]
+  const tap = (b: [number, number]): BoxAction => ({ type: 'tap', point: center(b) })
+  // a slash drawn over one box, taller than the box itself
+  const slash = (b: [number, number]) => line([b[0] + 1, b[1] + TALLY + 1.5], [b[0] + TALLY - 1, b[1] - 1.5])
+  const stroke = (points: [number, number][]): BoxAction => ({ type: 'stroke', points })
+
+  it('a line over the second strike box lights that box only', () => {
+    const s = slash(STRIKE_BOXES[1])
+    expect(classifyStroke(s)).toEqual({ kind: 'tally', side: 'strikes', boxes: [1] })
+    const { marks } = interpretBox([stroke(s)], [])
+    expect(marks.strikeMarks).toEqual([false, true])
+    expect(marks.strikes).toBe(1)
+    expect(marks.ink).toEqual([])
+  })
+
+  it('a line over the third ball box lights that box only', () => {
+    const { marks } = interpretBox([stroke(slash(BALL_BOXES[2]))], [])
+    expect(marks.ballMarks).toEqual([false, false, true])
+    expect(marks.balls).toBe(1)
+  })
+
+  it('one line drawn across two ball boxes marks both', () => {
+    const across = line([BALL_BOXES[0][0] + 1, 7], [BALL_BOXES[1][0] + TALLY - 1, 7])
+    expect(classifyStroke(across)).toEqual({ kind: 'tally', side: 'balls', boxes: [0, 1] })
+    const { marks } = interpretBox([stroke(across)], [])
+    expect(marks.ballMarks).toEqual([true, true, false])
+    expect(marks.balls).toBe(2)
+  })
+
+  it('marks add up one by one', () => {
+    expect(interpretBox([stroke(slash(STRIKE_BOXES[0]))], []).marks.strikes).toBe(1)
+    expect(interpretBox([stroke(slash(STRIKE_BOXES[0])), stroke(slash(STRIKE_BOXES[1]))], []).marks.strikes).toBe(2)
+    expect(interpretBox([tap(BALL_BOXES[0]), tap(BALL_BOXES[1]), tap(BALL_BOXES[2])], []).marks.balls).toBe(3)
+  })
+
+  it('an X drawn in two strokes over one box keeps it marked; a tap on a marked box clears it', () => {
+    const b = BALL_BOXES[1]
+    const back = line([b[0] + 1, b[1] - 1.5], [b[0] + TALLY - 1, b[1] + TALLY + 1.5])
+    expect(interpretBox([stroke(slash(b)), stroke(back)], []).marks.balls).toBe(1)
+    expect(interpretBox([tap(b), tap(b)], []).marks.balls).toBe(0)
+    expect(interpretBox([stroke(slash(b)), tap(b)], []).marks.balls).toBe(0)
+  })
+
+  it('a stroke that leaves the row of boxes is not a tally mark', () => {
+    expect(classifyStroke(line([BALL_BOXES[0][0] + 4, 5], [BALL_BOXES[0][0] + 4, 30])).kind).toBe('ink')
   })
 })

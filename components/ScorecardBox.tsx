@@ -125,20 +125,31 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText(outNumber ? String(outNumber) : 'O', u(OUT_MARK[0]), u(OUT_MARK[1]) + u(0.4))
 
-    // ---- tally boxes ----
-    const boxes = (list: Pt[], n: number) => {
+    // ---- tally boxes: never filled; a marked box carries a pencil mark, as on paper ----
+    const inkOver = (b: Pt) => marks.tallyStrokes.some((s) => s.some((p) => p[0] >= b[0] - 1 && p[0] <= b[0] + TALLY + 1 && p[1] <= b[1] + TALLY + 1))
+    const boxes = (list: Pt[], marked: boolean[]) => {
       list.forEach((b, i) => {
         ctx.beginPath()
         ctx.rect(u(b[0]), u(b[1]), u(TALLY), u(TALLY))
-        ctx.fillStyle = i < n ? 'rgba(31,41,55,0.85)' : '#fffdf7'
+        ctx.fillStyle = marked[i] ? 'rgba(191,219,254,0.45)' : '#fffdf7'
         ctx.fill()
-        ctx.strokeStyle = 'rgba(100,116,139,0.8)'
-        ctx.lineWidth = Math.max(1, u(0.5))
+        ctx.strokeStyle = marked[i] ? 'rgba(31,41,55,0.9)' : 'rgba(100,116,139,0.8)'
+        ctx.lineWidth = Math.max(1, u(marked[i] ? 0.7 : 0.5))
         ctx.stroke()
+        // tapped (no ink of its own): a pencil slash so it reads as marked, not filled
+        if (marked[i] && !inkOver(b)) {
+          ctx.strokeStyle = PENCIL
+          ctx.lineWidth = u(1.4)
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.moveTo(u(b[0] + 1.5), u(b[1] + TALLY - 1.5))
+          ctx.lineTo(u(b[0] + TALLY - 1.5), u(b[1] + 1.5))
+          ctx.stroke()
+        }
       })
     }
-    boxes(BALL_BOXES, marks.balls)
-    boxes(STRIKE_BOXES, marks.strikes)
+    boxes(BALL_BOXES, marks.ballMarks)
+    boxes(STRIKE_BOXES, marks.strikeMarks)
     ctx.fillStyle = 'rgba(100,116,139,0.9)'
     ctx.font = `600 ${Math.round(u(3.5))}px ui-sans-serif, system-ui`
     ctx.textBaseline = 'middle'
@@ -161,6 +172,7 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     }
     for (const s of marks.outCircles) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
     for (const s of marks.outDigitStrokes) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
+    for (const s of marks.tallyStrokes) strokePath(s, PENCIL, u(1.6))
     for (const s of marks.ink) strokePath(s, PENCIL, u(2.2))
     if (drawing.current) strokePath(drawing.current, PENCIL, u(2.2))
   }, [marks])

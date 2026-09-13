@@ -127,7 +127,7 @@ export default function ScorecardLabView() {
     setSaving(true)
     try { localStorage.setItem(WRITER_KEY, writer.trim()) } catch { /* ignore */ }
     const allCorrect = Object.values(results).every(Boolean)
-    const interpreted = { token: top?.symbol ?? null, bases: marks.bases, out: marks.outNumber, balls: marks.balls, strikes: marks.strikes, hit: !!marks.hitLine }
+    const interpreted = { token: top?.symbol ?? null, bases: marks.bases, out: marks.outNumber, balls: marks.balls, strikes: marks.strikes, ballMarks: marks.ballMarks, strikeMarks: marks.strikeMarks, hit: !!marks.hitLine }
     const { data, error } = await supabase
       .from('scorecard_samples')
       .insert([{

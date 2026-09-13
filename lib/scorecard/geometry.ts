@@ -39,6 +39,10 @@ export const TALLY_GAP = 2.5
 export const TALLY_TOLERANCE = 2.5 // taps this far outside a box still count
 export const BALL_BOXES: Pt[] = [0, 1, 2].map((i) => [3 + i * (TALLY + TALLY_GAP), 3])
 export const STRIKE_BOXES: Pt[] = [0, 1].map((i) => [97 - TALLY - i * (TALLY + TALLY_GAP), 3])
+/** Ink that stays above this line, in a corner, is a mark over the tally boxes (a slash may overshoot the box) */
+export const TALLY_BAND = 3 + TALLY + 5
+/** How far past the row of boxes, sideways, a tally stroke may reach and still count */
+export const TALLY_SLACK = 4
 
 // Interpretation thresholds
 export const TAP_LENGTH = 3 // strokes shorter than this are taps
