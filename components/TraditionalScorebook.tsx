@@ -1022,7 +1022,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                           disabled={!isCurrentBatter}
                           aria-current={isCurrentBatter ? 'step' : undefined}
                           aria-label={`${cell?.playerName || (uiLang === 'es' ? 'Sin jugador' : 'Empty lineup spot')} · ${uiLang === 'es' ? 'Entrada' : 'Inning'} ${col.inning} · ${uiLang === 'es' ? 'Turno' : 'Appearance'} ${col.appearance} · ${isCurrentBatter ? (uiLang === 'es' ? 'Anotar turno actual' : 'Score current at-bat') : (atBat?.notation || atBat?.result || (uiLang === 'es' ? 'Bloqueado' : 'Locked'))}`}
-                          className={`flex min-h-11 min-w-11 w-full items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${isCurrentBatter ? 'cursor-pointer bg-emerald-100 ring-2 ring-inset ring-emerald-500 hover:bg-emerald-200 active:bg-emerald-300' : 'cursor-not-allowed opacity-60 grayscale'}`}
+                          className={`flex min-h-11 min-w-11 w-full items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${isCurrentBatter ? 'cursor-pointer bg-emerald-100 ring-2 ring-inset ring-emerald-500 hover:bg-emerald-200 active:bg-emerald-300' : 'cursor-not-allowed'}`}
                           onClick={() => { if (isCurrentBatter && cell) handleCellClick(cell) }}
                         >
                           {/* Diamond Shape */}
