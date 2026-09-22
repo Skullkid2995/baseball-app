@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { playerOuts, savedPlay, scoringPlay } from '@/lib/scorecard/plays'
+import { canScoreCell, nextAtBat, type AtBatCell } from '@/lib/scorecard/battingOrder'
 import Scoreboard from './Scoreboard'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -30,6 +31,7 @@ interface Game {
   opponent_score: number
   innings_played: number
   game_status: string
+  batting_first?: 'home' | 'opponent' | null
 }
 
 /** A pitching appearance: who took the mound for a side and when (game_pitchers) */
@@ -77,7 +79,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     umpire: ''
   })
   const [loading, setLoading] = useState(true)
-  const [selectedCell, setSelectedCell] = useState<{playerId: string, inning: number, playerName: string, teamSide?: 'home' | 'opponent'} | null>(null)
+  const [selectedCell, setSelectedCell] = useState<(AtBatCell & { playerName: string }) | null>(null)
   const [showCanvasModal, setShowCanvasModal] = useState(false)
   const [isLocked, setIsLocked] = useState(game.game_status === 'completed')
   const [showOpponentLineupModal, setShowOpponentLineupModal] = useState(false)
@@ -93,7 +95,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [opponentRoster, setOpponentRoster] = useState<RosterPlayer[]>([])
   const [gamePitchers, setGamePitchers] = useState<GamePitcher[]>([])
   const [pitcherPicker, setPitcherPicker] = useState<{ side: 'home' | 'opponent'; reason: 'start' | 'change' } | null>(null)
-  const [pendingCell, setPendingCell] = useState<{ playerId: string; inning: number; playerName: string } | null>(null)
+  const [pendingCell, setPendingCell] = useState<(AtBatCell & { playerName: string }) | null>(null)
   const [matchup, setMatchup] = useState<MatchupSummary | null>(null)
 
   useEffect(() => {
@@ -176,6 +178,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         .select('lineup_template_id, opponent_lineup_template_id, batting_first')
         .eq('id', game.id)
         .single()
+
+      if (gameData?.batting_first) setCurrentGame(prev => ({ ...prev, batting_first: gameData.batting_first }))
 
       // Check if opponent lineup exists, if not show modal to create it
       // Only check once to prevent loops
@@ -487,19 +491,20 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     if (pendingCell) {
       const cell = pendingCell
       setPendingCell(null)
-      openCell(cell.playerId, cell.inning, cell.playerName, player)
+      openCell(cell, player)
     }
   }
 
   /** Open the at-bat dialog and load this batter's history against the pitcher on the mound */
-  async function openCell(playerId: string, inning: number, playerName: string, pitcher?: RosterPlayer | null) {
-    setSelectedCell({ playerId, inning, playerName, teamSide: currentTeamSide })
+  async function openCell(cell: AtBatCell & { playerName: string }, pitcher?: RosterPlayer | null) {
+    if (!canScoreCell(cell, getCurrentBatter(), isLocked)) return
+    setSelectedAtBatId(null)
+    setSelectedCell(cell)
     setShowCanvasModal(true)
     setMatchup(null)
     const p = pitcher ?? currentPitcher(fieldingSide(currentTeamSide))
     if (p) {
-      const existing = getAtBatForPlayer(playerId, inning)
-      setMatchup(await loadMatchup(supabase, playerId, p.id, `${p.first_name} ${p.last_name}`.trim(), existing?.id))
+      setMatchup(await loadMatchup(supabase, cell.playerId, p.id, `${p.first_name} ${p.last_name}`.trim()))
     }
   }
 
@@ -533,14 +538,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   function getCurrentBatter() {
     const lineup = currentTeamSide === 'home' ? players : opponentPlayers
-    if (!lineup.length) return null
-    const rows = atBats.filter(ab => (ab.team_side || 'home') === currentTeamSide)
-      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '') || a.at_bat_number - b.at_bat_number)
-    if (!rows.length) return { playerId: lineup[0].id, inning: 1 }
-    const last = rows[rows.length - 1]
-    const inningOuts = rows.filter(ab => ab.inning === last.inning).reduce((n, ab) => n + playerOuts(ab), 0)
-    const nextIndex = (lineup.findIndex(p => p.id === last.player_id) + 1) % lineup.length
-    return { playerId: lineup[nextIndex].id, inning: last.inning + (inningOuts >= 3 ? 1 : 0) }
+    return nextAtBat(lineup, atBats, currentTeamSide)
   }
 
   // Determine if we should add a duplicate column for the active inning
@@ -568,42 +566,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
-  // Check if a specific team (home or opponent) has 3 outs in an inning
-  function hasThreeOutsForTeam(inning: number, teamSide: 'home' | 'opponent') {
-    // Filter at-bats for the specific team in this inning
-    // Only count at-bats that explicitly belong to this team
-    const inningAtBats = atBats.filter(ab => {
-      if (ab.inning !== inning) return false
-      
-      // If team_side is explicitly set, use it
-      if (ab.team_side) {
-        return ab.team_side === teamSide
-      }
-      
-      // If team_side is not set (legacy data), only count as 'home' if checking for 'home'
-      // Don't count legacy data as 'opponent' - be strict about opponent team
-      if (teamSide === 'home') {
-        return true // Legacy at-bats default to home
-      } else {
-        return false // Don't count legacy at-bats as opponent
-      }
-    })
-    
-    const outsInInning = inningAtBats.reduce((sum, ab) => sum + playerOuts(ab), 0)
-    
-    return outsInInning >= 3
-  }
-
-  function hasPlayerBattedInInning(playerId: string, inning: number) {
-    return atBats.some(ab => 
-      ab.player_id === playerId && 
-      ab.inning === inning &&
-      (ab.team_side === currentTeamSide || (!ab.team_side && currentTeamSide === 'home'))
-    )
-  }
-
-  /** Runners on base in this inning for this side, from other batters' boxes (not out, not scored). */
-  function getActiveRunners(playerId: string, inning: number, teamSide: 'home' | 'opponent'): ActiveRunner[] {
+  /** Runners still on base for this inning and side; optionally exclude the batter being edited. */
+  function getActiveRunners(playerId: string | null, inning: number, teamSide: 'home' | 'opponent'): ActiveRunner[] {
     const list: ActiveRunner[] = []
     for (const ab of atBats) {
       if (ab.inning !== inning || ab.player_id === playerId) continue
@@ -620,16 +584,16 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return list.sort((a, b) => order[a.base] - order[b.base])
   }
 
-  function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
-    setSelectedAtBatId(typeof existingAtBat?.id === 'string' ? existingAtBat.id : null)
+  function handleCellClick(cell: AtBatCell & { playerName: string }) {
+    if (!canScoreCell(cell, getCurrentBatter(), isLocked)) return
     const side = fieldingSide(currentTeamSide)
-    // Allow viewing (but not editing) when locked; otherwise we must know who is pitching first
-    if (!isLocked && !currentPitcher(side)) {
-      setPendingCell({ playerId, inning, playerName })
+    // We must know who is pitching before scoring the current at-bat.
+    if (!currentPitcher(side)) {
+      setPendingCell(cell)
       setPitcherPicker({ side, reason: 'start' })
       return
     }
-    openCell(playerId, inning, playerName)
+    openCell(cell)
   }
 
   async function saveScorebook() {
@@ -678,6 +642,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
    * retired in their own box right away.
    */
   async function recordRunnerEvent(ev: RunnerEventInput) {
+    if (!selectedCell || !canScoreCell(selectedCell, getCurrentBatter(), isLocked)) {
+      throw new Error(uiLang === 'es' ? 'Este turno ya terminó. Cierra y selecciona el turno verde.' : 'This at-bat has ended. Close and select the green at-bat.')
+    }
     const teamSide = selectedCell?.teamSide || currentTeamSide || 'home'
     const runnerRow = atBats.find((ab) => ab.id === ev.runnerAtBatId)
     if (!runnerRow) return
@@ -716,6 +683,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) {
     if (!selectedCell || saveInFlight.current || isLocked) return
+    // A saved id is retained only to retry a partially saved play in this still-open editor.
+    if (!selectedAtBatId && !canScoreCell(selectedCell, getCurrentBatter(), isLocked)) {
+      throw new Error(uiLang === 'es' ? 'Este turno ya terminó. Cierra y selecciona el turno verde.' : 'This at-bat has ended. Close and select the green at-bat.')
+    }
     const normalized = savedPlay(notation, baseRunners, baseRunnerOuts)
     const play = scoringPlay(notation)!
     const runnerOuts = (runnerUpdates || []).filter(u => u.move === 'out').length
@@ -878,13 +849,19 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     return <LoadingState label="Loading scorebook..." />
   }
 
+  const scoreboardBatter = getCurrentBatter()
+  const scoreboardInning = scoreboardBatter?.inning || 1
+  const scoreboardOuts = Math.min(3, atBats.filter(ab => ab.inning === scoreboardInning && (ab.team_side || 'home') === currentTeamSide).reduce((sum, ab) => sum + playerOuts(ab), 0))
+  const scoreboardRunners = isLocked || scoreboardOuts >= 3 ? [] : getActiveRunners(null, scoreboardInning, currentTeamSide)
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Game Information Header */}
       <div className="space-y-4">
         <Scoreboard home={homeTeamName} away={game.opponent} homeScore={currentGame.our_score} awayScore={currentGame.opponent_score}
-          inning={getCurrentBatter()?.inning || 1} outs={Math.min(3, atBats.filter(ab => ab.inning === (getCurrentBatter()?.inning || 1) && (ab.team_side || 'home') === currentTeamSide).reduce((sum, ab) => sum + playerOuts(ab), 0))}
-          batter={(currentTeamSide === 'home' ? players : opponentPlayers).find(p => p.id === getCurrentBatter()?.playerId)?.first_name}
+          inning={scoreboardInning} outs={scoreboardOuts} runners={scoreboardRunners} battingTeam={currentTeamSide === 'home' ? homeTeamName : game.opponent}
+          half={currentGame.batting_first ? (currentTeamSide === currentGame.batting_first ? 'top' : 'bottom') : undefined}
+          batter={(currentTeamSide === 'home' ? players : opponentPlayers).find(p => p.id === scoreboardBatter?.playerId)?.first_name}
           language={uiLang} status={isLocked ? (uiLang === 'es' ? 'Final' : 'Final') : undefined} />
         {saveNotice && <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 font-semibold text-emerald-900">✓ {saveNotice}</div>}
 
@@ -984,6 +961,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       </div>
 
       {/* Scorebook Grid */}
+      {!isLocked && <p className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+        <span className="size-3 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+        {uiLang === 'es' ? 'Toca el turno verde para anotar. Los demás turnos están bloqueados.' : 'Tap the green at-bat to score. All other at-bats are locked.'}
+      </p>}
       <div className="overflow-x-auto rounded-xl border border-border bg-card scrollbar-thin">
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -1031,53 +1012,18 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   {/* Inning Columns with Diamond Grids */}
                   {getInningColumns().map((col, inningIndex) => {
                     const atBat = player ? getAtBatForPlayerNth(player.id, col.inning, col.appearance) : null
-                    const currentBatter = getCurrentBatter()
-                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === col.inning && !atBat
-                    
-                    // Check if this cell should be locked
-                    // Lock cells only for the team being viewed if that team has 3 outs in this inning
-                    // Don't lock cells for the other team, even if they have 3 outs (they're next to bat)
-                    const inningNumber = col.inning
-                    
-                    // Only lock if:
-                    // 1. The team being viewed has 3 outs in this inning
-                    // 2. AND this specific player hasn't batted in this inning
-                    // 3. AND there are actually at-bats for this team in this inning (to prevent locking empty innings)
-                    const threeOutsForViewedTeam = hasThreeOutsForTeam(inningNumber, currentTeamSide)
-                    const playerBatted = player ? hasPlayerBattedInInning(player.id, inningNumber) : false
-                    
-                    // Check if there are any at-bats for the viewed team in this inning
-                    const hasAtBatsForTeam = atBats.some(ab => {
-                      if (ab.inning !== inningNumber) return false
-                      if (ab.team_side) {
-                        return ab.team_side === currentTeamSide
-                      }
-                      // Legacy data defaults to home
-                      return !ab.team_side && currentTeamSide === 'home'
-                    })
-                    
-                    // Only lock if team has 3 outs AND player hasn't batted AND there are at-bats for this team
-                    const isLockedCell = threeOutsForViewedTeam && !playerBatted && hasAtBatsForTeam
-                    
+                    const cell = player ? { playerId: player.id, playerName: `${player.first_name} ${player.last_name}`, inning: col.inning, appearance: col.appearance, teamSide: currentTeamSide } : null
+                    const isCurrentBatter = !!cell && !atBat && canScoreCell(cell, scoreboardBatter, isLocked)
+
                     return (
-                      <td key={inningIndex} className="relative border-r border-border px-1 py-1">
-                        <div 
-                          className={`w-full h-full flex items-center justify-center transition-colors ${
-                            isLockedCell 
-                              ? 'cursor-not-allowed bg-slate-100' 
-                              : 'cursor-pointer rounded-md hover:bg-accent active:bg-blue-100'
-                          }`}
-                          onClick={() => {
-                            if (!isLockedCell && player) {
-                              // For duplicate columns, force creation of a new at-bat (pass undefined)
-                              handleCellClick(
-                                player.id,
-                                inningNumber,
-                                `${player.first_name} ${player.last_name}`,
-                                (atBat as unknown as Record<string, unknown> || undefined)
-                              )
-                            }
-                          }}
+                      <td key={inningIndex} className={`relative border-r border-border px-1 py-1 ${isCurrentBatter ? 'bg-emerald-50' : 'bg-slate-100/80'}`}>
+                        <button
+                          type="button"
+                          disabled={!isCurrentBatter}
+                          aria-current={isCurrentBatter ? 'step' : undefined}
+                          aria-label={`${cell?.playerName || (uiLang === 'es' ? 'Sin jugador' : 'Empty lineup spot')} · ${uiLang === 'es' ? 'Entrada' : 'Inning'} ${col.inning} · ${uiLang === 'es' ? 'Turno' : 'Appearance'} ${col.appearance} · ${isCurrentBatter ? (uiLang === 'es' ? 'Anotar turno actual' : 'Score current at-bat') : (atBat?.notation || atBat?.result || (uiLang === 'es' ? 'Bloqueado' : 'Locked'))}`}
+                          className={`flex min-h-11 min-w-11 w-full items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${isCurrentBatter ? 'cursor-pointer bg-emerald-100 ring-2 ring-inset ring-emerald-500 hover:bg-emerald-200 active:bg-emerald-300' : 'cursor-not-allowed opacity-60 grayscale'}`}
+                          onClick={() => { if (isCurrentBatter && cell) handleCellClick(cell) }}
                         >
                           {/* Diamond Shape */}
                           <div className="relative w-8 h-8">
@@ -1126,12 +1072,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                             
                             {/* Touch indicator when empty */}
                             {!atBat && player && (
-                              <div className="absolute inset-0 flex items-center justify-center text-slate-300">
+                              <div className={`absolute inset-0 flex items-center justify-center ${isCurrentBatter ? 'text-emerald-700' : 'text-slate-300'}`}>
                                 <Plus className="size-3" aria-hidden="true" />
                               </div>
                             )}
                           </div>
-                        </div>
+                        </button>
                       </td>
                     )
                   })}
@@ -1169,7 +1115,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             </p>
           ) : (
             <div className="space-y-1">
-              <p>• Tap diamond cells to draw on the diamond</p>
+              <p>{uiLang === 'es' ? '• Solo el turno verde está habilitado para anotar.' : '• Only the green at-bat is enabled for scoring.'}</p>
               <p>• Draw notation with finger or stylus (K, 6-3, arrows, etc.)</p>
               <p>• Summary columns auto-calculate totals</p>
             </div>
@@ -1275,6 +1221,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                 onClick={async () => {
                   // Opponent bats first
                   setCurrentTeamSide('opponent')
+                  setCurrentGame(prev => ({ ...prev, batting_first: 'opponent' }))
                   setHomeAwayChecked(true)
                   setShowHomeAwayModal(false)
                   
@@ -1298,6 +1245,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                 onClick={async () => {
                   // Home team (Dodgers) bats first
                   setCurrentTeamSide('home')
+                  setCurrentGame(prev => ({ ...prev, batting_first: 'home' }))
                   setHomeAwayChecked(true)
                   setShowHomeAwayModal(false)
                   

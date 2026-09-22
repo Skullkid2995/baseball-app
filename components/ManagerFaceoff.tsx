@@ -146,8 +146,10 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
       {snapshot.canStart ? <Button disabled={busy || !!syncError} onClick={() => void mutate('start')}>{t('Iniciar scorecard compartido', 'Start shared scorecard')}</Button> : <p>{t('Espera a que un administrador inicie el scorecard.', 'Wait for an administrator to start the scorecard.')}</p>}
     </section> : <>
       <Scoreboard home={room.names.home} away={room.names.opponent} homeScore={room.state.score.home} awayScore={room.state.score.opponent}
-        inning={room.state.inning} outs={room.state.outs} batter={batterName} language={lang}
-        status={room.state.status === 'final' ? t('Final', 'Final') : room.state.half === 'top' ? t('Alta · En juego', 'Top · Live') : t('Baja · En juego', 'Bottom · Live')} />
+        inning={room.state.inning} half={room.state.half} outs={room.state.outs} batter={batterName} language={lang}
+        battingTeam={room.names[room.state.battingSide]}
+        runners={room.state.status === 'final' ? [] : room.state.runners.map(r => ({ playerName: r.name, base: (['first', 'second', 'third'] as const)[r.base - 1] }))}
+        status={room.state.status === 'final' ? t('Final', 'Final') : t('En juego', 'Live')} />
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{t('Corredores', 'Runners')}: {room.state.runners.map(r => r.name + ' (' + r.base + 'B)').join(', ') || '—'}</span><span>{syncError ? t('Sin conexión', 'Disconnected') : t('Sincronizado', 'Synced') + ' ' + lastSync}</span></div>
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={panel}>
