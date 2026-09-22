@@ -18,7 +18,6 @@ export interface ScorecardBoxProps {
   className?: string
   onPointerType?: (pointerType: string) => void
   onDrawingChange?: (drawing: boolean) => void
-  pendingActions?: BoxAction[]
 }
 
 const PENCIL = '#1f2937'
@@ -29,7 +28,7 @@ const PENCIL = '#1f2937'
  * taps in 0-100 units and paints the marks the interpreter derived from them.
  * Pen input gets palm rejection (touch is ignored while a pen is in use).
  */
-export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType, onDrawingChange, pendingActions }: ScorecardBoxProps) {
+export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType, onDrawingChange }: ScorecardBoxProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef<Stroke | null>(null)
   const penActive = useRef(false)
@@ -177,9 +176,8 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     for (const s of marks.outDigitStrokes) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
     for (const s of marks.tallyStrokes) strokePath(s, PENCIL, u(1.6))
     for (const s of marks.ink) strokePath(s, PENCIL, u(2.2))
-    for (const action of pendingActions || []) strokePath(action.type === 'stroke' ? action.points : [action.point], PENCIL, u(2.2))
     if (drawing.current) strokePath(drawing.current, PENCIL, u(2.2))
-  }, [marks, pendingActions])
+  }, [marks])
 
   useEffect(() => {
     draw()

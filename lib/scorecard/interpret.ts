@@ -224,7 +224,7 @@ export function interpretBox(actions: BoxAction[], templates: Template[], digitT
   if (outDigit) marks = { ...marks, outNumber: Number(outDigit.symbol) }
   else if (circles > 0 || marks.outDigitStrokes.length) marks = { ...marks, outNumber: Math.min(3, Math.max(marks.outNumber, circles || 1)) }
 
-  const tokenMatches = marks.ink.length ? recognize(marks.ink, templates).slice(0, 3) : []
+  const tokenMatches = marks.ink.length && templates.length ? recognize(marks.ink, templates).slice(0, 3) : []
   return { marks, tokenMatches, outDigit, kinds }
 }
 

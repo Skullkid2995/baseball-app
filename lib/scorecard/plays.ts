@@ -44,7 +44,7 @@ export const SCORING_PLAYS: ScoringPlay[] = [
 const aliases: Record<string, string> = {
   H1: '1B', H2: '2B', H3: '3B', HIT: '1B', HOMER: 'HR', HOMERUN: 'HR',
   BUNT_SINGLE: 'BUNT', INFIELD_HIT: 'INF', INFIELD_SINGLE: 'INF', OUT: 'GO',
-  SO: 'K', STRIKEOUT_LOOKING: 'KC', F: 'FO', L: 'LO', P: 'PO', SH: 'SAC',
+  SO: 'K', SK: 'K', STRIKEOUT_LOOKING: 'KC', F: 'FO', L: 'LO', P: 'PO', SH: 'SAC',
   SAC_FLY: 'SF', SAC_BUNT: 'SAC', FIELDERS_CHOICE_OUT: 'FC', FIELDER_CHOICE: 'FC',
   BUNT_GROUND_OUT: 'BUNT_OUT', '6-4-3': 'DP', '4-6-3': 'DP', '5-4-3': 'DP',
   DOUBLE_PLAY: 'DP', TRIPLE_PLAY: 'TP', INTENTIONAL_WALK: 'IBB',

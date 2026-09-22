@@ -1,22 +1,26 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Template } from '@/lib/handwriting/recognizer'
+import { recognize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { createRecognitionDelay } from '@/lib/handwriting/recognitionDelay'
 import { interpretBox, type BoxAction } from './interpret'
 
-const EMPTY_ACTIONS: BoxAction[] = []
-
 export function useScorecardInterpretation(actions: BoxAction[], templates: Template[]) {
-  const [settledActions, setSettledActions] = useState<BoxAction[]>(EMPTY_ACTIONS)
+  const [settledInk, setSettledInk] = useState('[]')
   const [drawing, setDrawing] = useState(false)
-  const delay = useMemo(() => createRecognitionDelay<BoxAction[]>(setSettledActions), [])
+  const delay = useMemo(() => createRecognitionDelay<string>(setSettledInk), [])
+  // Counts, base paths, hit locations and out marks respond on every completed stroke.
+  const { marks } = useMemo(() => interpretBox(actions, [],
+    templates.filter(t => ['1', '2', '3'].includes(t.symbol))), [actions, templates])
+  // Only notation ink belongs to the delayed read. Marking a ball or a base does
+  // not invalidate a result already read from exactly the same ink.
+  const ink = JSON.stringify(marks.ink)
 
   useEffect(() => {
-    if (!actions.length) setSettledActions(actions)
-    else if (!drawing) delay.schedule(actions)
+    if (ink === '[]') setSettledInk(ink)
+    else if (!drawing && ink !== settledInk) delay.schedule(ink)
     return delay.cancel
-  }, [actions, drawing, delay])
+  }, [ink, settledInk, drawing, delay])
 
   const onDrawingChange = useCallback((active: boolean) => {
     // Cancel synchronously, so a timer cannot fire while the next stroke starts.
@@ -24,18 +28,13 @@ export function useScorecardInterpretation(actions: BoxAction[], templates: Temp
     setDrawing(active)
   }, [delay])
 
-  // Keep previous marks and paint new strokes as raw ink until the pause ends.
-  // Undo/clear must never leave deleted marks or suggestions on the canvas.
-  const hasSettledPrefix = settledActions.every((action, i) => action === actions[i])
-  const visibleActions = hasSettledPrefix ? settledActions : EMPTY_ACTIONS
-  const interpretation = useMemo(() => interpretBox(visibleActions, templates,
-    templates.filter(t => ['1', '2', '3'].includes(t.symbol))), [visibleActions, templates])
-  const waiting = drawing || (actions.length > 0 && actions !== settledActions)
+  const tokenMatches = useMemo(() => settledInk === '[]' ? [] :
+    recognize(JSON.parse(settledInk) as Stroke[], templates).slice(0, 3), [settledInk, templates])
+  const waiting = ink !== '[]' && (drawing || ink !== settledInk)
 
   return {
-    marks: interpretation.marks,
-    tokenMatches: waiting ? [] : interpretation.tokenMatches,
-    pendingActions: actions.slice(visibleActions.length),
+    marks,
+    tokenMatches: waiting || ink === '[]' ? [] : tokenMatches,
     waiting,
     onDrawingChange,
   }

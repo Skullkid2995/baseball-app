@@ -6,7 +6,7 @@ import { applyEvent, createGame } from '@/lib/rules/engine'
 import { demoLineup } from '@/lib/rules/scenarios'
 
 describe('saved scorecard results', () => {
-  it.each(['K', 'KC', 'F', 'L', 'P', 'F8', 'L-5', '3U', '6-3', 'SF', 'SAC', 'SH', 'DP', 'TP'])('%s persists an out and cannot also score the batter', notation => {
+  it.each(['K', 'SK', 'KC', 'F', 'L', 'P', 'F8', 'L-5', '3U', '6-3', 'SF', 'SAC', 'SH', 'DP', 'TP'])('%s persists an out and cannot also score the batter', notation => {
     const saved = savedPlay(notation, { ...emptyBases(), home: true })
     expect(playerOuts(saved)).toBe(1)
     expect(saved.base_runner_outs.first).toBe(true)

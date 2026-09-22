@@ -60,8 +60,9 @@ rows written by the scorebook.
 ## Unified scorekeeping
 
 The scorebook combines handwriting and touch controls in one responsive editor.
-Ink stays visible while writing; interpretation waits for a four-second pause
-after the last stroke, restarting when the next stroke begins.
+Ink stays visible while writing. Only play-code recognition waits for a
+four-second pause; ball/strike marks, base paths and hit directions respond
+immediately. Active runners are labeled beside their bases, with full names below.
 Choose a labeled hit, out, or reach-base result; confirm each runner's destination
 and RBI before saving. Batter outs and runner outs are tracked separately so a
 double play counts twice without counting the batter twice. Failed saves keep the

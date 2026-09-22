@@ -59,6 +59,32 @@ describe('interpretBox', () => {
     expect(interpretBox([home], []).marks.bases.home).toBe(true)
     expect(interpretBox([home, home], []).marks.bases.home).toBe(false)
   })
+
+  it('updates count, base and hit marks while unfinished notation remains unread', () => {
+    const notation: BoxAction = { type: 'stroke', points: line([40, 35], [40, 50]) }
+    const hit = line(HOME, [25, 30])
+    const { marks, tokenMatches } = interpretBox([
+      notation,
+      { type: 'stroke', points: line([4, 10], [10, 4]) },
+      { type: 'stroke', points: line([90, 10], [96, 4]) },
+      { type: 'stroke', points: line(HOME, FIRST) },
+      { type: 'stroke', points: hit },
+    ], [])
+    expect(marks.balls).toBe(1)
+    expect(marks.strikes).toBe(1)
+    expect(marks.bases.first).toBe(true)
+    expect(marks.hitLine).toEqual(hit)
+    expect(marks.ink).toEqual([notation.points])
+    expect(tokenMatches).toEqual([])
+  })
+
+  it('leaves the notation identity unchanged when field marks are added or undone', () => {
+    const notation: BoxAction = { type: 'stroke', points: line([40, 35], [40, 50]) }
+    const fieldMark: BoxAction = { type: 'tap', point: SECOND }
+    const key = (actions: BoxAction[]) => JSON.stringify(interpretBox(actions, []).marks.ink)
+    expect(key([notation, fieldMark])).toBe(key([notation]))
+    expect(key([fieldMark])).toBe('[]')
+  })
 })
 
 describe('ball and strike boxes', () => {
