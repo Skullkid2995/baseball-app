@@ -8,12 +8,15 @@ import {
   TAP_LENGTH, THIRD, dist, strokeLength, type Pt,
 } from '@/lib/scorecard/geometry'
 import { cn } from '@/lib/utils'
+import { notationInk } from '@/lib/scorecard/notationInk'
 
 export interface ScorecardBoxProps {
   actions: BoxAction[]
   onChange: (actions: BoxAction[]) => void
   /** interpretation of the actions (from interpretBox) */
   marks: BoxMarks
+  /** Selected result, rendered as pencil strokes when the scorer used the buttons. */
+  notation?: string
   disabled?: boolean
   className?: string
   onPointerType?: (pointerType: string) => void
@@ -28,7 +31,7 @@ const PENCIL = '#1f2937'
  * taps in 0-100 units and paints the marks the interpreter derived from them.
  * Pen input gets palm rejection (touch is ignored while a pen is in use).
  */
-export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType, onDrawingChange }: ScorecardBoxProps) {
+export default function ScorecardBox({ actions, onChange, marks, notation, disabled = false, className, onPointerType, onDrawingChange }: ScorecardBoxProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef<Stroke | null>(null)
   const penActive = useRef(false)
@@ -175,9 +178,11 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     for (const s of marks.outCircles) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
     for (const s of marks.outDigitStrokes) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
     for (const s of marks.tallyStrokes) strokePath(s, PENCIL, u(1.6))
+    // Keep generated pencil notation separate from user input and calibration samples.
+    if (notation && !marks.ink.length) for (const s of notationInk(notation)) strokePath(s, PENCIL, u(1.1))
     for (const s of marks.ink) strokePath(s, PENCIL, u(2.2))
     if (drawing.current) strokePath(drawing.current, PENCIL, u(2.2))
-  }, [marks])
+  }, [marks, notation])
 
   useEffect(() => {
     draw()

@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { supabase } from '@/lib/supabase'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
-import { interpretBox, type BoxAction } from '@/lib/scorecard/interpret'
+import { interpretBox, type BoxAction, type BoxMarks } from '@/lib/scorecard/interpret'
 import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
-import { scoringPlay } from '@/lib/scorecard/plays'
+import { emptyBases, playBases, scoringPlay } from '@/lib/scorecard/plays'
 import PlayPicker from './PlayPicker'
 import Scoreboard from './Scoreboard'
 import { applyEvent, type Side } from '@/lib/rules/engine'
@@ -15,9 +15,15 @@ import { notationEvent, type Room } from '@/lib/faceoff/workflow'
 import ScorecardBox from './ScorecardBox'
 import ScorecardField from './ScorecardField'
 import HandwritingConfirmation from './HandwritingConfirmation'
+import NotationGuide from './NotationGuide'
 import { Button } from '@/components/ui'
 
 interface Snapshot { room: Room | null; side: Side | null; canStart: boolean; isSuperAdmin: boolean }
+function withBasePath(marks: BoxMarks, notation: string): BoxMarks {
+  const play = scoringPlay(notation)
+  if (play?.outs) return { ...marks, bases: emptyBases() }
+  return play && !Object.values(marks.bases).some(Boolean) ? { ...marks, bases: playBases(play) } : marks
+}
 export default function ManagerFaceoff({ gameId }: { gameId: string }) {
   const { language } = useLanguage()
   const lang = language === 'es' ? 'es' : 'en'
@@ -155,9 +161,10 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
         <section className={panel}>
           <h2 className="font-semibold">{t('Escribir jugada', 'Write a play')} · {room.state.currentBatter ? room.state.batterLines[room.state.currentBatter.playerId]?.name : '—'}</h2>
           {!canWrite && <p>{room.pending ? t('Esperando validación.', 'Waiting for validation.') : t('Es el turno del otro equipo.', 'The other team is scoring.')}</p>}
-          <div className="max-w-md"><ScorecardField actions={actions} onChange={editInk} onDrawingChange={marks.onDrawingChange} marks={{ ...marks.marks, outNumber: selectedPlay?.outs ? Math.min(3, room.state.outs + selectedPlay.outs) : marks.marks.outNumber }} disabled={!canWrite || busy || !!syncError} language={lang}
+          <div className="max-w-md"><ScorecardField actions={actions} onChange={editInk} onDrawingChange={marks.onDrawingChange} marks={{ ...withBasePath(marks.marks, notation), outNumber: selectedPlay?.outs ? Math.min(3, room.state.outs + selectedPlay.outs) : marks.marks.outNumber }} notation={selectedPlay ? notation : undefined} disabled={!canWrite || busy || !!syncError} language={lang}
             runners={room.state.runners.filter(r => r.base < 4).map(r => ({ playerName: r.name, base: (['first', 'second', 'third'] as const)[r.base - 1] }))} /></div>
           <HandwritingConfirmation matches={marks.tokenMatches} ink={marks.marks.ink} value={notation} onConfirm={choose} waiting={marks.waiting} language={lang} shared disabled={!canWrite || busy || !!syncError} />
+          {selectedPlay && <NotationGuide notation={notation} language={lang} />}
           <div className="flex gap-2"><Button variant="outline" disabled={busy || !actions.length} onClick={() => editInk(actions.slice(0, -1))}>{t('Deshacer', 'Undo')}</Button><Button variant="outline" disabled={busy} onClick={clearDraft}>{t('Borrar', 'Clear')}</Button></div>
           <PlayPicker value={notation} onChange={choose} language={lang} shared disabled={!canWrite || busy || !!syncError} outs={room.state.outs} runners={room.state.runners.length} />
           {selectedPlay && <div role="status" className={'rounded-xl p-3 font-bold ' + (selectedPlay.outs ? 'bg-rose-50 text-rose-800' : 'bg-emerald-50 text-emerald-800')}>{selectedPlay[lang]} · {selectedPlay.outs ? selectedPlay.outs + ' OUT' + (selectedPlay.outs > 1 ? 'S' : '') : t('A salvo', 'Safe')}</div>}
@@ -171,7 +178,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
           {room.pending ? <>
             <p>{room.pending.batter} · {room.pending.notation} · {t('Entrada', 'Inning')} {room.pending.inning}</p>
             {room.pending.adminTest && <p className="text-amber-700">{t('Acción de prueba', 'Test action')}</p>}
-            <div className="max-w-md"><ScorecardBox actions={room.pending.ink} onChange={() => {}} marks={{ ...pendingMarks.marks, outNumber: room.pending.outNumber || 0 }} disabled /></div>
+            <div className="max-w-md"><ScorecardBox actions={room.pending.ink} onChange={() => {}} marks={{ ...withBasePath(pendingMarks.marks, room.pending.notation), outNumber: room.pending.outNumber || 0 }} notation={room.pending.notation} disabled /></div>
             {pendingPreview && <p>{t('Al aceptar', 'On acceptance')}: {pendingPreview.score.home}–{pendingPreview.score.opponent} · {t('Entrada', 'Inning')} {pendingPreview.inning} {pendingPreview.half} · {pendingPreview.outs} outs<br />{t('Corredores', 'Runners')}: {pendingPreview.runners.map(r => `${r.name} (${r.base})`).join(', ') || '—'}</p>}
             {side && side !== room.pending.side ? <>
               <label className="block text-sm">{t('Nota de corrección', 'Correction note')}<textarea className="mt-1 w-full rounded border border-border bg-background p-3" value={note} maxLength={1000} onChange={e => setNote(e.target.value)} /></label>
@@ -183,7 +190,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
       <section className={panel}><h2 className="font-semibold">{t('Scorecards e historial', 'Scorecards and history')}</h2>
         {(['home', 'opponent'] as Side[]).map(team => <div key={team}><h3 className="font-semibold">{room.names[team]}</h3><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {room.history.filter(p => p.side === team).map(p => <details key={p.id} className="rounded border border-border p-2 text-sm"><summary><span className={scoringPlay(p.notation)?.outs ? 'font-bold text-rose-700' : 'font-bold text-emerald-700'}>{p.notation}{scoringPlay(p.notation)?.outs ? ' · OUT' : ''}</span><br />{p.inning} · {p.batter}<br />{p.status === 'accepted' ? t('Aceptada', 'Accepted') : t('Corregir', 'Correction requested')}{p.adminTest ? ' · TEST' : ''}</summary>
-            <ScorecardBox actions={p.ink} onChange={() => {}} marks={{ ...interpretBox(p.ink, []).marks, outNumber: p.outNumber || (scoringPlay(p.notation)?.outs ? 1 : 0) }} disabled />
+            <ScorecardBox actions={p.ink} onChange={() => {}} marks={{ ...withBasePath(interpretBox(p.ink, []).marks, p.notation), outNumber: p.outNumber || (scoringPlay(p.notation)?.outs ? 1 : 0) }} notation={p.notation} disabled />
             {p.note && <p>{p.note}</p>}
             {p.status === 'correction_requested' && canWrite && p.side === side && <Button variant="outline" disabled={busy || !!actions.length || !!notation} onClick={() => { draftVersion.current = room.version; submissionId.current = null; setActions(p.ink); setNotation(p.notation); }}>{t('Corregir copia', 'Correct a copy')}</Button>}
           </details>)}

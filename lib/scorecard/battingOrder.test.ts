@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canScoreCell, nextAtBat, type AtBatCell } from './battingOrder'
+import { canScoreCell, inningColumns, nextAtBat, type AtBatCell } from './battingOrder'
 
 const lineup = ['a', 'b', 'c'].map(id => ({ id }))
 const row = (player_id: string, order: number, result = 'single', inning = 1, appearance = 1) => ({
@@ -44,5 +44,16 @@ describe('current at-bat scoring restriction', () => {
   it('disables every cell for a completed game or an empty lineup', () => {
     expect(enabledCells(nextAtBat(lineup, [], 'home'), true)).toEqual([])
     expect(enabledCells(nextAtBat([], [], 'home'))).toEqual([])
+  })
+  it('does not create a phantom column or reset the order for misplaced opponent records', () => {
+    const rows = [row('a', 1), row('opponent-player', 2), row('opponent-player', 3)]
+    expect(nextAtBat(lineup, rows, 'home')?.playerId).toBe('b')
+    expect(inningColumns(lineup, rows, 'home').filter(c => c.inning === 1)).toEqual([{ inning: 1, appearance: 1, isDuplicate: false }])
+  })
+  it('adds a second column when a displayed batter really comes up again in the same inning', () => {
+    const rows = [row('a', 1), row('b', 2), row('c', 3)]
+    expect(inningColumns(lineup, rows, 'home').filter(c => c.inning === 1)).toEqual([
+      { inning: 1, appearance: 1, isDuplicate: false }, { inning: 1, appearance: 2, isDuplicate: true },
+    ])
   })
 })

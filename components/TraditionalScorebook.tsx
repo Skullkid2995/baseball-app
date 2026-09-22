@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { playerOuts, savedPlay, scoringPlay } from '@/lib/scorecard/plays'
-import { canScoreCell, nextAtBat, type AtBatCell } from '@/lib/scorecard/battingOrder'
+import { canScoreCell, inningColumns, nextAtBat, type AtBatCell } from '@/lib/scorecard/battingOrder'
+import { atBatIdentity } from '@/lib/scorecard/atBatRecord'
 import Scoreboard from './Scoreboard'
+import ScorebookDiamond from './ScorebookDiamond'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -12,7 +14,7 @@ import PitcherPicker, { type RosterPlayer } from './PitcherPicker'
 import { loadMatchup, type MatchupSummary } from '@/lib/matchup'
 import { applyRunnerEvent, type RunnerEventInput } from '@/lib/runnerEvents'
 import OpponentLineupEntry from './OpponentLineupEntry'
-import { ArrowLeftRight, Lock, Plus, Save } from 'lucide-react'
+import { ArrowLeftRight, Lock, Save } from 'lucide-react'
 import { Button, FormField, Input, LoadingState } from '@/components/ui'
 
 interface Player {
@@ -56,6 +58,7 @@ interface AtBat {
   base_runners?: { first: boolean, second: boolean, third: boolean, home: boolean }
   base_runner_outs?: { first: boolean, second: boolean, third: boolean, home: boolean }
   notation?: string
+  out_type?: string
   players?: Player
   created_at?: string
 }
@@ -543,16 +546,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   // Determine if we should add a duplicate column for the active inning
   function getInningColumns(): { inning: number; isDuplicate: boolean; appearance: number }[] {
-    const next = getCurrentBatter()
-    const rows = atBats.filter(ab => (ab.team_side || 'home') === currentTeamSide)
-    return Array.from({ length: Math.max(10, next?.inning || 1, ...rows.map(ab => ab.inning)) }, (_, index) => {
-      const inning = index + 1
-      const counts = new Map<string, number>()
-      for (const ab of rows.filter(ab => ab.inning === inning)) counts.set(ab.player_id, (counts.get(ab.player_id) || 0) + 1)
-      let columns = Math.max(1, ...counts.values())
-      if (next?.inning === inning) columns = Math.max(columns, (counts.get(next.playerId) || 0) + 1)
-      return Array.from({length: columns}, (_, n) => ({ inning, appearance: n + 1, isDuplicate: n > 0 }))
-    }).flat()
+    return inningColumns(currentTeamSide === 'home' ? players : opponentPlayers, atBats, currentTeamSide)
   }
 
   function getPlayerStats(playerId: string) {
@@ -569,8 +563,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   /** Runners still on base for this inning and side; optionally exclude the batter being edited. */
   function getActiveRunners(playerId: string | null, inning: number, teamSide: 'home' | 'opponent'): ActiveRunner[] {
     const list: ActiveRunner[] = []
+    const lineupIds = new Set((teamSide === 'home' ? players : opponentPlayers).map(p => p.id))
     for (const ab of atBats) {
-      if (ab.inning !== inning || ab.player_id === playerId) continue
+      if (ab.inning !== inning || ab.player_id === playerId || !lineupIds.has(ab.player_id)) continue
       if (!(ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))) continue
       const b = ab.base_runners
       if (!b || b.home) continue
@@ -789,15 +784,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             hit_angle?: string
             x_coordinate?: number
             y_coordinate?: number
-            team_side?: string
+            team_side: 'home' | 'opponent'
             pitcher_id?: string | null
             hit_x?: number | null
             hit_y?: number | null
           } = {
-            game_id: game.id,
-            player_id: selectedCell.playerId,
-            inning: selectedCell.inning,
-            at_bat_number: 1 + atBats.filter(ab => ab.player_id === selectedCell.playerId && ab.inning === selectedCell.inning && (ab.team_side || 'home') === teamSide).length,
+            ...atBatIdentity(game.id, selectedCell),
             notation: notation, // Save original notation
             result: result,
             rbi: rbi || 0,
@@ -1025,58 +1017,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                           className={`flex min-h-11 min-w-11 w-full items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${isCurrentBatter ? 'cursor-pointer bg-emerald-100 ring-2 ring-inset ring-emerald-500 hover:bg-emerald-200 active:bg-emerald-300' : 'cursor-not-allowed'}`}
                           onClick={() => { if (isCurrentBatter && cell) handleCellClick(cell) }}
                         >
-                          {/* Diamond Shape */}
-                          <div className="relative w-8 h-8">
-                            <div className={`absolute inset-0 border border-slate-300 transform rotate-45 ${
-                              atBat?.base_runners?.home ? 'bg-primary' : '' // Only blue if run scored (home = true)
-                            }`}></div>
-                            
-                            {/* Base highlighting - show which base the runner is on */}
-                            {atBat?.base_runners && (
-                              <>
-                                {/* First base highlight (right side) */}
-                                {atBat.base_runners.first && (
-                                  <div className="absolute top-1/2 right-0 w-2 h-2 bg-amber-400 transform rotate-45 -translate-y-1/2 translate-x-1/2"></div>
-                                )}
-                                {/* Second base highlight (top) */}
-                                {atBat.base_runners.second && (
-                                  <div className="absolute top-0 left-1/2 w-2 h-2 bg-amber-400 transform rotate-45 -translate-x-1/2 -translate-y-1/2"></div>
-                                )}
-                                {/* Third base highlight (left side) */}
-                                {atBat.base_runners.third && (
-                                  <div className="absolute top-1/2 left-0 w-2 h-2 bg-amber-400 transform rotate-45 -translate-y-1/2 -translate-x-1/2"></div>
-                                )}
-                                {/* Home plate highlight (bottom) - only if not run scored (blue diamond) */}
-                                {atBat.base_runners.home && (
-                                  <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-amber-400 transform rotate-45 -translate-x-1/2 translate-y-1/2"></div>
-                                )}
-                              </>
-                            )}
-                            
-                            {/* Red dot indicator for outs - show if base runner out OR result is an out */}
-                            {atBat && playerOuts(atBat) > 0 && (
-                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full border border-white"></div>
-                            )}
-                            
-                            {/* Green circle indicator for current batter - only show if no out recorded */}
-                            {isCurrentBatter && !atBat && (
-                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border border-white"></div>
-                            )}
-                            
-                            {/* At-bat result notation - only show if not run scored (blue diamond) */}
-                            {atBat && !atBat.base_runners?.home && (
-                              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-foreground z-10">
-                                {atBat.notation || scoringPlay(atBat.result)?.code || atBat.result}
-                              </div>
-                            )}
-                            
-                            {/* Touch indicator when empty */}
-                            {!atBat && player && (
-                              <div className={`absolute inset-0 flex items-center justify-center ${isCurrentBatter ? 'text-emerald-700' : 'text-slate-300'}`}>
-                                <Plus className="size-3" aria-hidden="true" />
-                              </div>
-                            )}
-                          </div>
+                          <ScorebookDiamond play={atBat} current={isCurrentBatter} />
                         </button>
                       </td>
                     )

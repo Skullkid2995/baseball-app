@@ -8,6 +8,7 @@ import { Button } from '@/components/ui'
 import ScorecardField from './ScorecardField'
 import PlayPicker from './PlayPicker'
 import HandwritingConfirmation from './HandwritingConfirmation'
+import NotationGuide from './NotationGuide'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
 import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
@@ -120,7 +121,8 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
       <div className="grid min-h-0 flex-1 overscroll-contain gap-5 overflow-y-auto p-4 md:grid-cols-2 sm:p-6">
         <div className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500">01 · {t('Traza la jugada', 'Draw the play')}</p>
-          <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardField actions={actions} onChange={editActions} onDrawingChange={onDrawingChange} marks={{ ...marks, bases, outNumber }} disabled={locked} runners={runnerOptions} language={language} /></div>
+          <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardField actions={actions} onChange={editActions} onDrawingChange={onDrawingChange} marks={{ ...marks, bases, outNumber }} notation={play ? token : undefined} disabled={locked} runners={runnerOptions} language={language} /></div>
+          {play && <NotationGuide notation={token} language={language} />}
           <HandwritingConfirmation matches={tokenMatches} ink={marks.ink} value={token} onConfirm={choose} waiting={waiting} language={language} disabled={locked} />
           <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={locked || !actions.length} onClick={() => editActions(actions.slice(0,-1))}><Undo2 />{t('Deshacer', 'Undo')}</Button><Button variant="outline" size="sm" disabled={locked} onClick={() => { setActions([]); setToken(''); setRunnerOut(false); setEditedResult(true); setMoves({}); setRbi(0) }}><Eraser />{t('Borrar', 'Clear')}</Button></div>
           <p className="text-xs leading-relaxed text-slate-500">{t('Bolas, strikes, bases y dirección del batazo se marcan al instante.', 'Balls, strikes, bases and hit direction update immediately.')}</p>

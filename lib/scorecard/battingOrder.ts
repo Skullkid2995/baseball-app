@@ -21,7 +21,8 @@ export interface AtBatCell {
 /** The one unsaved appearance that is next in this side's batting order. */
 export function nextAtBat(lineup: { id: string }[], atBats: BattingRow[], teamSide: TeamSide): AtBatCell | null {
   if (!lineup.length) return null
-  const rows = atBats.filter(ab => (ab.team_side || 'home') === teamSide)
+  const lineupIds = new Set(lineup.map(p => p.id))
+  const rows = atBats.filter(ab => (ab.team_side || 'home') === teamSide && lineupIds.has(ab.player_id))
     .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '') || a.at_bat_number - b.at_bat_number)
   const last = rows[rows.length - 1]
   if (!last) return { playerId: lineup[0].id, inning: 1, appearance: 1, teamSide }
@@ -36,4 +37,19 @@ export function nextAtBat(lineup: { id: string }[], atBats: BattingRow[], teamSi
 export function canScoreCell(cell: AtBatCell, current: AtBatCell | null, locked: boolean): boolean {
   return !locked && current !== null && cell.playerId === current.playerId && cell.inning === current.inning &&
     cell.appearance === current.appearance && cell.teamSide === current.teamSide
+}
+
+/** Add another column only for a repeated appearance belonging to a displayed batter. */
+export function inningColumns(lineup: { id: string }[], atBats: BattingRow[], teamSide: TeamSide) {
+  const next = nextAtBat(lineup, atBats, teamSide)
+  const lineupIds = new Set(lineup.map(p => p.id))
+  const rows = atBats.filter(ab => (ab.team_side || 'home') === teamSide && lineupIds.has(ab.player_id))
+  return Array.from({ length: Math.max(10, next?.inning || 1, ...rows.map(ab => ab.inning)) }, (_, index) => {
+    const inning = index + 1
+    const counts = new Map<string, number>()
+    for (const ab of rows.filter(ab => ab.inning === inning)) counts.set(ab.player_id, (counts.get(ab.player_id) || 0) + 1)
+    let columns = Math.max(1, ...counts.values())
+    if (next?.inning === inning) columns = Math.max(columns, next.appearance)
+    return Array.from({ length: columns }, (_, n) => ({ inning, appearance: n + 1, isDuplicate: n > 0 }))
+  }).flat()
 }
