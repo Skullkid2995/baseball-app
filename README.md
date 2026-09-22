@@ -56,3 +56,19 @@ redirect URLs, put the URL and key in `.env.local` and in Vercel.
 (one saved batting order per team). `games` records a single game against an
 `opponent`, links our lineup and the opponent lineup, and owns the `at_bats`
 rows written by the scorebook.
+
+## Unified scorekeeping
+
+The scorebook combines handwriting and touch controls in one responsive editor.
+Choose a labeled hit, out, or reach-base result; confirm each runner's destination
+and RBI before saving. Batter outs and runner outs are tracked separately so a
+double play counts twice without counting the batter twice. Failed saves keep the
+editor open with an error. The scorebook also supports multiple plate appearances
+in one inning and independent runner plays between pitches.
+
+Run `npm test` for scoring, rules-engine, workflow and authorization regressions.
+
+## Two-manager scorecard (draft)
+
+See [MANAGER_FACEOFF.md](docs/MANAGER_FACEOFF.md) for the handwritten submission,
+opponent validation, and super-admin testing workflow and required Supabase setup.

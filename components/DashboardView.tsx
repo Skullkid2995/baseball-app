@@ -29,7 +29,6 @@ import {
   CardTitle,
   EmptyState,
   LoadingState,
-  PageHeader,
 } from '@/components/ui'
 
 interface Game {
@@ -134,7 +133,7 @@ function StatTile({
           {icon}
         </span>
       </div>
-      <p className="mt-3 text-3xl font-bold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-3 font-mono text-4xl font-black tracking-tight tabular-nums">{value}</p>
       {hint && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{hint}</p>}
     </Card>
   )
@@ -407,7 +406,13 @@ export default function DashboardView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={L.title} description={L.description} />
+      <section className="stadium-hero relative overflow-hidden rounded-2xl px-6 py-8 text-white sm:px-8 sm:py-10">
+        <div aria-hidden className="pointer-events-none absolute -right-8 top-4 size-56 rotate-45 rounded-3xl border-[20px] border-white/5" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-300">{language === 'es' ? 'Bienvenido al clubhouse' : 'Welcome to the clubhouse'}</p>
+        <h2 className="relative mt-3 max-w-lg text-4xl font-black leading-none tracking-tight sm:text-5xl">{language === 'es' ? 'Cada jugada cuenta.' : 'Every play counts.'}</h2>
+        <p className="relative mt-4 max-w-md text-sm leading-relaxed text-slate-300">{L.description}</p>
+        <Link href="/games" className="relative mt-6 inline-flex min-h-11 items-center gap-3 rounded-xl bg-emerald-300 px-5 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-200">{language === 'es' ? 'Ir a los juegos' : 'Head to game day'}<ArrowRight className="size-4" /></Link>
+      </section>
 
       {/* Stat tiles */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

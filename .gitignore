@@ -93,3 +93,5 @@ temp/
 
 # Local Claude Code launch config
 .claude/
+
+.vercel

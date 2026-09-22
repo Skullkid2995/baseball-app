@@ -95,9 +95,9 @@ export function PageHeader({
     <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between', className)}>
       <div>
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{title}</h2>
           {typeof count === 'number' && (
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground tabular-nums">
+            <span className="rounded-lg border border-border bg-white px-2.5 py-1 text-xs font-bold text-secondary-foreground tabular-nums">
               {count}
             </span>
           )}

@@ -1,6 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { playerOuts, savedPlay, scoringPlay } from '@/lib/scorecard/plays'
+import Scoreboard from './Scoreboard'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import DiamondCanvas, { type ActiveRunner, type RunnerUpdate } from './DiamondCanvas'
@@ -56,6 +59,9 @@ interface AtBat {
 }
 
 export default function TraditionalScorebook({ game, onClose }: { game: Game, onClose: () => void }) {
+  const saveInFlight = useRef(false)
+  const [saveNotice, setSaveNotice] = useState('')
+  const [selectedAtBatId, setSelectedAtBatId] = useState<string | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [opponentPlayers, setOpponentPlayers] = useState<Player[]>([])
   const [atBats, setAtBats] = useState<AtBat[]>([])
@@ -487,7 +493,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   /** Open the at-bat dialog and load this batter's history against the pitcher on the mound */
   async function openCell(playerId: string, inning: number, playerName: string, pitcher?: RosterPlayer | null) {
-    setSelectedCell({ playerId, inning, playerName })
+    setSelectedCell({ playerId, inning, playerName, teamSide: currentTeamSide })
     setShowCanvasModal(true)
     setMatchup(null)
     const p = pitcher ?? currentPitcher(fieldingSide(currentTeamSide))
@@ -499,16 +505,13 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   /** Outs already on the board in this inning for this side before the given at-bat (batter outs + runner outs). */
   function outsBefore(playerId: string, inning: number, teamSide: 'home' | 'opponent'): number {
-    const own = atBats.find((ab) => ab.player_id === playerId && ab.inning === inning && (ab.team_side === teamSide || (!ab.team_side && teamSide === 'home')))
-    const outResults = ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt']
+    const own = atBats.find(ab => ab.id === selectedAtBatId)
     let outs = 0
     for (const ab of atBats) {
       if (ab.inning !== inning || ab.id === own?.id) continue
       if (!(ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))) continue
       if (own?.created_at && ab.created_at && ab.created_at > own.created_at) continue
-      if (outResults.includes(ab.result)) outs++
-      const ro = ab.base_runner_outs
-      if (ro) outs += [ro.first, ro.second, ro.third, ro.home].filter(Boolean).length
+      outs += playerOuts(ab)
     }
     return Math.min(3, outs)
   }
@@ -523,71 +526,39 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   function getAtBatForPlayerNth(playerId: string, inning: number, n: number) {
     const matches = atBats
-      .filter(ab => ab.player_id === playerId && ab.inning === inning)
+      .filter(ab => ab.player_id === playerId && ab.inning === inning && (ab.team_side || 'home') === currentTeamSide)
       .sort((a, b) => (a.at_bat_number || 1) - (b.at_bat_number || 1))
     return matches[n - 1] || null
   }
 
   function getCurrentBatter() {
-    if (players.length === 0) return null
-
-    // If no at-bats yet, first player is up
-    if (atBats.length === 0) {
-      return { playerId: players[0].id, inning: 1 }
-    }
-
-    // Find the highest inning with at-bats
-    const maxInning = Math.max(...atBats.map(ab => ab.inning))
-    
-    // Count outs in the current inning (assuming 3 outs per inning)
-    const currentInningAtBats = atBats.filter(ab => ab.inning === maxInning)
-    const outsInCurrentInning = currentInningAtBats.filter(ab => 
-      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
-      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
-    ).length
-
-    // If 3 outs, move to next inning
-    const currentInning = outsInCurrentInning >= 3 ? maxInning + 1 : maxInning
-    
-    // Find the last at-bat in the max inning by batting order position
-    // Sort by player's position in the batting order (0-8), highest index = last batter
-    const lastAtBatInMaxInning = currentInningAtBats.sort((a, b) => {
-      const aIndex = players.findIndex(p => p.id === a.player_id)
-      const bIndex = players.findIndex(p => p.id === b.player_id)
-      return bIndex - aIndex
-    })[0]
-    
-    if (lastAtBatInMaxInning) {
-      const lastPlayerIndex = players.findIndex(p => p.id === lastAtBatInMaxInning.player_id)
-      // Next player in batting order (1-9, wraps to 1 after 9)
-      const nextPlayerIndex = (lastPlayerIndex + 1) % players.length
-      return { playerId: players[nextPlayerIndex].id, inning: currentInning }
-    }
-    
-    // Fallback: first player
-    return { playerId: players[0].id, inning: currentInning }
+    const lineup = currentTeamSide === 'home' ? players : opponentPlayers
+    if (!lineup.length) return null
+    const rows = atBats.filter(ab => (ab.team_side || 'home') === currentTeamSide)
+      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '') || a.at_bat_number - b.at_bat_number)
+    if (!rows.length) return { playerId: lineup[0].id, inning: 1 }
+    const last = rows[rows.length - 1]
+    const inningOuts = rows.filter(ab => ab.inning === last.inning).reduce((n, ab) => n + playerOuts(ab), 0)
+    const nextIndex = (lineup.findIndex(p => p.id === last.player_id) + 1) % lineup.length
+    return { playerId: lineup[nextIndex].id, inning: last.inning + (inningOuts >= 3 ? 1 : 0) }
   }
 
   // Determine if we should add a duplicate column for the active inning
-  function getInningColumns(): { inning: number, isDuplicate: boolean }[] {
-    const baseCols = Array.from({ length: 10 }, (_, i) => ({ inning: i + 1, isDuplicate: false }))
-    if (players.length === 0 || atBats.length === 0) return baseCols
-    const current = getCurrentBatter()
-    if (!current) return baseCols
-    const inningNumber = current.inning
-    // Only consider duplicate if this inning has fewer than 3 outs and the next batter is the first batter
-    const threeOuts = hasThreeOutsInInning(inningNumber)
-    const isFirstBatterUp = players[0] && current.playerId === players[0].id
-    if (!threeOuts && isFirstBatterUp) {
-      const idx = inningNumber - 1
-      // Insert a duplicate column immediately after the active inning
-      baseCols.splice(idx + 1, 0, { inning: inningNumber, isDuplicate: true })
-    }
-    return baseCols
+  function getInningColumns(): { inning: number; isDuplicate: boolean; appearance: number }[] {
+    const next = getCurrentBatter()
+    const rows = atBats.filter(ab => (ab.team_side || 'home') === currentTeamSide)
+    return Array.from({ length: Math.max(10, next?.inning || 1, ...rows.map(ab => ab.inning)) }, (_, index) => {
+      const inning = index + 1
+      const counts = new Map<string, number>()
+      for (const ab of rows.filter(ab => ab.inning === inning)) counts.set(ab.player_id, (counts.get(ab.player_id) || 0) + 1)
+      let columns = Math.max(1, ...counts.values())
+      if (next?.inning === inning) columns = Math.max(columns, (counts.get(next.playerId) || 0) + 1)
+      return Array.from({length: columns}, (_, n) => ({ inning, appearance: n + 1, isDuplicate: n > 0 }))
+    }).flat()
   }
 
   function getPlayerStats(playerId: string) {
-    const playerAtBats = atBats.filter(ab => ab.player_id === playerId)
+    const playerAtBats = atBats.filter(ab => ab.player_id === playerId && (ab.team_side || 'home') === currentTeamSide)
     return {
       hits: playerAtBats.filter(ab => ['single', 'double', 'triple', 'home_run'].includes(ab.result)).length,
       walks: playerAtBats.filter(ab => ab.result === 'walk').length,
@@ -595,19 +566,6 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       rbi: playerAtBats.reduce((sum, ab) => sum + (ab.rbi || 0), 0),
       errors: playerAtBats.filter(ab => ab.result === 'error').length
     }
-  }
-
-  function hasThreeOutsInInning(inning: number) {
-    // Filter at-bats for current team side in this inning
-    const inningAtBats = atBats.filter(ab => 
-      ab.inning === inning &&
-      (ab.team_side === currentTeamSide || (!ab.team_side && currentTeamSide === 'home'))
-    )
-    const outsInInning = inningAtBats.filter(ab => 
-      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
-      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
-    ).length
-    return outsInInning >= 3
   }
 
   // Check if a specific team (home or opponent) has 3 outs in an inning
@@ -631,10 +589,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       }
     })
     
-    const outsInInning = inningAtBats.filter(ab => 
-      (ab.base_runner_outs && (ab.base_runner_outs.first || ab.base_runner_outs.second || ab.base_runner_outs.third || ab.base_runner_outs.home)) ||
-      (ab.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(ab.result))
-    ).length
+    const outsInInning = inningAtBats.reduce((sum, ab) => sum + playerOuts(ab), 0)
     
     return outsInInning >= 3
   }
@@ -656,7 +611,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       const b = ab.base_runners
       if (!b || b.home) continue
       const base: 'first' | 'second' | 'third' | null = b.third ? 'third' : b.second ? 'second' : b.first ? 'first' : null
-      if (!base || ab.base_runner_outs?.[base]) continue
+      if (!base || playerOuts(ab)) continue
       const p = ab.players
       list.push({ atBatId: ab.id, playerId: ab.player_id, playerName: p ? `${p.first_name} ${p.last_name}` : 'Runner', base })
     }
@@ -666,7 +621,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function handleCellClick(playerId: string, inning: number, playerName: string, existingAtBat?: Record<string, unknown>) {
-    void existingAtBat
+    setSelectedAtBatId(typeof existingAtBat?.id === 'string' ? existingAtBat.id : null)
     const side = fieldingSide(currentTeamSide)
     // Allow viewing (but not editing) when locked; otherwise we must know who is pitching first
     if (!isLocked && !currentPitcher(side)) {
@@ -702,193 +657,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     }
   }
 
-  function interpretHandwriting(input: string) {
-    const cleanInput = input.trim().toUpperCase()
-    
-    // Simplified baseball notation mapping - only use values that exist in database constraint
-    const notationMap: { [key: string]: string } = {
-      // Simple categories
-      'HIT': 'single', // Default hit to single
-      'OUT': 'ground_out', // Default out to ground out
-      
-        // Basic hits
-        '1B': 'single',
-        '2B': 'double', 
-        '3B': 'triple',
-        'HR': 'home_run',
-        'HOMER': 'home_run',
-        'HOMERUN': 'home_run',
-        'H1': 'single', // Hit single
-        'H2': 'double', // Hit double
-        'H3': 'triple', // Hit triple
-        
-        // Infield hits and bunts
-        'BUNT': 'single', // Bunt single
-        'BUNT_SINGLE': 'single',
-        'INFIELD_HIT': 'single',
-        'INFIELD_SINGLE': 'single',
-      
-      // Walks and hit by pitch
-      'BB': 'walk',
-      'WALK': 'walk',
-      'HBP': 'hit_by_pitch',
-      'HIT_BY_PITCH': 'hit_by_pitch',
-      
-      // Strikeouts
-      'K': 'strikeout',
-      'KC': 'strikeout', // strikeout looking (classic pad)
-      'DP': 'ground_out', // double play (classic pad)
-      '6-4-3': 'ground_out',
-      '4-6-3': 'ground_out',
-      'SO': 'strikeout',
-      'STRIKEOUT': 'strikeout',
-      
-        // Ground outs (fielder to first base)
-        'GO': 'ground_out',
-        'GROUND_OUT': 'ground_out',
-        'BUNT_OUT': 'ground_out', // Bunt out
-        'BUNT_GROUND_OUT': 'ground_out',
-      '1-3': 'ground_out', // Pitcher to first
-      '2-3': 'ground_out', // Catcher to first
-      '3-1': 'ground_out', // First to pitcher
-      '4-3': 'ground_out', // Second to first
-      '5-3': 'ground_out', // Third to first
-      '6-3': 'ground_out', // Shortstop to first
-      '7-3': 'ground_out', // Left field to first
-      '8-3': 'ground_out', // Center field to first
-      '9-3': 'ground_out', // Right field to first
-      
-      // Fly outs (fielder catches ball)
-      'FO': 'fly_out',
-      'FLY_OUT': 'fly_out',
-      'F-1': 'fly_out', // Pitcher catches
-      'F-2': 'fly_out', // Catcher catches
-      'F-3': 'fly_out', // First baseman catches
-      'F-4': 'fly_out', // Second baseman catches
-      'F-5': 'fly_out', // Third baseman catches
-      'F-6': 'fly_out', // Shortstop catches
-      'F-7': 'fly_out', // Left fielder catches
-      'F-8': 'fly_out', // Center fielder catches
-      'F-9': 'fly_out', // Right fielder catches
-      
-      // Line outs
-      'LO': 'line_out',
-      'LINE_OUT': 'line_out',
-      'L-1': 'line_out', // Line drive to pitcher
-      'L-2': 'line_out', // Line drive to catcher
-      'L-3': 'line_out', // Line drive to first
-      'L-4': 'line_out', // Line drive to second
-      'L-5': 'line_out', // Line drive to third
-      'L-6': 'line_out', // Line drive to shortstop
-      'L-7': 'line_out', // Line drive to left field
-      'L-8': 'line_out', // Line drive to center field
-      'L-9': 'line_out', // Line drive to right field
-      
-      // Pop outs
-      'PO': 'pop_out',
-      'POP_OUT': 'pop_out',
-      'P-1': 'pop_out', // Pop up to pitcher
-      'P-2': 'pop_out', // Pop up to catcher
-      'P-3': 'pop_out', // Pop up to first
-      'P-4': 'pop_out', // Pop up to second
-      'P-5': 'pop_out', // Pop up to third
-      'P-6': 'pop_out', // Pop up to shortstop
-      'P-7': 'pop_out', // Pop up to left field
-      'P-8': 'pop_out', // Pop up to center field
-      'P-9': 'pop_out', // Pop up to right field
-      
-      // Errors
-      'E': 'error',
-      'ERROR': 'error',
-      'E-1': 'error', // Error by pitcher
-      'E-2': 'error', // Error by catcher
-      'E-3': 'error', // Error by first baseman
-      'E-4': 'error', // Error by second baseman
-      'E-5': 'error', // Error by third baseman
-      'E-6': 'error', // Error by shortstop
-      'E-7': 'error', // Error by left fielder
-      'E-8': 'error', // Error by center fielder
-      'E-9': 'error', // Error by right fielder
-      
-      // Sacrifice plays
-      'SF': 'sacrifice_fly',
-      'SAC_FLY': 'sacrifice_fly',
-      'SACRIFICE_FLY': 'sacrifice_fly',
-      'SAC': 'sacrifice_bunt',
-      'SAC_BUNT': 'sacrifice_bunt',
-      'SACRIFICE_BUNT': 'sacrifice_bunt',
-      
-        // Fielder's choice: the batter is safe, the out (if any) is on the runner's box
-        'FC': 'fielders_choice',
-        'FIELDERS_CHOICE': 'fielders_choice',
-        'FIELDER_CHOICE': 'fielders_choice',
-        'FIELDERS_CHOICE_OUT': 'fielders_choice',
-      
-      // Wild pitch and passed ball (mapped to walk)
-      'WP': 'walk',
-      'WILD_PITCH': 'walk',
-      'PB': 'walk',
-      'PASSED_BALL': 'walk',
-      
-      // Balk (mapped to walk)
-      'BK': 'walk',
-      'BALK': 'walk',
-      
-      // Interference (mapped to walk)
-      'INT': 'walk',
-      'INTERFERENCE': 'walk',
-      
-      // Unassisted plays
-      'U-1': 'ground_out', // Unassisted by pitcher
-      'U-3': 'ground_out', // Unassisted by first baseman
-      'U-4': 'ground_out', // Unassisted by second baseman
-      'U-5': 'ground_out', // Unassisted by third baseman
-      'U-6': 'ground_out', // Unassisted by shortstop
-      
-      // Force outs
-      'FO-1': 'ground_out', // Force out at first
-      'FO-2': 'ground_out', // Force out at second
-      'FO-3': 'ground_out', // Force out at third
-      'FO-H': 'ground_out', // Force out at home
-    }
-    
-    const result = notationMap[cleanInput] || 'ground_out' // Default to ground_out if not recognized
-    console.log(`Interpreted "${cleanInput}" as "${result}"`)
-    return result
-  }
-
-  async function updateGameScore(runsToAdd: number) {
-    try {
-      const newScore = currentGame.our_score + runsToAdd
-      
-      const { data, error } = await supabase
-        .from('games')
-        .update({ 
-          our_score: newScore,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', game.id)
-        .select()
-      
-      if (error) {
-        console.error('Error updating game score:', error)
-        return
-      }
-      
-      // Update the local game state
-      if (data && data[0]) {
-        setCurrentGame(data[0])
-        console.log('Game score updated to:', data[0].our_score)
-      }
-    } catch (err) {
-      console.error('Failed to update game score:', err)
-    }
-  }
-
-  /** Each side's score from its own at-bats (runs can also come from runner plays). */
   async function recalculateScore() {
     const allAtBats = await supabase.from('at_bats').select('runs_scored, team_side').eq('game_id', game.id)
-    if (allAtBats.error || !allAtBats.data) return
+    if (allAtBats.error) throw new Error('Play saved, but score refresh failed: ' + allAtBats.error.message)
+    if (!allAtBats.data) throw new Error('Could not refresh the score.')
     const ours = allAtBats.data.filter((ab) => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
     const theirs = allAtBats.data.filter((ab) => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
     const { data: updatedGame, error } = await supabase
@@ -896,7 +668,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       .update({ our_score: ours, opponent_score: theirs, updated_at: new Date().toISOString() })
       .eq('id', game.id)
       .select()
-    if (!error && updatedGame && updatedGame[0]) setCurrentGame(updatedGame[0])
+    if (error) throw new Error('Play saved, but scoreboard update failed: ' + error.message)
+    if (updatedGame && updatedGame[0]) setCurrentGame(updatedGame[0])
   }
 
   /**
@@ -930,38 +703,28 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       },
     ])
     if (evError) {
-      alert('Could not save the runner play: ' + evError.message)
-      return
+      throw new Error('Could not save the runner play: ' + evError.message)
     }
     const patch = applyRunnerEvent(runnerRow, ev)
     const { error } = await supabase.from('at_bats').update(patch).eq('id', ev.runnerAtBatId)
     if (error) {
-      alert('Could not update the runner: ' + error.message)
-      return
+      throw new Error('Could not update the runner: ' + error.message)
     }
     setAtBats((prev) => prev.map((ab) => (ab.id === ev.runnerAtBatId ? { ...ab, ...patch } : ab)))
     if (ev.toBase === 'home' && !ev.isOut) await recalculateScore()
   }
 
   async function saveAtBat(notation: string, baseRunners?: { first: boolean, second: boolean, third: boolean, home: boolean }, fieldLocationData?: Record<string, unknown>, baseRunnerOuts?: { first: boolean, second: boolean, third: boolean, home: boolean }, baseRunnerOutTypes?: { first: string, second: string, third: string, home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) {
-    if (!selectedCell) return
-
-    // Other runners on this play: write the result into their own boxes (score is recalculated below)
-    if (runnerUpdates && runnerUpdates.length > 0) {
-      for (const u of runnerUpdates) {
-        if (u.move === 'stay') continue
-        const patch = { base_runners: u.base_runners, base_runner_outs: u.base_runner_outs, out_type: u.out_type, runs_scored: u.runs_scored }
-        const { error } = await supabase.from('at_bats').update(patch).eq('id', u.atBatId)
-        if (error) {
-          console.error('Error updating runner', u.playerName, error)
-          continue
-        }
-        setAtBats(prev => prev.map(ab => (ab.id === u.atBatId ? { ...ab, ...patch } : ab)))
-      }
-    }
-
-    const result = interpretHandwriting(notation)
-    const runsScored = baseRunners?.home ? 1 : 0
+    if (!selectedCell || saveInFlight.current || isLocked) return
+    const normalized = savedPlay(notation, baseRunners, baseRunnerOuts)
+    const play = scoringPlay(notation)!
+    const runnerOuts = (runnerUpdates || []).filter(u => u.move === 'out').length
+    if (play.outs > 1 && runnerOuts !== play.outs - 1) throw new Error('Select the runners retired on this double or triple play.')
+    if (play.outs > 1 && outsBefore(selectedCell.playerId, selectedCell.inning, currentTeamSide) + play.outs > 3) throw new Error('Not enough outs remain for this play.')
+    saveInFlight.current = true
+    const { result, runs_scored: runsScored } = normalized
+    baseRunners = normalized.base_runners
+    baseRunnerOuts = normalized.base_runner_outs
     const teamSide = selectedCell.teamSide || currentTeamSide || 'home'
     const pitcherOnRecord = currentPitcher(fieldingSide(teamSide))
     const landingX = typeof fieldLocationData?.xCoordinate === 'number' ? (fieldLocationData.xCoordinate as number) : null
@@ -980,19 +743,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     
     try {
       // Check if this is an existing at-bat (for this team and inning)
-      const existingAtBat = atBats.find(ab => 
-        ab.player_id === selectedCell.playerId && 
-        ab.inning === selectedCell.inning &&
-        (ab.team_side === teamSide || (!ab.team_side && teamSide === 'home'))
-      )
+      const existingAtBat = atBats.find(ab => ab.id === selectedAtBatId)
       
       if (existingAtBat) {
         // Update existing at-bat
         console.log('Updating existing at-bat:', existingAtBat.id)
         
-        // Calculate the difference in runs scored
-        const oldRunsScored = existingAtBat.runs_scored || 0
-        const runsDifference = runsScored - oldRunsScored
         
           const updateData = {
             notation: notation, // Save original notation
@@ -1028,7 +784,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           if (error) {
             console.error('Error updating at-bat:', error)
             console.error('Full error details:', JSON.stringify(error, null, 2))
-            return
+            throw new Error(error.message)
           }
         
         // Update the local state
@@ -1038,10 +794,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         
         console.log('At-bat successfully updated:', data[0])
         
-        // Update game score only by the difference (if there is a change)
-        if (runsDifference !== 0) {
-          await updateGameScore(runsDifference)
-        }
+
       } else {
         // Create new at-bat
         console.log('Creating new at-bat')
@@ -1073,7 +826,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             game_id: game.id,
             player_id: selectedCell.playerId,
             inning: selectedCell.inning,
-            at_bat_number: 1, // We'll calculate this properly later
+            at_bat_number: 1 + atBats.filter(ab => ab.player_id === selectedCell.playerId && ab.inning === selectedCell.inning && (ab.team_side || 'home') === teamSide).length,
             notation: notation, // Save original notation
             result: result,
             rbi: rbi || 0,
@@ -1091,87 +844,33 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             hit_angle: (fieldLocationData?.hitAngle ? String(fieldLocationData.hitAngle) : '')
           }
         
-        // Try inserting without team_side first (in case column doesn't exist)
-        // We'll add team_side in a separate update if the column exists
-        const { team_side, ...insertDataWithoutTeamSide } = insertData
-        
-        let finalData = null
-        let insertError = null
-        
-        // First attempt: try without team_side
-        const { data: dataWithoutTeamSide, error: errorWithoutTeamSide } = await supabase
-          .from('at_bats')
-          .insert([insertDataWithoutTeamSide])
-          .select(`
-            *,
-            players (
-              first_name,
-              last_name,
-              jersey_number
-            )
-          `)
-        
-        if (errorWithoutTeamSide) {
-          console.error('Error creating at-bat (without team_side):', errorWithoutTeamSide)
-          console.error('Error details:', JSON.stringify(errorWithoutTeamSide, null, 2))
-          insertError = errorWithoutTeamSide
-        } else {
-          finalData = dataWithoutTeamSide[0]
-          console.log('At-bat created successfully (without team_side):', finalData)
-          
-          // If we have team_side and the insert succeeded, try to update it
-          if (teamSide && finalData?.id) {
-            const { error: updateError } = await supabase
-              .from('at_bats')
-              .update({ team_side: teamSide })
-              .eq('id', finalData.id)
-            
-            if (updateError) {
-              // Column doesn't exist, that's okay - just log it
-              console.log('team_side column does not exist, skipping update:', updateError.message)
-            } else {
-              // Update successful, refresh the data
-              const { data: updatedData } = await supabase
-                .from('at_bats')
-                .select(`
-                  *,
-                  players (
-                    first_name,
-                    last_name,
-                    jersey_number
-                  )
-                `)
-                .eq('id', finalData.id)
-                .single()
-              
-              if (updatedData) {
-                finalData = updatedData
-              }
-            }
-          }
+        const { data, error } = await supabase.from('at_bats').insert([insertData]).select('*, players(first_name,last_name,jersey_number)').single()
+        if (error) throw new Error(error.message)
+        setAtBats(prev => [...prev, data])
+        setSelectedAtBatId(data.id)
+      }
+
+      for (const u of runnerUpdates || []) {
+        if (u.move === 'stay') continue
+        const patch = { base_runners: u.base_runners, base_runner_outs: u.base_runner_outs, out_type: u.out_type, runs_scored: u.runs_scored }
+        const { error } = await supabase.from('at_bats').update(patch).eq('id', u.atBatId).eq('game_id', game.id)
+        if (error) {
+          await fetchAtBats()
+          throw new Error('Batter saved, but a runner update failed. Reopen this play and check the runners: ' + error.message)
         }
-        
-        if (insertError) {
-          console.error('Insert data attempted:', JSON.stringify(insertDataWithoutTeamSide, null, 2))
-          const errorMessage = insertError?.message || insertError?.details || 'Unknown error occurred'
-          alert(`Error creating at-bat: ${errorMessage}. Please check console for details.`)
-          return
-        }
-        
-        if (finalData) {
-          // Success
-          setAtBats(prev => [...prev, finalData])
-          console.log('At-bat successfully created:', finalData)
-        }
+        setAtBats(prev => prev.map(ab => ab.id === u.atBatId ? { ...ab, ...patch } : ab))
       }
 
       await recalculateScore()
 
       // Close the modal after successful save
+      setSaveNotice(selectedCell.playerName + ' · ' + notation.toUpperCase() + ' · ' + (uiLang === 'es' ? 'Guardado' : 'Saved'))
       setShowCanvasModal(false)
       setSelectedCell(null)
     } catch (err) {
-      console.error('Failed to save at-bat:', err)
+      throw err
+    } finally {
+      saveInFlight.current = false
     }
   }
 
@@ -1183,24 +882,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Game Information Header */}
       <div className="space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">vs {game.opponent}</h2>
-            <div className="mt-2">
-              <div className={`inline-flex items-center rounded-lg px-4 py-2 text-lg font-semibold text-white shadow-sm ${
-                currentTeamSide === 'home' ? 'bg-primary' : 'bg-destructive'
-              }`}>
-                {currentTeamSide === 'home' ? homeTeamName : game.opponent}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-900 px-5 py-3 text-white sm:flex-col sm:items-end sm:gap-0 sm:text-right">
-            <div className="text-3xl font-bold tabular-nums">
-              {currentGame.our_score} - {currentGame.opponent_score}
-            </div>
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Score</div>
-          </div>
-        </div>
+        <Scoreboard home={homeTeamName} away={game.opponent} homeScore={currentGame.our_score} awayScore={currentGame.opponent_score}
+          inning={getCurrentBatter()?.inning || 1} outs={Math.min(3, atBats.filter(ab => ab.inning === (getCurrentBatter()?.inning || 1) && (ab.team_side || 'home') === currentTeamSide).reduce((sum, ab) => sum + playerOuts(ab), 0))}
+          batter={(currentTeamSide === 'home' ? players : opponentPlayers).find(p => p.id === getCurrentBatter()?.playerId)?.first_name}
+          language={uiLang} status={isLocked ? (uiLang === 'es' ? 'Final' : 'Final') : undefined} />
+        {saveNotice && <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 font-semibold text-emerald-900">✓ {saveNotice}</div>}
 
         {/* Team Switcher - Voltear Hoja Button */}
         <div className="flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 p-3">
@@ -1344,9 +1030,9 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                   
                   {/* Inning Columns with Diamond Grids */}
                   {getInningColumns().map((col, inningIndex) => {
-                    const atBat = player ? getAtBatForPlayerNth(player.id, col.inning, col.isDuplicate ? 2 : 1) : null
+                    const atBat = player ? getAtBatForPlayerNth(player.id, col.inning, col.appearance) : null
                     const currentBatter = getCurrentBatter()
-                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === col.inning && !col.isDuplicate
+                    const isCurrentBatter = currentBatter && player && currentBatter.playerId === player.id && currentBatter.inning === col.inning && !atBat
                     
                     // Check if this cell should be locked
                     // Lock cells only for the team being viewed if that team has 3 outs in this inning
@@ -1388,7 +1074,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                                 player.id,
                                 inningNumber,
                                 `${player.first_name} ${player.last_name}`,
-                                col.isDuplicate ? undefined : (atBat as unknown as Record<string, unknown> || undefined)
+                                (atBat as unknown as Record<string, unknown> || undefined)
                               )
                             }
                           }}
@@ -1422,10 +1108,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                             )}
                             
                             {/* Red dot indicator for outs - show if base runner out OR result is an out */}
-                            {atBat && (
-                              (atBat?.base_runner_outs && (atBat.base_runner_outs.first || atBat.base_runner_outs.second || atBat.base_runner_outs.third || atBat.base_runner_outs.home)) ||
-                              (atBat.result && ['strikeout', 'ground_out', 'fly_out', 'line_out', 'pop_out'].includes(atBat.result))
-                            ) && (
+                            {atBat && playerOuts(atBat) > 0 && (
                               <div className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full border border-white"></div>
                             )}
                             
@@ -1437,21 +1120,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                             {/* At-bat result notation - only show if not run scored (blue diamond) */}
                             {atBat && !atBat.base_runners?.home && (
                               <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-foreground z-10">
-                                {atBat.result === 'single' && '1B'}
-                                {atBat.result === 'double' && '2B'}
-                                {atBat.result === 'triple' && '3B'}
-                                {atBat.result === 'home_run' && 'HR'}
-                                {atBat.result === 'walk' && 'BB'}
-                                {atBat.result === 'strikeout' && 'K'}
-                                {atBat.result === 'ground_out' && 'GO'}
-                                {atBat.result === 'fly_out' && 'FO'}
-                                {atBat.result === 'line_out' && 'LO'}
-                                {atBat.result === 'pop_out' && 'PO'}
-                                {atBat.result === 'error' && 'E'}
-                                {atBat.result === 'hit_by_pitch' && 'HBP'}
-                                {atBat.result === 'sacrifice_fly' && 'SF'}
-                                {atBat.result === 'sacrifice_bunt' && 'SAC'}
-                                {atBat.result === 'fielders_choice' && 'FC'}
+                                {atBat.notation || scoringPlay(atBat.result)?.code || atBat.result}
                               </div>
                             )}
                             
@@ -1543,11 +1212,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         />
       )}
 
+      <div className="my-4">
+        <Link className="inline-block rounded-lg border border-border px-4 py-3 font-semibold" href={`/live/${game.id}/faceoff`}>
+          {uiLang === 'es' ? 'Abrir scorecard de dos mánagers' : 'Open two-manager scorecard'}
+        </Link>
+      </div>
+
       {/* Canvas Drawing Modal */}
       {showCanvasModal && selectedCell && (
         <DiamondCanvas
           onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates) => {
-            saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates)
+            return saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates)
           }}
           activeRunners={getActiveRunners(selectedCell.playerId, selectedCell.inning, selectedCell.teamSide || currentTeamSide)}
           matchup={matchup}
@@ -1559,7 +1234,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           }}
           playerName={selectedCell.playerName}
           inning={selectedCell.inning}
-          existingAtBat={getAtBatForPlayer(selectedCell.playerId, selectedCell.inning) as unknown as Record<string, unknown>}
+          existingAtBat={atBats.find(ab => ab.id === selectedAtBatId) as unknown as Record<string, unknown>}
           isLocked={isLocked}
         />
       )}

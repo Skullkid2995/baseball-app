@@ -445,6 +445,15 @@ function completePlateAppearance(state: GameState, line: BatterLine, pitcher: Pi
 
 // ---- balls in play -----------------------------------------------------------
 function onBallInPlay(state: GameState, e: Extract<GameEvent, { type: 'ball_in_play' }>): GameState {
+  const requiredOuts = e.result === 'double_play' ? 2 : e.result === 'triple_play' ? 3 : 0
+  if (requiredOuts && (state.outs + requiredOuts > 3 || state.runners.length < requiredOuts - 1)) {
+    violation(state, 'invalid_event', { es: 'Faltan corredores u outs disponibles.', en: 'Not enough runners or outs remaining.' })
+    return state
+  }
+  // With two outs these are ordinary outs, not sacrifices; no runner can score.
+  if (state.outs === 2 && (e.result === 'sacrifice_fly' || e.result === 'sacrifice_bunt')) {
+    e = { ...e, result: e.result === 'sacrifice_fly' ? 'fly_out' : 'ground_out' }
+  }
   const batter = state.currentBatter
   if (!batter) return state
   const line = state.batterLines[batter.playerId]
@@ -488,14 +497,14 @@ function onBallInPlay(state: GameState, e: Extract<GameEvent, { type: 'ball_in_p
   }
   // extra outs on the play
   if (e.result === 'double_play' && !(e.runners && e.runners.length)) {
-    const lead = state.runners.sort((a, b) => b.base - a.base)[0]
+    const lead = state.runners.sort((a, b) => a.base - b.base)[0]
     if (lead) { removeRunner(state, lead.playerId); recordOut(state) }
   }
   if (e.result === 'triple_play' && !(e.runners && e.runners.length)) {
     for (const r of [...state.runners].sort((a, b) => b.base - a.base).slice(0, 2)) { removeRunner(state, r.playerId); recordOut(state) }
   }
   if (e.result === 'fielders_choice' && !(e.runners && e.runners.length)) {
-    const lead = state.runners.filter((r) => r.playerId !== batter.playerId).sort((a, b) => b.base - a.base)[0]
+    const lead = state.runners.filter((r) => r.playerId !== batter.playerId).sort((a, b) => a.base - b.base)[0]
     if (lead) { removeRunner(state, lead.playerId); recordOut(state) }
   }
 

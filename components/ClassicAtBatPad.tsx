@@ -1,324 +1,135 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Eraser, PenTool, RotateCcw, Save, Undo2, X } from 'lucide-react'
+import { Check, Eraser, Save, Undo2, X, Swords } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { Badge, Button } from '@/components/ui'
-import ScorecardBox from '@/components/ScorecardBox'
-import { TOKENS, describeToken } from '@/lib/handwriting/vocabulary'
+import { Button } from '@/components/ui'
+import ScorecardBox from './ScorecardBox'
+import PlayPicker from './PlayPicker'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
-import { NO_BASES, OUT_TOKENS, basesForToken, interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
+import { interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
 import { landingData, type Pt } from '@/lib/scorecard/geometry'
-import { cn } from '@/lib/utils'
+import { emptyBases, playBases, scoringPlay } from '@/lib/scorecard/plays'
+import { BASE_SHORT, defaultRunnerMoves, runnerUpdateFor, thirdOutCancelsRuns, type RunnerMove, type RunnerUpdate } from '@/lib/scorecard/runners'
 import { matchupLine, type MatchupSummary } from '@/lib/matchup'
 import RunnerPlayModal, { type RunnerOption } from './RunnerPlayModal'
-import { RUNNER_TOKENS, runnerBaseOf, type RunnerEventInput, type RunnerEventType, type ToBase } from '@/lib/runnerEvents'
-import { FIRST, SECOND, THIRD } from '@/lib/scorecard/geometry'
+import { RUNNER_TOKENS, runnerBaseOf, type RunnerEventInput, type RunnerEventType } from '@/lib/runnerEvents'
 
-/**
- * Classic (paper) scoring dialog for one plate appearance. The box itself and
- * the interpretation of what was drawn live in ScorecardBox + lib/scorecard,
- * shared with the scorecard lab so tuning there applies here.
- */
 export interface ClassicAtBatPadProps {
-  playerName: string
-  /** This batter's history against the pitcher on the mound */
-  matchup?: MatchupSummary | null
-  /** Runners on base from other boxes (for stolen bases, pickoffs...) */
-  activeRunners?: RunnerOption[]
+  playerName: string; matchup?: MatchupSummary | null; activeRunners?: RunnerOption[]
   onRunnerEvent?: (ev: RunnerEventInput) => Promise<void> | void
-  inning: number
-  existingAtBat?: Record<string, unknown>
-  isLocked?: boolean
-  onSave: (
-    notation: string,
-    baseRunners?: BaseRunners,
-    fieldLocationData?: Record<string, unknown>,
-    baseRunnerOuts?: BaseRunners,
-    baseRunnerOutTypes?: { first: string; second: string; third: string; home: string },
-    rbi?: number
-  ) => void
+  inning: number; outsBefore?: number; existingAtBat?: Record<string, unknown>; isLocked?: boolean
+  onSave: (notation: string, bases?: BaseRunners, location?: Record<string, unknown>, outs?: BaseRunners,
+    outTypes?: { first: string; second: string; third: string; home: string }, rbi?: number, runnerUpdates?: RunnerUpdate[]) => Promise<void> | void
   onClose: () => void
-  onSwitchMode: () => void
 }
 
-/** Notation the scorebook already understands (see interpretHandwriting) */
-function toScorebookNotation(token: string): string {
-  if (token === 'Kc') return 'KC'
-  const m = token.match(/^([FLP])([1-9])$/)
-  if (m) return `${m[1]}-${m[2]}`
-  return token
-}
-
-export default function ClassicAtBatPad({ playerName, inning, existingAtBat, isLocked = false, onSave, onClose, onSwitchMode, matchup = null, activeRunners = [], onRunnerEvent }: ClassicAtBatPadProps) {
+export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, existingAtBat, isLocked = false, onSave, onClose, matchup = null, activeRunners = [], onRunnerEvent }: ClassicAtBatPadProps) {
   const { language } = useLanguage()
+  const es = language === 'es'
+  const t = (spanish: string, english: string) => es ? spanish : english
   const [actions, setActions] = useState<BoxAction[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
-  const [digitTemplates, setDigitTemplates] = useState<Template[]>([])
-  const [token, setToken] = useState<string | null>(null)
-  const [fixing, setFixing] = useState(false)
-  const [rbi, setRbi] = useState(0)
-  const [outOverride, setOutOverride] = useState<number | null>(null)
-  const [saved, setSaved] = useState(false)
-  const [runnerPlay, setRunnerPlay] = useState<{ type: RunnerEventType | null; toBase: ToBase | null } | null>(null)
-  const [runnerDone, setRunnerDone] = useState<string | null>(null)
+  const [token, setToken] = useState(String(existingAtBat?.notation || existingAtBat?.result || ''))
+  const [rbi, setRbi] = useState(Number(existingAtBat?.rbi || 0))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [editedResult, setEditedResult] = useState(false)
+  const [runnerOut, setRunnerOut] = useState(Object.values((existingAtBat?.base_runner_outs || {}) as object).some(Boolean))
+  const [moves, setMoves] = useState<Record<string, RunnerMove>>({})
+  const [runnerPlay, setRunnerPlay] = useState<{ type: RunnerEventType | null } | null>(null)
+  const [runnerDone, setRunnerDone] = useState('')
+  const play = scoringPlay(token)
+  const locked = isLocked || saving
+  const { marks, tokenMatches } = useMemo(() => interpretBox(actions, templates, templates.filter(t => ['1', '2', '3'].includes(t.symbol))), [actions, templates])
+  const drawnBases = Object.values(marks.bases).some(Boolean)
+  const previousBases = existingAtBat?.base_runners as BaseRunners | undefined
+  const bases = play?.outs ? emptyBases() : drawnBases ? marks.bases : !editedResult && previousBases ? previousBases : play ? playBases(play) : emptyBases()
+  const isOut = !!play?.outs || runnerOut || marks.outNumber > 0
+  const outNumber = isOut ? Math.min(3, outsBefore + 1) : 0
+  const landing = marks.hitLine ? landingData(marks.hitLine[marks.hitLine.length - 1] as Pt) : undefined
+  const selfBase = existingAtBat ? runnerBaseOf(existingAtBat as { base_runners?: BaseRunners; base_runner_outs?: BaseRunners }) : null
+  const runnerOptions: RunnerOption[] = [
+    ...(existingAtBat && selfBase ? [{ atBatId: String(existingAtBat.id), playerId: String(existingAtBat.player_id), playerName, base: selfBase }] : []), ...activeRunners,
+  ]
 
-  const L = language === 'es'
-    ? {
-        title: 'Anotar turno', classic: 'Clásico', digital: 'Digital',
-        hint: 'Escribe la jugada en la casilla. Marca las bases con una línea o un toque, el out con un círculo abajo a la derecha, marca las cajitas de bolas (B) y strikes (S) con un toque o una raya encima, y traza el batazo desde home.',
-        recognized: 'Reconocido', nothing: 'Escribe la jugada…', noSamples: 'Sin muestras: elige la jugada de la lista.',
-        correct: 'Correcto', fix: 'Corregir', redo: 'Repetir', pick: 'Elige la jugada', out: 'Out', run: 'Carrera',
-        landing: 'Batazo', noLanding: 'sin trazo', rbiLabel: 'Carreras impulsadas', save: 'Guardar turno', close: 'Cerrar', undo: 'Deshacer', clear: 'Borrar',
-        locked: 'Juego cerrado: solo lectura.', savedOk: 'Turno guardado',
-        runnerPlay: 'Corredores', runnerRecognized: 'Jugada de corredor reconocida', confirmRunner: 'Confirmar', notThat: 'No', runnerSaved: 'Jugada de corredor guardada',
-      }
-    : {
-        title: 'Score at-bat', classic: 'Classic', digital: 'Digital',
-        hint: 'Write the play in the box. Mark bases with a line or a tap, the out with a circle in the lower right, mark the ball (B) and strike (S) boxes with a tap or a line over them, and draw the batted ball from home.',
-        recognized: 'Recognized', nothing: 'Write the play…', noSamples: 'No samples yet: pick the play from the list.',
-        correct: 'Correct', fix: 'Fix', redo: 'Redo', pick: 'Pick the play', out: 'Out', run: 'Run',
-        landing: 'Batted ball', noLanding: 'no line', rbiLabel: 'Runs batted in', save: 'Save at-bat', close: 'Close', undo: 'Undo', clear: 'Clear',
-        locked: 'Game locked: read only.', savedOk: 'At-bat saved',
-        runnerPlay: 'Runners', runnerRecognized: 'Runner play recognized', confirmRunner: 'Confirm', notThat: 'No', runnerSaved: 'Runner play saved',
-      }
-
-  // Templates from the handwriting lab (notation set only)
   useEffect(() => {
-    const allowed = new Set(TOKENS.map((t) => t.value))
-    supabase
-      .from('handwriting_samples')
-      .select('symbol, strokes')
-      .limit(5000)
-      .then(({ data }) => {
-        const rows = (data || []) as { symbol: string; strokes: Stroke[] }[]
-        setTemplates(rows.filter((r) => allowed.has(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
-        setDigitTemplates(rows.filter((r) => ['1', '2', '3'].includes(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
-      })
+    let live = true
+    supabase.from('handwriting_samples').select('symbol, strokes').limit(5000).then(({ data }) => {
+      if (live) setTemplates((data || []).map((r: { symbol: string; strokes: Stroke[] }) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
+    })
+    return () => { live = false }
   }, [])
 
-  // Prefill when editing an existing at-bat
-  useEffect(() => {
-    if (!existingAtBat) return
-    const notation = String(existingAtBat.notation || existingAtBat.result || '')
-    if (notation && notation !== 'DRAWING_SAVED') setToken(notation)
-    if (typeof existingAtBat.rbi === 'number') setRbi(existingAtBat.rbi)
-  }, [existingAtBat])
-
-  const interpretation = useMemo(() => interpretBox(actions, templates, digitTemplates), [actions, templates, digitTemplates])
-  const { marks, tokenMatches } = interpretation
-  const top = tokenMatches[0]
-  const hasInk = marks.ink.length > 0
-
-  // Ink changed after a confirmation: ask again
-  const inkCount = marks.ink.length
-  useEffect(() => {
-    setToken((t) => (t && !existingAtBat ? null : t))
-    setFixing(false)
-  }, [inkCount, existingAtBat])
-
-  const effectiveBases = token ? basesForToken(token, marks.bases) : marks.bases
-  const effectiveOut = outOverride ?? (marks.outNumber || (token && OUT_TOKENS.has(token) ? 1 : 0))
-  const landing = marks.hitLine ? landingData(marks.hitLine[marks.hitLine.length - 1] as Pt) : undefined
-  const canSave = !!token && !isLocked && !saved
-
-  // Runner plays: this box's own runner (when editing a box whose batter is on base) plus the other runners
-  const selfBase = existingAtBat ? runnerBaseOf(existingAtBat as { base_runners?: BaseRunners | null; base_runner_outs?: BaseRunners | null }) : null
-  const runnerOptions: RunnerOption[] = [
-    ...(existingAtBat && selfBase ? [{ atBatId: String(existingAtBat.id), playerId: (existingAtBat.player_id as string) ?? null, playerName, base: selfBase }] : []),
-    ...activeRunners,
-  ]
-  const canRunnerPlay = !!onRunnerEvent && !isLocked && runnerOptions.length > 0
-  // "SB" (or CS / PK / WP / PB / BK) written in the box: offer it as a runner play instead of a batting result
-  const inkRunnerToken = canRunnerPlay && hasInk && top && RUNNER_TOKENS.has(top.symbol) ? (top.symbol as RunnerEventType) : null
-  // The drawn base path says where the runner ended up
-  const drawnTo: ToBase | null = marks.bases.home ? 'home' : marks.bases.third ? 'third' : marks.bases.second ? 'second' : null
-
-  function save() {
-    if (!token) return
-    const runners: BaseRunners = effectiveBases.home ? { first: false, second: false, third: false, home: true } : effectiveBases
-    onSave(toScorebookNotation(token), runners, landing ? { ...landing } : undefined, { ...NO_BASES }, { first: '', second: '', third: '', home: '' }, rbi)
-    setSaved(true)
+  function choose(code: string) {
+    setToken(code); setEditedResult(true); setRunnerOut(false); setError('')
+    const next = defaultRunnerMoves(code, activeRunners)
+    const p = scoringPlay(code)
+    if (p?.outs && outsBefore + p.outs >= 3) for (const r of activeRunners) if (next[r.atBatId] === 'home') next[r.atBatId] = 'stay'
+    setMoves(next)
+    setRbi(p?.result === 'error' || (p?.outs || 0) > 1 ? 0 : Object.values(next).filter(m => m === 'home').length + (p?.base === 4 ? 1 : 0))
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 backdrop-blur-sm sm:p-6">
-      {runnerPlay && (
-        <RunnerPlayModal
-          runners={runnerOptions}
-          initialRunnerId={existingAtBat && selfBase ? String(existingAtBat.id) : null}
-          initialType={runnerPlay.type}
-          initialToBase={runnerPlay.toBase}
-          enteredVia="classic"
-          onConfirm={async (ev) => {
-            await onRunnerEvent?.(ev)
-            setRunnerDone(`${ev.runnerName} · ${ev.type}`)
-            setRunnerPlay(null)
-            setActions(actions.filter((a) => a.type === 'tap'))
-          }}
-          onClose={() => setRunnerPlay(null)}
-        />
-      )}
-      <div className="flex max-h-[95vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-card shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold leading-tight">{L.title} · {playerName} <span className="text-muted-foreground">({language === 'es' ? 'Entrada' : 'Inning'} {inning})</span></h3>
-            {matchup && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">vs {matchup.pitcherName}</span> · {matchupLine(matchup, language === 'es' ? 'es' : 'en')}
-              </p>
-            )}
-            <p className="mt-1 hidden text-xs text-muted-foreground sm:block">{L.hint}</p>
+  async function save() {
+    if (!play || locked) return
+    setSaving(true); setError('')
+    try {
+      const updates = activeRunners.map(r => runnerUpdateFor(r, moves[r.atBatId] || 'stay', play.code))
+      const outsOnPlay = (isOut ? 1 : 0) + updates.filter(u => u.move === 'out').length
+      if (outsBefore + outsOnPlay > 3) throw new Error(t('La jugada supera los tres outs.', 'This play exceeds three outs.'))
+      if (play.outs > 1 && outsOnPlay !== play.outs) throw new Error(t('Selecciona los corredores que quedaron out.', 'Select the runners retired on this play.'))
+      const destinations = updates.filter(u => !['out', 'home'].includes(u.move)).map(u => u.move === 'stay' ? activeRunners.find(r => r.atBatId === u.atBatId)!.base : u.move)
+      if (!isOut && !bases.home) destinations.push(bases.third ? 'third' : bases.second ? 'second' : 'first')
+      if (new Set(destinations).size !== destinations.length) throw new Error(t('Dos corredores no pueden ocupar la misma base.', 'Two runners cannot occupy the same base.'))
+      const outs = emptyBases()
+      if (isOut) outs[bases.third ? 'third' : bases.second ? 'second' : 'first'] = true
+      if (thirdOutCancelsRuns(outsBefore, isOut, play.outs > 0, updates) && (updates.some(u => u.move === 'home') || (!isOut && bases.home))) throw new Error(t('No anota carrera cuando el tercer out es forzado o del bateador antes de primera. Corrige los corredores.', 'No run scores on a third force out or a third out on the batter before first. Correct the runners.'))
+      const scoringRunners = updates.filter(u => u.move === 'home').length + (!isOut && bases.home ? 1 : 0)
+      if (rbi > scoringRunners && (!existingAtBat || editedResult)) throw new Error(t('Las impulsadas no pueden superar las carreras de la jugada.', 'RBI cannot exceed the runs scored on this play.'))
+      const finalBases = isOut ? { ...bases, home: false } : bases
+      await onSave(token, finalBases, landing ? { ...landing } : undefined, outs, { first: isOut ? 'OUT' : '', second: '', third: '', home: '' }, rbi, updates)
+    } catch (e) { setError(e instanceof Error ? e.message : t('No se pudo guardar.', 'Could not save.')) }
+    finally { setSaving(false) }
+  }
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="at-bat-title">
+    {runnerPlay && <RunnerPlayModal runners={runnerOptions} initialType={runnerPlay.type} enteredVia="classic" onConfirm={async ev => {
+      await onRunnerEvent?.(ev); setRunnerDone(ev.runnerName + ' · ' + ev.type); setRunnerPlay(null)
+    }} onClose={() => setRunnerPlay(null)} />}
+    <div className="flex max-h-[95dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-slate-50 shadow-2xl">
+      <header className="relative shrink-0 overflow-hidden bg-slate-950 px-4 py-4 text-white sm:px-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0"><p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400"><Swords className="size-4" />{t('Duelo en el plato', 'At the plate')} · {t('Entrada', 'Inning')} {inning}</p>
+            <h3 id="at-bat-title" className="mt-1 text-2xl font-black tracking-tight sm:text-3xl">{playerName}</h3>
+            {matchup && <p className="mt-1 text-xs text-slate-300">vs {matchup.pitcherName} · {matchupLine(matchup, language)}</p>}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="inline-flex items-center rounded-lg bg-secondary p-0.5">
-              <button type="button" aria-pressed className="rounded-md bg-card px-3 py-1 text-xs font-semibold shadow-sm">{L.classic}</button>
-              <button type="button" onClick={onSwitchMode} className="rounded-md px-3 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground">{L.digital}</button>
-            </div>
-            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={L.close}><X /></Button>
-          </div>
+          <button type="button" disabled={saving} onClick={onClose} aria-label={t('Cerrar', 'Close')} className="rounded-lg bg-white/10 p-2 hover:bg-white/20"><X className="size-5" /></button>
         </div>
-
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:p-6">
-          <div className="space-y-2">
-            <div className="relative">
-              <ScorecardBox actions={actions} onChange={setActions} marks={marks} disabled={isLocked || saved} />
-              {/* Runners on base from the other boxes: who is where */}
-              {activeRunners.length > 0 && (
-                <div className="pointer-events-none absolute inset-0">
-                  {activeRunners.map((r) => {
-                    const at = r.base === 'first' ? FIRST : r.base === 'second' ? SECOND : THIRD
-                    const parts = r.playerName.trim().split(/\s+/)
-                    const short = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]
-                    return (
-                      <div key={r.atBatId} className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${at[0]}%`, top: `${at[1]}%` }}>
-                        <span className="size-4 rounded-full border-2 border-white bg-blue-800 shadow" />
-                        <span className="mt-0.5 whitespace-nowrap rounded bg-blue-800/90 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow">{short}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex gap-1.5">
-                <Button variant="outline" size="sm" disabled={actions.length === 0} onClick={() => setActions(actions.slice(0, -1))}><Undo2 />{L.undo}</Button>
-                <Button variant="outline" size="sm" onClick={() => { setActions([]); setToken(null); setOutOverride(null) }}><Eraser />{L.clear}</Button>
-                {canRunnerPlay && (
-                  <Button variant="warning" size="sm" onClick={() => setRunnerPlay({ type: null, toBase: null })}>{L.runnerPlay}</Button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5 text-xs">
-                <Badge variant={effectiveBases.home ? 'success' : 'outline'}>{L.run}{effectiveBases.home ? ' ✓' : ''}</Badge>
-                <button type="button" onClick={() => setOutOverride((effectiveOut + 1) % 4)} title={L.out}>
-                  <Badge variant={effectiveOut ? 'danger' : 'outline'}>{L.out} {effectiveOut || '–'}</Badge>
-                </button>
-                <Badge variant={marks.hitLine ? 'warning' : 'outline'}>{L.landing}: {landing ? landing.fieldZone.toLowerCase().replace(/_/g, ' ') : L.noLanding}</Badge>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {isLocked && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{L.locked}</div>}
-            <div className="rounded-xl border border-border bg-slate-50 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.recognized}</p>
-              {token ? (
-                <div className="flex items-baseline gap-3">
-                  <span className="text-5xl font-bold tabular-nums">{token}</span>
-                  <span className="text-sm text-muted-foreground">{describeToken(token, language)}</span>
-                  <Check className="size-5 text-emerald-600" />
-                </div>
-              ) : !hasInk ? (
-                <p className="text-sm text-muted-foreground">{L.nothing}</p>
-              ) : templates.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{L.noSamples}</p>
-              ) : tokenMatches.length === 0 ? (
-                <p className="text-sm text-muted-foreground">—</p>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-5xl font-bold tabular-nums">{top.symbol}</span>
-                    <span className="text-sm text-muted-foreground">{describeToken(top.symbol, language)}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {tokenMatches.map((m, i) => (
-                      <Badge key={m.symbol} variant={i === 0 ? (m.score > 0.7 ? 'success' : 'warning') : 'outline'}>{m.symbol} · {Math.round(m.score * 100)}%</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {inkRunnerToken && !runnerDone && (
-              <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">{L.runnerRecognized}</p>
-                <div className="mt-1 flex items-baseline gap-3">
-                  <span className="text-4xl font-bold">{inkRunnerToken}</span>
-                  <span className="text-sm text-amber-900">{describeToken(inkRunnerToken, language)}</span>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button variant="success" onClick={() => setRunnerPlay({ type: inkRunnerToken, toBase: drawnTo })}><Check />{L.confirmRunner}</Button>
-                  <Button variant="ghost" onClick={() => setActions(actions.filter((a) => a.type === 'tap'))}>{L.notThat}</Button>
-                </div>
-              </div>
-            )}
-            {runnerDone && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{L.runnerSaved}: {runnerDone}</div>}
-
-            {!token && hasInk && !fixing && (
-              <div className="flex flex-wrap gap-2">
-                <Button variant="success" size="lg" disabled={!top} onClick={() => top && setToken(top.symbol)}><Check />{L.correct}</Button>
-                <Button variant="outline" size="lg" onClick={() => setFixing(true)}><PenTool />{L.fix}</Button>
-                <Button variant="ghost" size="lg" onClick={() => setActions(actions.filter((a) => a.type === 'tap'))}><RotateCcw />{L.redo}</Button>
-              </div>
-            )}
-
-            {(fixing || (!token && (!hasInk || templates.length === 0))) && (
-              <div>
-                <p className="mb-2 text-sm font-medium">{L.pick}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {TOKENS.map((t) => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      title={t[language]}
-                      onClick={() => { setToken(t.value); setFixing(false) }}
-                      className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold hover:border-primary hover:bg-accent"
-                    >
-                      {t.value}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {token && (
-              <div className="space-y-3">
-                <div>
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.rbiLabel}</p>
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2, 3, 4].map((n) => (
-                      <button key={n} type="button" onClick={() => setRbi(n)} aria-pressed={rbi === n}
-                        className={cn('size-9 rounded-lg border text-sm font-semibold', rbi === n ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-card hover:bg-slate-50')}>
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => { setToken(null); setFixing(true) }}><PenTool />{L.fix}</Button>
-              </div>
-            )}
-          </div>
+        <div className="mt-3 flex items-center justify-between"><div className="flex items-center gap-2 text-xs font-bold"><span className="text-slate-400">OUTS</span>{[1,2,3].map(n => <span key={n} className={'size-2.5 rounded-full ' + (n <= outsBefore ? 'bg-rose-400' : 'bg-slate-700')} />)}</div><span className="text-xs font-semibold text-slate-300">{t('Escribe o toca una opción', 'Write or tap a result')}</span></div>
+      </header>
+      <div className="grid min-h-0 flex-1 overscroll-contain gap-5 overflow-y-auto p-4 md:grid-cols-2 sm:p-6">
+        <div className="space-y-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500">01 · {t('Traza la jugada', 'Draw the play')}</p>
+          <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardBox actions={actions} onChange={a => { if (JSON.stringify(interpretBox(a, []).marks.ink) !== JSON.stringify(marks.ink)) { setToken(''); setEditedResult(true) }; setActions(a); setError('') }} marks={{ ...marks, bases, outNumber }} disabled={locked} /></div>
+          <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={locked || !actions.length} onClick={() => setActions(actions.slice(0,-1))}><Undo2 />{t('Deshacer', 'Undo')}</Button><Button variant="outline" size="sm" disabled={locked} onClick={() => { setActions([]); setToken(''); setRunnerOut(false); setEditedResult(true); setMoves({}); setRbi(0) }}><Eraser />{t('Borrar', 'Clear')}</Button></div>
+          <p className="text-xs leading-relaxed text-slate-500">{t('Escribe con el dedo o lápiz. Marca las bases y el destino del batazo. Confirma el resultado a la derecha.', 'Use your finger or stylus. Mark the bases and where the ball landed, then confirm the result.')}</p>
+          {!!tokenMatches.length && <div className="flex flex-wrap gap-2">{tokenMatches.filter(m => scoringPlay(m.symbol)).map(m => <Button key={m.symbol} variant="outline" disabled={locked} onClick={() => choose(m.symbol)}>{m.symbol} <Check className="size-3" /></Button>)}</div>}
+          {runnerOptions.length > 0 && onRunnerEvent && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950"><p className="mb-2 text-xs font-bold">{t('Jugada entre lanzamientos', 'Between pitches')}</p><div className="flex flex-wrap gap-2">{[...RUNNER_TOKENS].map(code => <button key={code} disabled={locked} type="button" onClick={() => setRunnerPlay({ type: code as RunnerEventType })} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold">{code}</button>)}</div><p className="mt-2 text-xs">{t('Robo, out robando, pickoff, wild pitch, passed ball y balk.', 'Steal, caught stealing, pickoff, wild pitch, passed ball and balk.')}</p></div>}
+          {runnerDone && <p role="status" className="text-sm font-semibold text-emerald-700">✓ {runnerDone}</p>}
         </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-slate-50/80 px-4 py-3 sm:px-6">
-          {saved ? <Badge variant="success"><Check /> {L.savedOk}</Badge> : <span />}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>{L.close}</Button>
-            <Button variant="success" size="lg" onClick={save} disabled={!canSave}><Save />{L.save}</Button>
-          </div>
+        <div className="space-y-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-500">02 · {t('Elige el resultado', 'Call the result')}</p>
+          <PlayPicker value={token} onChange={choose} language={language} disabled={locked} outs={outsBefore} runners={activeRunners.length} />
+          {play && <div className={'rounded-xl border-l-4 p-4 ' + (isOut ? 'border-rose-500 bg-rose-50 text-rose-950' : 'border-emerald-500 bg-emerald-50 text-emerald-950')} role="status"><span className="text-2xl font-black">{token.toUpperCase()}</span><span className="ml-3 text-sm font-semibold">{play[language]}</span><p className="mt-1 text-xs font-bold uppercase tracking-wider">{isOut ? t('Bateador out', 'Batter out') : t('Bateador a salvo', 'Batter safe')}</p></div>}
+          {play && play.outs === 0 && <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={runnerOut} disabled={locked} onChange={e => setRunnerOut(e.target.checked)} />{t('Out intentando avanzar después de llegar a base', 'Out advancing after reaching base')}</label>}
+          {play && activeRunners.length > 0 && <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs font-bold uppercase text-slate-500">03 · {t('Corredores en esta jugada', 'Runners on this play')}</p>{activeRunners.map(r => <label key={r.atBatId} className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-medium">{r.playerName} <span className="text-slate-400">{BASE_SHORT[r.base]}</span></span><select aria-label={r.playerName + ' ' + t('destino', 'destination')} disabled={locked} value={moves[r.atBatId] || 'stay'} onChange={e => { const next = { ...moves, [r.atBatId]: e.target.value as RunnerMove }; setMoves(next); setRbi(play.result === 'error' || play.outs > 1 ? 0 : Object.values(next).filter(m => m === 'home').length + (!isOut && bases.home ? 1 : 0)) }} className="min-h-10 rounded-lg border border-slate-300 px-2"><option value="stay">{t('Se queda', 'Holds')}</option>{r.base === 'first' && <option value="second">2B</option>}{r.base !== 'third' && <option value="third">3B</option>}<option value="home">{t('Anota', 'Scores')}</option><option value="out">OUT</option></select></label>)}</div>}
+          {play && <label className="flex items-center justify-between text-sm font-semibold text-slate-700">{t('Carreras impulsadas', 'Runs batted in')}<select aria-label="RBI" disabled={locked} value={rbi} onChange={e => setRbi(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white p-2">{[0,1,2,3,4].map(n => <option key={n}>{n}</option>)}</select></label>}
         </div>
       </div>
+      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+        {error && <p role="alert" className="mb-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+        <div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{isLocked ? t('Juego cerrado · Solo lectura', 'Game locked · Read only') : t('Confirma el resultado antes de guardar.', 'Confirm the result before saving.')}</span><Button variant="success" size="lg" onClick={() => void save()} disabled={locked || !play}><Save />{saving ? t('Guardando…', 'Saving…') : t('Guardar jugada', 'Save play')}</Button></div>
+      </footer>
     </div>
-  )
+  </div>
 }

@@ -35,14 +35,14 @@
   Values are Tailwind v4 slate/blue swatches expressed in oklch.
 */
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.984 0.003 247.858);      /* slate-50  */
+  --radius: 0.9rem;
+  --background: #f2f4f7;
   --foreground: oklch(0.208 0.042 265.755);      /* slate-900 */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.208 0.042 265.755);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.208 0.042 265.755);
-  --primary: oklch(0.488 0.243 264.376);         /* blue-700  */
+  --primary: #2459e5;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.968 0.007 247.896);       /* slate-100 */
   --secondary-foreground: oklch(0.279 0.041 260.031); /* slate-800 */
@@ -98,10 +98,24 @@
   sm:/lg: breakpoints, so on a wide screen we collapse the multi-column layouts inside <main>
   to mimic a phone or tablet.
 */
-[data-view="mobile"] main .grid {
+[data-view="mobile"] main .grid:not([data-keep-grid]) {
   grid-template-columns: minmax(0, 1fr) !important;
 }
 [data-view="mobile"] main [class*="sm:flex-row"],
 [data-view="mobile"] main [class*="lg:flex-row"] {
   flex-direction: column !important;
+}
+
+/* Ballpark surfaces: crisp white work areas over a subtle field-line grid. */
+.ballpark-background {
+  background-color: var(--background);
+  background-image: linear-gradient(90deg, #192f4a03 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.stadium-hero {
+  background-color: #0b1526;
+  background-image: radial-gradient(ellipse at 95% 100%, #11644c70, transparent 55%), linear-gradient(115deg, transparent 70%, #ffffff04 70%);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

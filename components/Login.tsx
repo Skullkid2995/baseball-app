@@ -99,18 +99,18 @@ export default function Login() {
     }
   }
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden stadium-hero p-6">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(29,78,216,0.14),transparent_60%)]"
       />
       <div className="relative w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-blue-900/20">
+          <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-emerald-300 text-slate-950 shadow-lg shadow-emerald-900/20">
             <BaseballMark className="size-8" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight">{t.appTitle}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t.signInToAccess}</p>
+          <h1 className="text-3xl font-black tracking-tight text-white">{t.appTitle}</h1>
+          <p className="mt-2 text-sm text-slate-300">{t.signInToAccess}</p>
         </div>
 
         <Card className="p-6">

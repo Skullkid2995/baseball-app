@@ -1,0 +1,9 @@
+.env
+.env.*
+*.bak-utf16
+.git/
+.next/
+node_modules/
+tmp/
+temp/
+.claude/

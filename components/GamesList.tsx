@@ -329,6 +329,12 @@ export default function GamesList() {
 
   return (
     <div className="space-y-6">
+      <section className="stadium-hero relative overflow-hidden rounded-2xl px-6 py-7 text-white sm:px-8">
+        <div aria-hidden className="absolute -right-6 -top-8 size-52 rotate-45 rounded-3xl border-[18px] border-white/5" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-300">{language === 'es' ? 'Del primer lanzamiento al último out' : 'From first pitch to final out'}</p>
+        <h2 className="relative mt-3 text-4xl font-black tracking-tight sm:text-5xl">{language === 'es' ? 'Día de juego.' : 'Game day.'}</h2>
+        <div className="relative mt-5 flex flex-wrap gap-6 text-sm"><span><strong className="mr-2 font-mono text-xl">{games.filter(g => g.game_status === 'scheduled').length}</strong><span className="text-slate-300">{language === 'es' ? 'por jugar' : 'scheduled'}</span></span><span><strong className="mr-2 font-mono text-xl text-emerald-300">{games.filter(g => g.game_status === 'in_progress').length}</strong><span className="text-slate-300">{language === 'es' ? 'en juego' : 'in play'}</span></span><span><strong className="mr-2 font-mono text-xl">{games.filter(g => g.game_status === 'completed').length}</strong><span className="text-slate-300">{language === 'es' ? 'finalizados' : 'completed'}</span></span></div>
+      </section>
       <PageHeader
         title={t.gamesCount}
         count={games.length}
@@ -509,12 +515,12 @@ export default function GamesList() {
       ) : (
         <div className="space-y-4">
           {games.map((game) => (
-            <Card key={game.id} className="overflow-hidden">
+            <Card key={game.id} className="overflow-hidden border-t-4 border-t-primary">
               <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:justify-between">
                 {/* Game info */}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-lg font-semibold tracking-tight">
+                    <h4 className="text-xl font-extrabold tracking-tight">
                       vs {game.opponent}
                     </h4>
                     <Badge variant={getStatusVariant(game.game_status)}>
@@ -550,7 +556,7 @@ export default function GamesList() {
                 {/* Score + actions */}
                 <div className="flex shrink-0 flex-col gap-3 sm:items-end">
                   <div className="flex items-center justify-center gap-3 rounded-xl bg-slate-900 px-5 py-2 text-white sm:justify-end">
-                    <span className="text-2xl font-bold tabular-nums">{game.our_score}</span>
+                    <span className="font-mono text-3xl font-black tabular-nums">{game.our_score}</span>
                     <span className="text-slate-500">–</span>
                     <span className="text-2xl font-bold tabular-nums">{game.opponent_score}</span>
                   </div>
