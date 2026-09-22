@@ -17,6 +17,8 @@ export interface ScorecardBoxProps {
   disabled?: boolean
   className?: string
   onPointerType?: (pointerType: string) => void
+  onDrawingChange?: (drawing: boolean) => void
+  pendingActions?: BoxAction[]
 }
 
 const PENCIL = '#1f2937'
@@ -27,11 +29,12 @@ const PENCIL = '#1f2937'
  * taps in 0-100 units and paints the marks the interpreter derived from them.
  * Pen input gets palm rejection (touch is ignored while a pen is in use).
  */
-export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType }: ScorecardBoxProps) {
+export default function ScorecardBox({ actions, onChange, marks, disabled = false, className, onPointerType, onDrawingChange, pendingActions }: ScorecardBoxProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef<Stroke | null>(null)
   const penActive = useRef(false)
   const lastPointerType = useRef('mouse')
+  const activePointerId = useRef<number | null>(null)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -174,8 +177,9 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     for (const s of marks.outDigitStrokes) strokePath(s, 'rgba(31,41,55,0.6)', u(1.2))
     for (const s of marks.tallyStrokes) strokePath(s, PENCIL, u(1.6))
     for (const s of marks.ink) strokePath(s, PENCIL, u(2.2))
+    for (const action of pendingActions || []) strokePath(action.type === 'stroke' ? action.points : [action.point], PENCIL, u(2.2))
     if (drawing.current) strokePath(drawing.current, PENCIL, u(2.2))
-  }, [marks])
+  }, [marks, pendingActions])
 
   useEffect(() => {
     draw()
@@ -190,15 +194,18 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
   }
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (disabled) return
+    if (disabled || drawing.current) return
     if (e.pointerType === 'pen') penActive.current = true
     if (penActive.current && e.pointerType === 'touch') return
     lastPointerType.current = e.pointerType
+    activePointerId.current = e.pointerId
     e.currentTarget.setPointerCapture(e.pointerId)
     drawing.current = [toUnits(e)]
+    onDrawingChange?.(true)
+    draw()
   }
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawing.current) return
+    if (!drawing.current || e.pointerId !== activePointerId.current) return
     if (penActive.current && e.pointerType === 'touch') return
     const p = toUnits(e)
     const last = drawing.current[drawing.current.length - 1] as Pt
@@ -207,13 +214,16 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
     draw()
   }
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerId !== activePointerId.current) return
     const stroke = drawing.current
     drawing.current = null
+    activePointerId.current = null
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* released */ }
     if (!stroke) return
     onPointerType?.(lastPointerType.current)
     if (strokeLength(stroke) < TAP_LENGTH) onChange([...actions, { type: 'tap', point: stroke[0] as Pt }])
     else onChange([...actions, { type: 'stroke', points: stroke }])
+    onDrawingChange?.(false)
   }
 
   return (
@@ -224,7 +234,7 @@ export default function ScorecardBox({ actions, onChange, marks, disabled = fals
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onPointerLeave={onPointerUp}
+      onLostPointerCapture={onPointerUp}
       aria-label="Scorecard box"
     />
   )

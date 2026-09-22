@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { supabase } from '@/lib/supabase'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { interpretBox, type BoxAction } from '@/lib/scorecard/interpret'
+import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
 import { scoringPlay } from '@/lib/scorecard/plays'
 import PlayPicker from './PlayPicker'
 import Scoreboard from './Scoreboard'
@@ -40,7 +41,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
   const room = snapshot?.room
   const side = snapshot?.isSuperAdmin && testSide ? testSide : snapshot?.side
   const canWrite = !!room && side === room.state.battingSide && !room.pending && room.state.status !== 'final'
-  const marks = useMemo(() => interpretBox(actions, templates), [actions, templates])
+  const marks = useScorecardInterpretation(actions, templates)
   const pendingMarks = useMemo(() => interpretBox(room?.pending?.ink || [], []), [room?.pending?.ink])
   const pendingPreview = useMemo(() => room?.pending ? applyEvent(room.state, room.pending.event) : null, [room])
 
@@ -108,7 +109,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
     try { sessionStorage.removeItem(draftKey) } catch { /* no storage */ }
   }
   async function mutate(action: string) {
-    if (busy) return
+    if (busy || (action === 'submit' && marks.waiting)) return
     setBusy(true); setError('')
     try {
       if (action === 'submit' && draftVersion.current !== null && room?.version !== draftVersion.current) throw new Error(t('El juego cambió. Revisa el borrador antes de enviarlo.', 'The game changed. Review your draft before submitting.'))
@@ -150,7 +151,8 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
         <section className={panel}>
           <h2 className="font-semibold">{t('Escribir jugada', 'Write a play')} · {room.state.currentBatter ? room.state.batterLines[room.state.currentBatter.playerId]?.name : '—'}</h2>
           {!canWrite && <p>{room.pending ? t('Esperando validación.', 'Waiting for validation.') : t('Es el turno del otro equipo.', 'The other team is scoring.')}</p>}
-          <div className="max-w-md"><ScorecardBox actions={actions} onChange={editInk} marks={{ ...marks.marks, outNumber: selectedPlay?.outs ? Math.min(3, room.state.outs + selectedPlay.outs) : marks.marks.outNumber }} disabled={!canWrite || busy || !!syncError} /></div>
+          <div className="max-w-md"><ScorecardBox actions={actions} onChange={editInk} onDrawingChange={marks.onDrawingChange} pendingActions={marks.pendingActions} marks={{ ...marks.marks, outNumber: selectedPlay?.outs ? Math.min(3, room.state.outs + selectedPlay.outs) : marks.marks.outNumber }} disabled={!canWrite || busy || !!syncError} /></div>
+          <p role="status" className="min-h-8 text-xs text-slate-500">{marks.waiting ? t('Sigue escribiendo… Leeremos el trazo tras 4 segundos sin escribir.', 'Keep writing… We’ll read the ink after a 4-second pause.') : t('Puedes escribir varias líneas antes de confirmar.', 'You can finish all your strokes before confirming.')}</p>
           <div className="flex gap-2"><Button variant="outline" disabled={busy || !actions.length} onClick={() => editInk(actions.slice(0, -1))}>{t('Deshacer', 'Undo')}</Button><Button variant="outline" disabled={busy} onClick={clearDraft}>{t('Borrar', 'Clear')}</Button></div>
           {!!marks.tokenMatches.length && <div className="flex flex-wrap gap-2">{marks.tokenMatches.map(m => <Button key={m.symbol} variant="outline" disabled={!canWrite || busy} onClick={() => choose(m.symbol)}>{m.symbol}</Button>)}</div>}
           <PlayPicker value={notation} onChange={choose} language={lang} shared disabled={!canWrite || busy || !!syncError} outs={room.state.outs} runners={room.state.runners.length} />
@@ -158,7 +160,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
           {localPreview && <p className="text-sm">{t('Resultado propuesto', 'Proposed result')}: {localPreview.score.home}–{localPreview.score.opponent} · {t('Entrada', 'Inning')} {localPreview.inning} {localPreview.half} · {localPreview.outs} outs<br />{t('Corredores', 'Runners')}: {localPreview.runners.map(r => `${r.name} (${r.base})`).join(', ') || '—'}</p>}
           <p className="text-xs text-muted-foreground">{t('Revisa el avance automático de corredores. Los trazos son el registro visual; esta primera versión usa el avance predeterminado del motor.', 'Review automatic runner advancement. Ink is the visual record; this first version uses the engine’s default advancement.')}</p>
           {draftVersion.current !== null && draftVersion.current !== room.version && (actions.length > 0 || notation) && <Button variant="outline" onClick={() => { draftVersion.current = room.version; setError(''); refreshDraft(v => v + 1); }}>{t('Revisé el borrador para este turno', 'I reviewed this draft for the current turn')}</Button>}
-          <Button disabled={!canWrite || busy || !localPreview || !!syncError} onClick={() => void mutate('submit')}>{t('Enviar a validar', 'Submit for validation')}</Button>
+          <Button disabled={!canWrite || busy || !localPreview || !!syncError || marks.waiting} onClick={() => void mutate('submit')}>{t('Enviar a validar', 'Submit for validation')}</Button>
         </section>
         <section className={panel}>
           <h2 className="font-semibold">{t('Validación del rival', 'Opponent validation')}</h2>

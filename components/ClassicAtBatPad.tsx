@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Eraser, Save, Undo2, X, Swords } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -9,6 +9,7 @@ import ScorecardBox from './ScorecardBox'
 import PlayPicker from './PlayPicker'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
+import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
 import { landingData, type Pt } from '@/lib/scorecard/geometry'
 import { emptyBases, playBases, scoringPlay } from '@/lib/scorecard/plays'
 import { BASE_SHORT, defaultRunnerMoves, runnerUpdateFor, thirdOutCancelsRuns, type RunnerMove, type RunnerUpdate } from '@/lib/scorecard/runners'
@@ -42,7 +43,7 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
   const [runnerDone, setRunnerDone] = useState('')
   const play = scoringPlay(token)
   const locked = isLocked || saving
-  const { marks, tokenMatches } = useMemo(() => interpretBox(actions, templates, templates.filter(t => ['1', '2', '3'].includes(t.symbol))), [actions, templates])
+  const { marks, tokenMatches, pendingActions, waiting, onDrawingChange } = useScorecardInterpretation(actions, templates)
   const drawnBases = Object.values(marks.bases).some(Boolean)
   const previousBases = existingAtBat?.base_runners as BaseRunners | undefined
   const bases = play?.outs ? emptyBases() : drawnBases ? marks.bases : !editedResult && previousBases ? previousBases : play ? playBases(play) : emptyBases()
@@ -71,8 +72,15 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
     setRbi(p?.result === 'error' || (p?.outs || 0) > 1 ? 0 : Object.values(next).filter(m => m === 'home').length + (p?.base === 4 ? 1 : 0))
   }
 
+  function editActions(next: BoxAction[]) {
+    if (JSON.stringify(interpretBox(next, []).marks.ink) !== JSON.stringify(interpretBox(actions, []).marks.ink)) {
+      setToken(''); setEditedResult(true)
+    }
+    setActions(next); setError('')
+  }
+
   async function save() {
-    if (!play || locked) return
+    if (!play || locked || waiting) return
     setSaving(true); setError('')
     try {
       const updates = activeRunners.map(r => runnerUpdateFor(r, moves[r.atBatId] || 'stay', play.code))
@@ -111,8 +119,9 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
       <div className="grid min-h-0 flex-1 overscroll-contain gap-5 overflow-y-auto p-4 md:grid-cols-2 sm:p-6">
         <div className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500">01 · {t('Traza la jugada', 'Draw the play')}</p>
-          <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardBox actions={actions} onChange={a => { if (JSON.stringify(interpretBox(a, []).marks.ink) !== JSON.stringify(marks.ink)) { setToken(''); setEditedResult(true) }; setActions(a); setError('') }} marks={{ ...marks, bases, outNumber }} disabled={locked} /></div>
-          <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={locked || !actions.length} onClick={() => setActions(actions.slice(0,-1))}><Undo2 />{t('Deshacer', 'Undo')}</Button><Button variant="outline" size="sm" disabled={locked} onClick={() => { setActions([]); setToken(''); setRunnerOut(false); setEditedResult(true); setMoves({}); setRbi(0) }}><Eraser />{t('Borrar', 'Clear')}</Button></div>
+          <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardBox actions={actions} onChange={editActions} onDrawingChange={onDrawingChange} pendingActions={pendingActions} marks={{ ...marks, bases, outNumber }} disabled={locked} /></div>
+          <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={locked || !actions.length} onClick={() => editActions(actions.slice(0,-1))}><Undo2 />{t('Deshacer', 'Undo')}</Button><Button variant="outline" size="sm" disabled={locked} onClick={() => { setActions([]); setToken(''); setRunnerOut(false); setEditedResult(true); setMoves({}); setRbi(0) }}><Eraser />{t('Borrar', 'Clear')}</Button></div>
+          <p role="status" className="min-h-8 text-xs text-slate-500">{waiting ? t('Sigue escribiendo… Leeremos el trazo tras 4 segundos sin escribir.', 'Keep writing… We’ll read the ink after a 4-second pause.') : t('Puedes escribir varias líneas antes de confirmar.', 'You can finish all your strokes before confirming.')}</p>
           <p className="text-xs leading-relaxed text-slate-500">{t('Escribe con el dedo o lápiz. Marca las bases y el destino del batazo. Confirma el resultado a la derecha.', 'Use your finger or stylus. Mark the bases and where the ball landed, then confirm the result.')}</p>
           {!!tokenMatches.length && <div className="flex flex-wrap gap-2">{tokenMatches.filter(m => scoringPlay(m.symbol)).map(m => <Button key={m.symbol} variant="outline" disabled={locked} onClick={() => choose(m.symbol)}>{m.symbol} <Check className="size-3" /></Button>)}</div>}
           {runnerOptions.length > 0 && onRunnerEvent && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950"><p className="mb-2 text-xs font-bold">{t('Jugada entre lanzamientos', 'Between pitches')}</p><div className="flex flex-wrap gap-2">{[...RUNNER_TOKENS].map(code => <button key={code} disabled={locked} type="button" onClick={() => setRunnerPlay({ type: code as RunnerEventType })} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold">{code}</button>)}</div><p className="mt-2 text-xs">{t('Robo, out robando, pickoff, wild pitch, passed ball y balk.', 'Steal, caught stealing, pickoff, wild pitch, passed ball and balk.')}</p></div>}
@@ -128,7 +137,7 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
         {error && <p role="alert" className="mb-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-        <div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{isLocked ? t('Juego cerrado · Solo lectura', 'Game locked · Read only') : t('Confirma el resultado antes de guardar.', 'Confirm the result before saving.')}</span><Button variant="success" size="lg" onClick={() => void save()} disabled={locked || !play}><Save />{saving ? t('Guardando…', 'Saving…') : t('Guardar jugada', 'Save play')}</Button></div>
+        <div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{isLocked ? t('Juego cerrado · Solo lectura', 'Game locked · Read only') : t('Confirma el resultado antes de guardar.', 'Confirm the result before saving.')}</span><Button variant="success" size="lg" onClick={() => void save()} disabled={locked || !play || waiting}><Save />{saving ? t('Guardando…', 'Saving…') : t('Guardar jugada', 'Save play')}</Button></div>
       </footer>
     </div>
   </div>
