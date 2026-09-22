@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Eraser, Save, Undo2, X, Swords } from 'lucide-react'
+import { CheckCircle2, Eraser, Save, Undo2, X, Swords } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Button } from '@/components/ui'
 import ScorecardField from './ScorecardField'
 import PlayPicker from './PlayPicker'
+import HandwritingConfirmation from './HandwritingConfirmation'
 import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
 import { interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
 import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
@@ -120,14 +121,13 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
         <div className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-500">01 · {t('Traza la jugada', 'Draw the play')}</p>
           <div className="mx-auto w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><ScorecardField actions={actions} onChange={editActions} onDrawingChange={onDrawingChange} marks={{ ...marks, bases, outNumber }} disabled={locked} runners={runnerOptions} language={language} /></div>
+          <HandwritingConfirmation matches={tokenMatches} ink={marks.ink} value={token} onConfirm={choose} waiting={waiting} language={language} disabled={locked} />
           <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={locked || !actions.length} onClick={() => editActions(actions.slice(0,-1))}><Undo2 />{t('Deshacer', 'Undo')}</Button><Button variant="outline" size="sm" disabled={locked} onClick={() => { setActions([]); setToken(''); setRunnerOut(false); setEditedResult(true); setMoves({}); setRbi(0) }}><Eraser />{t('Borrar', 'Clear')}</Button></div>
-          <p role="status" className="min-h-8 text-xs text-slate-500">{waiting ? t('Sigue escribiendo la jugada… La leeremos tras una pausa de 4 segundos.', 'Keep writing the play code… We’ll read it after a 4-second pause.') : t('Bolas, strikes, bases y dirección del batazo se marcan al instante.', 'Balls, strikes, bases and hit direction update immediately.')}</p>
-          <p className="text-xs leading-relaxed text-slate-500">{t('Escribe con el dedo o lápiz. Marca las bases y el destino del batazo. Confirma el resultado a la derecha.', 'Use your finger or stylus. Mark the bases and where the ball landed, then confirm the result.')}</p>
-          {!!tokenMatches.length && <div className="flex flex-wrap gap-2">{tokenMatches.filter(m => scoringPlay(m.symbol)).map(m => <Button key={m.symbol} variant="outline" disabled={locked} onClick={() => choose(m.symbol)}>{m.symbol} <Check className="size-3" /></Button>)}</div>}
+          <p className="text-xs leading-relaxed text-slate-500">{t('Bolas, strikes, bases y dirección del batazo se marcan al instante.', 'Balls, strikes, bases and hit direction update immediately.')}</p>
           {runnerOptions.length > 0 && onRunnerEvent && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950"><p className="mb-2 text-xs font-bold">{t('Jugada entre lanzamientos', 'Between pitches')}</p><div className="flex flex-wrap gap-2">{[...RUNNER_TOKENS].map(code => <button key={code} disabled={locked} type="button" onClick={() => setRunnerPlay({ type: code as RunnerEventType })} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold">{code}</button>)}</div><p className="mt-2 text-xs">{t('Robo, out robando, pickoff, wild pitch, passed ball y balk.', 'Steal, caught stealing, pickoff, wild pitch, passed ball and balk.')}</p></div>}
           {runnerDone && <p role="status" className="text-sm font-semibold text-emerald-700">✓ {runnerDone}</p>}
         </div>
-        <div className="space-y-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-500">02 · {t('Elige el resultado', 'Call the result')}</p>
+        <div className="space-y-4"><p className="text-xs font-bold uppercase tracking-widest text-slate-500">{t('O elige el resultado aquí', 'Or choose your result here')}</p>
           <PlayPicker value={token} onChange={choose} language={language} disabled={locked} outs={outsBefore} runners={activeRunners.length} />
           {play && <div className={'rounded-xl border-l-4 p-4 ' + (isOut ? 'border-rose-500 bg-rose-50 text-rose-950' : 'border-emerald-500 bg-emerald-50 text-emerald-950')} role="status"><span className="text-2xl font-black">{token.toUpperCase()}</span><span className="ml-3 text-sm font-semibold">{play[language]}</span><p className="mt-1 text-xs font-bold uppercase tracking-wider">{isOut ? t('Bateador out', 'Batter out') : t('Bateador a salvo', 'Batter safe')}</p></div>}
           {play && play.outs === 0 && <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={runnerOut} disabled={locked} onChange={e => setRunnerOut(e.target.checked)} />{t('Out intentando avanzar después de llegar a base', 'Out advancing after reaching base')}</label>}
@@ -137,7 +137,13 @@ export default function ClassicAtBatPad({ playerName, inning, outsBefore = 0, ex
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
         {error && <p role="alert" className="mb-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-        <div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{isLocked ? t('Juego cerrado · Solo lectura', 'Game locked · Read only') : t('Confirma el resultado antes de guardar.', 'Confirm the result before saving.')}</span><Button variant="success" size="lg" onClick={() => void save()} disabled={locked || !play || waiting}><Save />{saving ? t('Guardando…', 'Saving…') : t('Guardar jugada', 'Save play')}</Button></div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 text-sm text-slate-700" aria-live="polite">{isLocked ? t('Juego cerrado · Solo lectura', 'Game locked · Read only')
+            : waiting ? t('Termina el trazo y confirma el resultado bajo el campo.', 'Finish writing, then confirm the result below the field.')
+            : play ? <><span className="flex items-center gap-2 font-bold text-emerald-800"><CheckCircle2 className="size-4 shrink-0" />{token.toUpperCase()} · {t('Confirmado', 'Confirmed')}</span><span className="text-xs">{t('Revisa los corredores e impulsadas. Luego guarda.', 'Review runners and RBI. Then save.')}</span></>
+            : t('Primero, toca «Confirmar» bajo el campo o elige un resultado.', 'First, tap “Confirm” below the field or choose a result.')}</div>
+          <Button variant="success" size="lg" className="min-h-14 w-full shrink-0 whitespace-normal text-lg font-black shadow-lg sm:w-auto sm:min-w-60 [&_svg]:size-5" onClick={() => void save()} disabled={locked || !play || waiting}><Save />{saving ? t('Guardando…', 'Saving…') : t('2 · Guardar jugada', '2 · Save play')}</Button>
+        </div>
       </footer>
     </div>
   </div>

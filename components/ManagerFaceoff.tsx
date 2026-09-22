@@ -14,6 +14,7 @@ import { applyEvent, type Side } from '@/lib/rules/engine'
 import { notationEvent, type Room } from '@/lib/faceoff/workflow'
 import ScorecardBox from './ScorecardBox'
 import ScorecardField from './ScorecardField'
+import HandwritingConfirmation from './HandwritingConfirmation'
 import { Button } from '@/components/ui'
 
 interface Snapshot { room: Room | null; side: Side | null; canStart: boolean; isSuperAdmin: boolean }
@@ -154,15 +155,14 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
           {!canWrite && <p>{room.pending ? t('Esperando validación.', 'Waiting for validation.') : t('Es el turno del otro equipo.', 'The other team is scoring.')}</p>}
           <div className="max-w-md"><ScorecardField actions={actions} onChange={editInk} onDrawingChange={marks.onDrawingChange} marks={{ ...marks.marks, outNumber: selectedPlay?.outs ? Math.min(3, room.state.outs + selectedPlay.outs) : marks.marks.outNumber }} disabled={!canWrite || busy || !!syncError} language={lang}
             runners={room.state.runners.filter(r => r.base < 4).map(r => ({ playerName: r.name, base: (['first', 'second', 'third'] as const)[r.base - 1] }))} /></div>
-          <p role="status" className="min-h-8 text-xs text-slate-500">{marks.waiting ? t('Sigue escribiendo la jugada… La leeremos tras una pausa de 4 segundos.', 'Keep writing the play code… We’ll read it after a 4-second pause.') : t('Bolas, strikes, bases y dirección del batazo se marcan al instante.', 'Balls, strikes, bases and hit direction update immediately.')}</p>
+          <HandwritingConfirmation matches={marks.tokenMatches} ink={marks.marks.ink} value={notation} onConfirm={choose} waiting={marks.waiting} language={lang} shared disabled={!canWrite || busy || !!syncError} />
           <div className="flex gap-2"><Button variant="outline" disabled={busy || !actions.length} onClick={() => editInk(actions.slice(0, -1))}>{t('Deshacer', 'Undo')}</Button><Button variant="outline" disabled={busy} onClick={clearDraft}>{t('Borrar', 'Clear')}</Button></div>
-          {!!marks.tokenMatches.length && <div className="flex flex-wrap gap-2">{marks.tokenMatches.map(m => <Button key={m.symbol} variant="outline" disabled={!canWrite || busy} onClick={() => choose(m.symbol)}>{m.symbol}</Button>)}</div>}
           <PlayPicker value={notation} onChange={choose} language={lang} shared disabled={!canWrite || busy || !!syncError} outs={room.state.outs} runners={room.state.runners.length} />
           {selectedPlay && <div role="status" className={'rounded-xl p-3 font-bold ' + (selectedPlay.outs ? 'bg-rose-50 text-rose-800' : 'bg-emerald-50 text-emerald-800')}>{selectedPlay[lang]} · {selectedPlay.outs ? selectedPlay.outs + ' OUT' + (selectedPlay.outs > 1 ? 'S' : '') : t('A salvo', 'Safe')}</div>}
           {localPreview && <p className="text-sm">{t('Resultado propuesto', 'Proposed result')}: {localPreview.score.home}–{localPreview.score.opponent} · {t('Entrada', 'Inning')} {localPreview.inning} {localPreview.half} · {localPreview.outs} outs<br />{t('Corredores', 'Runners')}: {localPreview.runners.map(r => `${r.name} (${r.base})`).join(', ') || '—'}</p>}
           <p className="text-xs text-muted-foreground">{t('Revisa el avance automático de corredores. Los trazos son el registro visual; esta primera versión usa el avance predeterminado del motor.', 'Review automatic runner advancement. Ink is the visual record; this first version uses the engine’s default advancement.')}</p>
           {draftVersion.current !== null && draftVersion.current !== room.version && (actions.length > 0 || notation) && <Button variant="outline" onClick={() => { draftVersion.current = room.version; setError(''); refreshDraft(v => v + 1); }}>{t('Revisé el borrador para este turno', 'I reviewed this draft for the current turn')}</Button>}
-          <Button disabled={!canWrite || busy || !localPreview || !!syncError || marks.waiting} onClick={() => void mutate('submit')}>{t('Enviar a validar', 'Submit for validation')}</Button>
+          <Button className="min-h-14 w-full whitespace-normal text-lg font-black" disabled={!canWrite || busy || !localPreview || !!syncError || marks.waiting} onClick={() => void mutate('submit')}>{t('2 · Enviar a validar', '2 · Submit for validation')}</Button>
         </section>
         <section className={panel}>
           <h2 className="font-semibold">{t('Validación del rival', 'Opponent validation')}</h2>
