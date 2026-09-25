@@ -1,14 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ChevronRight, Eraser, RotateCcw, Save, SkipForward, Undo2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormField, Input, LoadingState, PageHeader } from '@/components/ui'
 import ScorecardBox from '@/components/ScorecardBox'
-import { TOKENS, describeToken } from '@/lib/handwriting/vocabulary'
-import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
-import { interpretBox, type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
+import { describeToken } from '@/lib/handwriting/vocabulary'
+import { useTrainingSamples, notifyTrainingSaved } from '@/lib/handwriting/useTrainingSamples'
+import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
+import { type BaseRunners, type BoxAction } from '@/lib/scorecard/interpret'
 import { BOX_SCENARIOS, type BoxExpectation } from '@/lib/scorecard/scenarios'
 import { cn } from '@/lib/utils'
 
@@ -38,8 +39,9 @@ const basesText = (b: BaseRunners) => (b.home ? '1B 2B 3B H' : [b.first && '1B',
 export default function ScorecardLabView() {
   const { language } = useLanguage()
   const [samples, setSamples] = useState<SampleRow[]>([])
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [digitTemplates, setDigitTemplates] = useState<Template[]>([])
+  const { templates, error: trainingError, loading: trainingLoading, refresh } = useTrainingSamples()
+  const saveAttempt = useRef<{ key: string; id: string; digitId: string } | null>(null)
+  const saveInFlight = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [writer, setWriter] = useState('')
@@ -60,7 +62,7 @@ export default function ScorecardLabView() {
         noInk: 'sin escritura', noSamples: 'sin muestras de escritura aún', yes: 'sí', no: 'no',
         save: 'Guardar y siguiente', skip: 'Saltar', undo: 'Deshacer', clear: 'Borrar', redo: 'Repetir',
         done: '¡Ronda completa! Gracias.', restart: 'Otra ronda',
-        stats: 'Precisión de lectura', total: 'muestras', writers: 'personas', allFields: 'jugadas leídas completas',
+        stats: 'Precisión al guardar las muestras', total: 'muestras', writers: 'personas', allFields: 'jugadas leídas completas',
         perField: 'Por campo', worst: 'Escenarios con más errores', saved: 'Guardado',
       }
     : {
@@ -73,7 +75,7 @@ export default function ScorecardLabView() {
         noInk: 'no writing', noSamples: 'no handwriting samples yet', yes: 'yes', no: 'no',
         save: 'Save and next', skip: 'Skip', undo: 'Undo', clear: 'Clear', redo: 'Redo',
         done: 'Round complete! Thank you.', restart: 'Another round',
-        stats: 'Reading accuracy', total: 'samples', writers: 'writers', allFields: 'plays read fully right',
+        stats: 'Accuracy when samples were saved', total: 'samples', writers: 'writers', allFields: 'plays read fully right',
         perField: 'Per field', worst: 'Scenarios with most misreads', saved: 'Saved',
       }
 
@@ -90,22 +92,15 @@ export default function ScorecardLabView() {
   }, [])
 
   const load = useCallback(async () => {
-    const [samplesRes, hwRes] = await Promise.all([
-      supabase.from('scorecard_samples').select('id, writer, scenario, field_results, all_correct').order('created_at', { ascending: true }).limit(5000),
-      supabase.from('handwriting_samples').select('symbol, strokes').limit(5000),
-    ])
+    const samplesRes = await supabase.from('scorecard_samples').select('id, writer, scenario, field_results, all_correct').order('created_at', { ascending: true }).limit(5000)
     if (samplesRes.error) setError(samplesRes.error.message)
     setSamples((samplesRes.data || []) as SampleRow[])
-    const allowed = new Set(TOKENS.map((t) => t.value))
-    const rows = (hwRes.data || []) as { symbol: string; strokes: Stroke[] }[]
-    setTemplates(rows.filter((r) => allowed.has(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
-    setDigitTemplates(rows.filter((r) => ['1', '2', '3'].includes(r.symbol)).map((r) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
-  const interpretation = useMemo(() => interpretBox(actions, templates, digitTemplates), [actions, templates, digitTemplates])
-  const { marks, tokenMatches } = interpretation
+  const interpretation = useScorecardInterpretation(actions, templates)
+  const { marks, tokenMatches, waiting, onDrawingChange } = interpretation
   const top = tokenMatches[0]
 
   // Compare what was read with the expectation
@@ -113,7 +108,7 @@ export default function ScorecardLabView() {
     if (!scenario) return null
     const e: BoxExpectation = scenario.expected
     const r: Partial<Record<FieldKey, boolean>> = {}
-    if (templates.length > 0 || marks.ink.length > 0) r.token = !!top && top.symbol === e.token
+    if (templates.length > 0 || marks.ink.length > 0) r.token = !!top && top.symbol.toUpperCase() === e.token.toUpperCase()
     r.bases = sameBases(marks.bases, e.bases)
     r.out = marks.outNumber === e.outNumber
     if (e.balls !== undefined) r.balls = marks.balls === e.balls
@@ -123,46 +118,33 @@ export default function ScorecardLabView() {
   }, [scenario, marks, top, templates.length])
 
   async function save() {
-    if (!scenario || !writer.trim() || actions.length === 0 || !results) return
-    setSaving(true)
-    try { localStorage.setItem(WRITER_KEY, writer.trim()) } catch { /* ignore */ }
-    const allCorrect = Object.values(results).every(Boolean)
-    const interpreted = { token: top?.symbol ?? null, bases: marks.bases, out: marks.outNumber, balls: marks.balls, strikes: marks.strikes, ballMarks: marks.ballMarks, strikeMarks: marks.strikeMarks, hit: !!marks.hitLine }
-    const { data, error } = await supabase
-      .from('scorecard_samples')
-      .insert([{
-        writer: writer.trim(),
-        scenario: scenario.key,
-        actions,
-        interpreted,
-        expected: scenario.expected,
-        field_results: results,
-        all_correct: allCorrect,
-        pointer_type: pointerType,
-        device: shortDevice(),
-      }])
-      .select('id, writer, scenario, field_results, all_correct')
-      .single()
-    if (error) { setError(error.message); setSaving(false); return }
-    // Alignment with the handwriting lab: the notation strokes are a labeled sample of the expected token
-    if (marks.ink.length > 0) {
-      await supabase.from('handwriting_samples').insert([{
-        writer: writer.trim(),
-        symbol: scenario.expected.token,
-        strokes: marks.ink,
-        recognized: top?.symbol ?? null,
-        correct: top ? top.symbol === scenario.expected.token : null,
-        pointer_type: pointerType,
-        device: shortDevice(),
-      }])
-      setTemplates((prev) => [...prev, { symbol: scenario.expected.token, cloud: normalize(marks.ink) }])
-    }
-    setSamples((prev) => [...prev, data as SampleRow])
-    setSaving(false)
-    setJustSaved(true)
-    setTimeout(() => setJustSaved(false), 1200)
-    setActions([])
-    setIndex((i) => i + 1)
+    if (!scenario || !writer.trim() || !actions.length || !results || waiting || trainingLoading || trainingError || saveInFlight.current) return
+    saveInFlight.current = true
+    setSaving(true); setError(null)
+    try {
+      try { localStorage.setItem(WRITER_KEY, writer.trim()) } catch { /* Optional preference. */ }
+      const key = JSON.stringify({ writer: writer.trim(), scenario: scenario.key, actions })
+      if (saveAttempt.current?.key !== key) saveAttempt.current = { key, id: crypto.randomUUID(), digitId: crypto.randomUUID() }
+      const attempt = saveAttempt.current
+      const interpreted = { token: top?.symbol ?? null, bases: marks.bases, out: marks.outNumber, balls: marks.balls, strikes: marks.strikes, ballMarks: marks.ballMarks, strikeMarks: marks.strikeMarks, hit: !!marks.hitLine }
+      const training = []
+      if (marks.ink.length) training.push({ id: attempt.id, symbol: scenario.expected.token, strokes: marks.ink, recognized: top?.symbol ?? null })
+      if (marks.outDigitStrokes.length && [1, 2, 3].includes(scenario.expected.outNumber)) training.push({ id: attempt.digitId, symbol: String(scenario.expected.outNumber), strokes: marks.outDigitStrokes, recognized: interpretation.outDigit?.symbol ?? null })
+      const { data, error: saveError } = await supabase.rpc('save_scorecard_training', {
+        sample: { id: attempt.id, writer: writer.trim(), scenario: scenario.key, actions, interpreted,
+          expected: scenario.expected, field_results: results, all_correct: Object.values(results).every(Boolean),
+          pointer_type: pointerType, device: shortDevice() }, training,
+      })
+      if (saveError) throw new Error(saveError.message)
+      setSamples(prev => [...prev.filter(s => s.id !== attempt.id), data as SampleRow])
+      notifyTrainingSaved()
+      await refresh()
+      saveAttempt.current = null
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 1200)
+      setActions([]); setIndex(i => i + 1)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save training. Please retry.') }
+    finally { setSaving(false); saveInFlight.current = false }
   }
 
   const stats = useMemo(() => {
@@ -201,12 +183,13 @@ export default function ScorecardLabView() {
   return (
     <div className="space-y-6">
       <PageHeader title={L.title} description={L.description} />
-      {error && <Alert variant="error">{error}</Alert>}
+      {(error || trainingError) && <Alert variant="error">{error || trainingError}</Alert>}
+      <Alert variant="info">{language === 'es' ? 'La escritura y los números de out guardados se usan en juegos reales. Bolas, strikes, bases y dirección usan las mismas reglas de toque; sus muestras sirven para revisar errores, no cambian esas reglas automáticamente.' : 'Saved notation and out digits are used in real games. Balls, strikes, bases and hit direction use the same touch rules; their samples help review errors but do not automatically change those rules.'}</Alert>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
         <Card className="p-5 sm:p-6">
           <FormField label={L.writer} hint={L.writerHint} className="mb-5 max-w-sm">
-            <Input value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="Ej. Miguel" />
+            <Input value={writer} disabled={saving} onChange={(e) => setWriter(e.target.value)} placeholder="Ej. Miguel" />
           </FormField>
 
           {!writer.trim() ? (
@@ -235,7 +218,7 @@ export default function ScorecardLabView() {
                   <p className="text-slate-700">{scenario.onPaper[language]}</p>
                 </div>
                 <div className="rounded-xl border border-border bg-slate-50 p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.read}</p>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.read}</p>{waiting && <p role="status" className="text-sm">{language === 'es' ? 'Leyendo después de una pausa de 2.5 segundos…' : 'Reading after a 2.5-second pause…'}</p>}
                   <ul className="space-y-1.5">
                     {fieldRow('token', marks.ink.length === 0 ? L.noInk : templates.length === 0 ? L.noSamples : top ? `${top.symbol} · ${Math.round(top.score * 100)}%` : '—', `${scenario.expected.token} (${describeToken(scenario.expected.token, language)})`)}
                     {fieldRow('bases', basesText(marks.bases), basesText(scenario.expected.bases))}
@@ -250,7 +233,7 @@ export default function ScorecardLabView() {
               {/* Box */}
               <div className="space-y-3">
                 <div className="relative">
-                  <ScorecardBox actions={actions} onChange={setActions} marks={marks} onPointerType={setPointerType} />
+                  <ScorecardBox disabled={saving} onDrawingChange={onDrawingChange} actions={actions} onChange={setActions} marks={marks} onPointerType={setPointerType} />
                   {justSaved && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-emerald-500/10">
                       <Badge variant="success" className="px-3 py-1 text-sm"><Check /> {L.saved}</Badge>
@@ -259,14 +242,14 @@ export default function ScorecardLabView() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-1.5">
-                    <Button variant="outline" size="sm" onClick={() => setActions(actions.slice(0, -1))} disabled={actions.length === 0}><Undo2 />{L.undo}</Button>
-                    <Button variant="outline" size="sm" onClick={() => setActions([])} disabled={actions.length === 0}><Eraser />{L.clear}</Button>
+                    <Button variant="outline" size="sm" onClick={() => setActions(actions.slice(0, -1))} disabled={saving || actions.length === 0}><Undo2 />{L.undo}</Button>
+                    <Button variant="outline" size="sm" onClick={() => setActions([])} disabled={saving || actions.length === 0}><Eraser />{L.clear}</Button>
                   </div>
                   <Badge variant="outline">{pointerType}</Badge>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="ghost" onClick={() => { setActions([]); setIndex((i) => i + 1) }}><SkipForward />{L.skip}</Button>
-                  <Button className="flex-1" size="lg" onClick={save} disabled={actions.length === 0} loading={saving}><Save />{L.save}<ChevronRight /></Button>
+                  <Button variant="ghost" disabled={saving} onClick={() => { setActions([]); setIndex((i) => i + 1) }}><SkipForward />{L.skip}</Button>
+                  <Button className="flex-1" size="lg" onClick={save} disabled={saving || waiting || trainingLoading || !!trainingError || actions.length === 0} loading={saving}><Save />{L.save}<ChevronRight /></Button>
                 </div>
               </div>
             </div>

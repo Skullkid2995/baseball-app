@@ -8,6 +8,7 @@ export interface InkPadProps {
   strokes: Stroke[]
   onChange: (strokes: Stroke[]) => void
   /** Called when a stroke ends, with the pointer type used (pen, touch, mouse). */
+  onDrawingChange?: (drawing: boolean) => void
   onStrokeEnd?: (pointerType: string) => void
   className?: string
   /** Faint guide text drawn in the middle of the pad. */
@@ -23,9 +24,10 @@ export interface InkPadProps {
  * Pointer Events so pen, finger and mouse all work; when a pen is in use,
  * touch input is ignored so the palm can rest on the screen.
  */
-export function InkPad({ strokes, onChange, onStrokeEnd, className, hint, disabled, color = '#1f2937', width = 3 }: InkPadProps) {
+export function InkPad({ strokes, onChange, onStrokeEnd, onDrawingChange, className, hint, disabled, color = '#1f2937', width = 3 }: InkPadProps) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
   const drawing = React.useRef<Stroke | null>(null)
+  const activePointerId = React.useRef<number | null>(null)
   const penActive = React.useRef(false)
   const lastPointerType = React.useRef('mouse')
 
@@ -91,17 +93,19 @@ export function InkPad({ strokes, onChange, onStrokeEnd, className, hint, disabl
   }, [draw])
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (disabled) return
+    if (disabled || drawing.current) return
     if (e.pointerType === 'pen') penActive.current = true
     if (penActive.current && e.pointerType === 'touch') return // palm rejection
     lastPointerType.current = e.pointerType
+    activePointerId.current = e.pointerId
     e.currentTarget.setPointerCapture(e.pointerId)
     drawing.current = [toUnits(e)]
+    onDrawingChange?.(true)
     draw()
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawing.current) return
+    if (!drawing.current || e.pointerId !== activePointerId.current) return
     if (penActive.current && e.pointerType === 'touch') return
     const p = toUnits(e)
     const last = drawing.current[drawing.current.length - 1]
@@ -111,11 +115,13 @@ export function InkPad({ strokes, onChange, onStrokeEnd, className, hint, disabl
   }
 
   const endStroke = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawing.current) return
+    if (!drawing.current || e.pointerId !== activePointerId.current) return
     const stroke = drawing.current
     drawing.current = null
+    activePointerId.current = null
     if (stroke.length >= 1) onChange([...strokes, stroke])
     onStrokeEnd?.(lastPointerType.current)
+    onDrawingChange?.(false)
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {

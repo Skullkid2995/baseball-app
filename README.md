@@ -61,13 +61,26 @@ rows written by the scorebook.
 
 The scorebook combines handwriting and touch controls in one responsive editor.
 Ink stays visible while writing. Only play-code recognition waits for a
-four-second pause; ball/strike marks, base paths and hit directions respond
+2.5-second pause; ball/strike marks, base paths and hit directions respond
 immediately. Active runners are labeled beside their bases, with full names below.
 Choose a labeled hit, out, or reach-base result; confirm each runner's destination
 and RBI before saving. Batter outs and runner outs are tracked separately so a
 double play counts twice without counting the batter twice. Failed saves keep the
 editor open with an error. The scorebook also supports multiple plate appearances
 in one inning and independent runner plays between pitches.
+
+Confirmed results collapse the choices and bring runner decisions into view.
+In-game pinch hitters, pinch runners, defensive replacements and position swaps
+require `database/migrations/2026-09-23_scorecard_player_changes.sql`.
+
+Labs and live scorecards share paginated training-sample loading and a 2.5-second
+recognition pause. Valid symbols are filtered before ranking; notation, letters,
+and batting results use their own relevant vocabulary. Open screens refresh
+after local training saves, on focus, and every 30 seconds while visible.
+Apply `database/migrations/2026-09-23_atomic_scorecard_training.sql` for atomic,
+retry-safe scorecard-lab saves. Notation and out digits become recognition
+templates; other gesture samples are diagnostic examples for the shared rules,
+not automatic changes to baseball scoring or gesture interpretation.
 
 Run `npm test` for scoring, rules-engine, workflow and authorization regressions.
 

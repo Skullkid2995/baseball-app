@@ -243,40 +243,18 @@ export default function GamesList() {
   }
 
   async function clearGameData(gameId: string) {
+    if (!isSuperAdmin) return
     if (!confirm('¿Estás seguro de que quieres limpiar todos los datos del juego? Esta acción no se puede deshacer.')) {
       return
     }
 
     try {
-      // Delete all at-bats for this game
-      const { error: atBatsError } = await supabase
-        .from('at_bats')
-        .delete()
-        .eq('game_id', gameId)
-
-      if (atBatsError) {
-        console.error('Error clearing at-bats:', atBatsError)
-        alert('Error al limpiar los datos del juego')
-        return
-      }
-
-      // Reset game scores, status, and lineup selections
-      const { error: gameError } = await supabase
-        .from('games')
-        .update({
-          our_score: 0,
-          opponent_score: 0,
-          innings_played: 0,
-          game_status: 'scheduled',
-          lineup_template_id: null,
-          opponent_lineup_template_id: null,
-          batting_first: null
-        })
-        .eq('id', gameId)
+      // One transaction: old substitutions must never survive a game reset.
+      const { error: gameError } = await supabase.rpc('reset_scorecard_game', { p_game_id: gameId })
 
       if (gameError) {
         console.error('Error resetting game:', gameError)
-        alert('Error al resetear el juego')
+        alert('No se pudo limpiar el juego. No se guardó ningún cambio. Revisa la configuración de la base de datos e inténtalo de nuevo.')
         return
       }
 
@@ -632,7 +610,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" disabled={!canEdit('gamesDelete')} onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!isSuperAdmin} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearGameData}
                       </Button>
@@ -648,7 +626,7 @@ export default function GamesList() {
                         <BarChart3 />
                         {t.viewStatistics}
                       </Button>
-                      <Button variant="destructive" size="sm" disabled={!canEdit('gamesDelete')} onClick={() => clearGameData(game.id)}>
+                      <Button variant="destructive" size="sm" disabled={!isSuperAdmin} onClick={() => clearGameData(game.id)}>
                         <Trash2 />
                         {t.clearData}
                       </Button>

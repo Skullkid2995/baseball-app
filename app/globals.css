@@ -116,6 +116,34 @@
   background-color: #0b1526;
   background-image: radial-gradient(ellipse at 95% 100%, #11644c70, transparent 55%), linear-gradient(115deg, transparent 70%, #ffffff04 70%);
 }
+
+/* The coach's working sheet: printed rules and pencil, with quiet controls. */
+.paper-scorebook { color: #302e29; box-shadow: 0 3px 18px #3c322018; }
+.paper-scorebook button { border-radius: 3px; box-shadow: none; }
+.paper-scorebook table { background: #fffdf5; }
+.paper-scorebook th { background: #f1eddf !important; color: #514c40; font-family: Georgia, serif; text-transform: none; }
+.paper-scorebook td { border-color: #c8c1ae; }
+.paper-scorebook td.sticky { background: #fffdf5; }
+.paper-scorebook td:has(> button[aria-current="step"]) { background: #f5efce; }
+.paper-scorebook button[aria-current="step"] { background: #f5efce; box-shadow: inset 0 0 0 1px #8e7843; }
+.paper-scorebook button[aria-current="step"]:hover { background: #eee5be; }
+.paper-scorebook td > button:disabled { background: transparent; }
+.paper-scorebook td > button { min-width: 6rem; min-height: 6rem; border-radius: 0; }
+.paper-scorebook td.sticky > button { min-height: 3rem; }
+.paper-scorebook > [role="status"] { background: #f1eddf; border: 1px solid #c8c1ae; color: #403a2c; border-radius: 2px; }
+.paper-editor { background: #fffdf5; color: #302e29; }
+.paper-editor header { background: #f1eddf; color: #302e29; padding-top: .7rem; padding-bottom: .7rem; }
+.paper-editor header h3 { font-family: Georgia, serif; font-size: 1.4rem; font-weight: 500; }
+.paper-editor header p, .paper-editor header span { color: #655b43; }
+.paper-editor header button { background: #e6dfcb; }
+.paper-editor footer { background: #fffdf5; border-color: #c8c1ae; }
+.paper-editor section, .paper-editor [class*="shadow"] { box-shadow: none; }
+.paper-editor button { border-radius: 3px; }
+.paper-editor canvas { background-color: #fffdf5; }
+@media print {
+  .paper-scorebook button, .paper-editor, .paper-scorebook footer { box-shadow: none !important; }
+  .paper-scorebook { border: none; box-shadow: none; padding: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

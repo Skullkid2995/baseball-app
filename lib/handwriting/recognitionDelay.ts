@@ -1,4 +1,4 @@
-export const HANDWRITING_DELAY_MS = 4000
+export const HANDWRITING_DELAY_MS = 2500
 
 /** A new stroke cancels the previous read; only a complete pause releases the ink. */
 export function createRecognitionDelay<T>(onReady: (value: T) => void) {

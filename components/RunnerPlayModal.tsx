@@ -9,6 +9,7 @@ export interface RunnerOption {
   atBatId: string
   playerId?: string | null
   playerName: string
+  notation?: string
   base: RunnerBase
 }
 

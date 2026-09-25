@@ -1,24 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronRight, Eraser, PenTool, RotateCcw, Save, SkipForward, Undo2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import SampleInvites from './SampleInvites'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, FormField, InkPad, Input, LoadingState, PageHeader } from '@/components/ui'
 import { describeToken, tokensFor, type SampleSet } from '@/lib/handwriting/vocabulary'
-import { normalize, recognize, type Match, type Stroke, type Template } from '@/lib/handwriting/recognizer'
+import type { Stroke } from '@/lib/handwriting/recognizer'
+import { useRecognition } from '@/lib/handwriting/useRecognition'
+import { useTrainingSamples, notifyTrainingSaved } from '@/lib/handwriting/useTrainingSamples'
 import { cn } from '@/lib/utils'
-
-interface SampleRow {
-  id: string
-  writer: string
-  symbol: string
-  strokes: Stroke[]
-  recognized: string | null
-  correct: boolean | null
-  pointer_type: string | null
-}
 
 const REPEATS = 3
 const WRITER_KEY = 'handwritingWriter'
@@ -37,8 +29,7 @@ function shortDevice(): string {
 
 export default function HandwritingLabView() {
   const { language } = useLanguage()
-  const [samples, setSamples] = useState<SampleRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const { samples, templates, loading, error: trainingError, refresh } = useTrainingSamples()
   const [error, setError] = useState<string | null>(null)
   const [writer, setWriter] = useState('')
   const [mode, setMode] = useState<'collect' | 'test'>('collect')
@@ -47,7 +38,7 @@ export default function HandwritingLabView() {
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [pointerType, setPointerType] = useState('mouse')
   const [saving, setSaving] = useState(false)
-  const [matches, setMatches] = useState<Match[]>([])
+  const { matches, waiting, onDrawingChange } = useRecognition(strokes, templates, set)
   const [justSaved, setJustSaved] = useState<string | null>(null)
   const [testChoice, setTestChoice] = useState<string | null>(null)
 
@@ -148,70 +139,32 @@ export default function HandwritingLabView() {
     }
   }, [])
 
-  const loadSamples = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('handwriting_samples')
-      .select('id, writer, symbol, strokes, recognized, correct, pointer_type')
-      .order('created_at', { ascending: true })
-      .limit(5000)
-    if (error) {
-      setError(error.message)
-    } else {
-      setSamples((data || []) as SampleRow[])
-    }
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    loadSamples()
-  }, [loadSamples])
-
-  // Only compare against the symbols of the active set (a notation 'K' and a letter 'K' are the same glyph, so both count)
-  const templates = useMemo<Template[]>(() => {
-    const allowed = new Set(activeTokens.map((t) => t.value))
-    return samples.filter((s) => allowed.has(s.symbol)).map((s) => ({ symbol: s.symbol, cloud: normalize(s.strokes) }))
-  }, [samples, activeTokens])
-
-  // Re-run recognition whenever the drawing changes
-  useEffect(() => {
-    setMatches(strokes.length ? recognize(strokes, templates).slice(0, 3) : [])
-  }, [strokes, templates])
-
   const top = matches[0]
 
   async function saveSample(symbol: string) {
-    if (!writer.trim() || strokes.length === 0) return
+    if (!writer.trim() || strokes.length === 0 || waiting || saving || trainingError) return
     setSaving(true)
     try {
       localStorage.setItem(WRITER_KEY, writer.trim())
     } catch {
       // ignore
     }
-    const recognized = top?.symbol ?? null
-    const { data, error } = await supabase
-      .from('handwriting_samples')
-      .insert([{
-        writer: writer.trim(),
-        symbol,
-        strokes,
-        recognized,
-        correct: recognized ? recognized === symbol : null,
-        pointer_type: pointerType,
-        device: shortDevice(),
+    try {
+      const recognized = top?.symbol ?? null
+      const { error: saveError } = await supabase.from('handwriting_samples').insert([{
+        writer: writer.trim(), symbol, strokes, recognized,
+        correct: recognized ? recognized.toUpperCase() === symbol.toUpperCase() : null,
+        pointer_type: pointerType, device: shortDevice(),
       }])
-      .select('id, writer, symbol, strokes, recognized, correct, pointer_type')
-      .single()
-    setSaving(false)
-    if (error) {
-      setError(error.message)
-      return
-    }
-    setSamples((prev) => [...prev, data as SampleRow])
-    setJustSaved(symbol)
-    setTimeout(() => setJustSaved(null), 1200)
-    setStrokes([])
-    setTestChoice(null)
-    if (mode === 'collect') setIndex((i) => i + 1)
+      if (saveError) throw new Error(saveError.message)
+      notifyTrainingSaved()
+      await refresh()
+      setJustSaved(symbol)
+      setTimeout(() => setJustSaved(null), 1200)
+      setStrokes([]); setTestChoice(null)
+      if (mode === 'collect') setIndex(i => i + 1)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save training. Please retry.') }
+    finally { setSaving(false) }
   }
 
   const stats = useMemo(() => {
@@ -262,7 +215,7 @@ export default function HandwritingLabView() {
         }
       />
 
-      {error && <Alert variant="error">{error}</Alert>}
+      {(error || trainingError) && <Alert variant="error">{error || trainingError}</Alert>}
 
       {/* Public links: collect samples from anyone, no account */}
       <SampleInvites />
@@ -325,7 +278,7 @@ export default function HandwritingLabView() {
 
                 {/* Recognition */}
                 <div className="rounded-xl border border-border bg-slate-50 p-4">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.recognized}</p>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L.recognized}</p>{waiting && <p role="status" className="text-sm">{language === 'es' ? 'Espera 2.5 segundos al terminar el trazo…' : 'Waiting 2.5 seconds after your last stroke…'}</p>}
                   {templates.length === 0 ? (
                     <p className="text-sm text-muted-foreground">{L.noTemplates}</p>
                   ) : matches.length === 0 ? (
@@ -351,7 +304,7 @@ export default function HandwritingLabView() {
                   <div className="space-y-3">
                     {testChoice === null ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="success" size="lg" disabled={!top} onClick={() => top && saveSample(top.symbol)} loading={saving}>
+                        <Button variant="success" size="lg" disabled={waiting || !!trainingError || !top} onClick={() => top && saveSample(top.symbol)} loading={saving}>
                           <Check />
                           {L.correct}
                         </Button>
@@ -391,7 +344,7 @@ export default function HandwritingLabView() {
               {/* Pad */}
               <div className="space-y-3">
                 <div className="relative">
-                  <InkPad strokes={strokes} onChange={setStrokes} onStrokeEnd={setPointerType} hint={mode === 'collect' ? current : undefined} />
+                  <InkPad strokes={strokes} onChange={setStrokes} onStrokeEnd={setPointerType} onDrawingChange={onDrawingChange} disabled={saving} hint={mode === 'collect' ? current : undefined} />
                   {justSaved && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-emerald-500/10">
                       <Badge variant="success" className="px-3 py-1 text-sm"><Check /> {L.saved} {justSaved}</Badge>
@@ -400,11 +353,11 @@ export default function HandwritingLabView() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-1.5">
-                    <Button variant="outline" size="sm" onClick={() => setStrokes(strokes.slice(0, -1))} disabled={strokes.length === 0}>
+                    <Button variant="outline" size="sm" onClick={() => setStrokes(strokes.slice(0, -1))} disabled={saving || strokes.length === 0}>
                       <Undo2 />
                       {L.undo}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setStrokes([])} disabled={strokes.length === 0}>
+                    <Button variant="outline" size="sm" onClick={() => setStrokes([])} disabled={saving || strokes.length === 0}>
                       <Eraser />
                       {L.clear}
                     </Button>
@@ -417,7 +370,7 @@ export default function HandwritingLabView() {
                       <SkipForward />
                       {L.skip}
                     </Button>
-                    <Button className="flex-1" size="lg" onClick={() => saveSample(current)} disabled={strokes.length === 0} loading={saving}>
+                    <Button className="flex-1" size="lg" onClick={() => saveSample(current)} disabled={saving || waiting || !!trainingError || strokes.length === 0} loading={saving}>
                       <Save />
                       {L.save}
                       <ChevronRight />

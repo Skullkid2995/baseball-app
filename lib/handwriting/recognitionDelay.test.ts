@@ -5,10 +5,10 @@ describe('handwriting pause', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('does not read a lifted stroke until four seconds have passed', () => {
+  it('does not read a lifted stroke until 2.5 seconds have passed', () => {
     const read = vi.fn()
     createRecognitionDelay(read).schedule(['first line'])
-    vi.advanceTimersByTime(3999)
+    vi.advanceTimersByTime(2499)
     expect(read).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(read).toHaveBeenCalledExactlyOnceWith(['first line'])
@@ -18,12 +18,12 @@ describe('handwriting pause', () => {
     const read = vi.fn()
     const delay = createRecognitionDelay(read)
     delay.schedule(['first line'])
-    vi.advanceTimersByTime(3000)
+    vi.advanceTimersByTime(2000)
     delay.cancel() // Finger goes down again, before lifting to commit the next line.
     vi.advanceTimersByTime(6000)
     expect(read).not.toHaveBeenCalled()
     delay.schedule(['first line', 'second line'])
-    vi.advanceTimersByTime(3999)
+    vi.advanceTimersByTime(2499)
     expect(read).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(read).toHaveBeenCalledExactlyOnceWith(['first line', 'second line'])

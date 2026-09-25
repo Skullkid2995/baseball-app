@@ -8,6 +8,7 @@ export interface ActiveRunner {
   atBatId: string
   playerId?: string | null
   playerName: string
+  notation?: string
   base: RunnerBase
 }
 export type RunnerMove = 'stay' | 'second' | 'third' | 'home' | 'out'
@@ -104,6 +105,11 @@ export function runnerUpdateFor(r: ActiveRunner, move: RunnerMove, result: strin
 }
 
 export const countScored = (moves: Record<string, RunnerMove>) => Object.values(moves).filter((m) => m === 'home').length
+
+/** Count the actual marked outs, not a DP/TP label awaiting runner selection. */
+export function inningEndsOnPlay(outsBefore: number, batterRetired: boolean, updates: RunnerUpdate[]): boolean {
+  return outsBefore + Number(batterRetired) + updates.filter(u => u.move === 'out').length >= 3
+}
 
 export function thirdOutCancelsRuns(outsBefore: number, batterRetired: boolean, batterOutBeforeFirst: boolean, updates: RunnerUpdate[]): boolean {
   const runnerOuts = updates.filter(u => u.move === 'out')

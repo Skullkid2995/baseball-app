@@ -32,12 +32,12 @@ export default function HandwritingConfirmation({ matches, ink, value, onConfirm
   return <section ref={panelRef} aria-labelledby={headingId} className={cn('scroll-m-3 rounded-2xl border-2 p-3 sm:p-4', selected && !waiting ? 'border-emerald-400 bg-emerald-50' : 'border-blue-400 bg-blue-50')}>
     <h4 id={headingId} className="text-base font-black text-slate-950">{es ? '1 · Confirma el resultado' : '1 · Confirm your result'}</h4>
     <p role="status" className="mt-1 text-sm leading-snug text-slate-700">
-      {waiting ? (es ? 'Termina de escribir. Las opciones aparecerán tras una pausa de 4 segundos.' : 'Finish writing. Your choices will appear after a 4-second pause.')
+      {waiting ? (es ? 'Termina de escribir. Las opciones aparecerán tras una pausa de 2.5 segundos.' : 'Finish writing. Your choices will appear after a 2.5-second pause.')
         : selected ? (es ? 'Resultado confirmado. Falta guardar la jugada.' : 'Result confirmed. Your play still needs to be saved.')
         : options.length ? (es ? 'Toca el botón que coincide con tu trazo para poder guardar.' : 'Tap the button that matches your writing to enable Save play.')
         : (es ? 'Escribe la jugada en el campo o elige un resultado de la lista.' : 'Write a play code on the field or choose a result from the list.')}
     </p>
-    {!waiting && options.length > 0 && <div data-keep-grid className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+    {!waiting && !selected && options.length > 0 && <div data-keep-grid className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
       {options.map(m => {
         const play = scoringPlay(m.symbol)!
         const confirmed = value.toUpperCase() === m.symbol.toUpperCase()

@@ -5,6 +5,7 @@ import { Check, ChevronRight, Eraser, PenTool, RotateCcw } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { LETTER_TOKENS, TOKENS, type Token } from '@/lib/handwriting/vocabulary'
 import type { Stroke } from '@/lib/handwriting/recognizer'
+import { notifyTrainingSaved } from '@/lib/handwriting/useTrainingSamples'
 import BaseballMark from '@/components/BaseballMark'
 import { Button, InkPad, Input } from '@/components/ui'
 
@@ -178,6 +179,7 @@ export default function PublicSampleSession({ code }: { code: string }) {
       setError(L.saveError)
       return
     }
+    notifyTrainingSaved()
     setSavedCount((n) => n + 1)
     advance()
   }

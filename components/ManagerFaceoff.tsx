@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { supabase } from '@/lib/supabase'
-import { normalize, type Stroke, type Template } from '@/lib/handwriting/recognizer'
+import { useTrainingSamples } from '@/lib/handwriting/useTrainingSamples'
 import { interpretBox, type BoxAction, type BoxMarks } from '@/lib/scorecard/interpret'
 import { useScorecardInterpretation } from '@/lib/scorecard/useScorecardInterpretation'
 import { emptyBases, playBases, scoringPlay } from '@/lib/scorecard/plays'
@@ -31,7 +30,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [actions, setActions] = useState<BoxAction[]>([])
   const [notation, setNotation] = useState('')
-  const [templates, setTemplates] = useState<Template[]>([])
+  const { templates, error: trainingError } = useTrainingSamples()
   const [error, setError] = useState('')
   const [syncError, setSyncError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -49,7 +48,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
   const room = snapshot?.room
   const side = snapshot?.isSuperAdmin && testSide ? testSide : snapshot?.side
   const canWrite = !!room && side === room.state.battingSide && !room.pending && room.state.status !== 'final'
-  const marks = useScorecardInterpretation(actions, templates)
+  const marks = useScorecardInterpretation(actions, templates, 'shared')
   const pendingMarks = useMemo(() => interpretBox(room?.pending?.ink || [], []), [room?.pending?.ink])
   const pendingPreview = useMemo(() => room?.pending ? applyEvent(room.state, room.pending.event) : null, [room])
 
@@ -95,11 +94,6 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
     if (!draftReady) return
     try { sessionStorage.setItem(draftKey, JSON.stringify({ actions, notation, version: draftVersion.current, id: submissionId.current })) } catch { /* Keep the draft in memory. */ }
   }, [actions, notation, draftKey, draftReady])
-  useEffect(() => {
-    supabase.from('handwriting_samples').select('symbol, strokes').limit(5000).then(({ data }) => {
-      if (alive.current) setTemplates((data || []).map((r: { symbol: string; strokes: Stroke[] }) => ({ symbol: r.symbol, cloud: normalize(r.strokes) })))
-    })
-  }, [])
 
   function editInk(next: BoxAction[]) {
     if (!actions.length && !notation) draftVersion.current = room?.version ?? null
@@ -147,6 +141,7 @@ export default function ManagerFaceoff({ gameId }: { gameId: string }) {
         <option value="home">{room?.names.home || 'Home'}</option><option value="opponent">{room?.names.opponent || 'Opponent'}</option>
       </select>
     </div>}
+    {trainingError && <p role="alert" className="text-sm text-amber-800">{t('No se pudieron actualizar las muestras: ', 'Could not refresh training samples: ')}{trainingError}</p>}
     {!snapshot ? <p>{t('Cargando…', 'Loading…')}</p> : !room ? <section className={panel}>
       <p>{t('Prepara ambas alineaciones y lanzadores. Este modo comienza en la primera entrada con las reglas predeterminadas; guarda sus propias estadísticas.', 'Prepare both lineups and pitchers. This mode starts in the first inning with default rules and keeps its own statistics.')}</p>
       {snapshot.canStart ? <Button disabled={busy || !!syncError} onClick={() => void mutate('start')}>{t('Iniciar scorecard compartido', 'Start shared scorecard')}</Button> : <p>{t('Espera a que un administrador inicie el scorecard.', 'Wait for an administrator to start the scorecard.')}</p>}
