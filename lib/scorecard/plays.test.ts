@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyBases, playerOuts, savedPlay, scoringPlay, SCORING_PLAYS } from './plays'
+import { confirmedPlayBases, emptyBases, playerOuts, savedPlay, scoringPlay, SCORING_PLAYS } from './plays'
 import { defaultRunnerMoves, runnerUpdateFor, thirdOutCancelsRuns } from './runners'
 import { notationEvent, submit, type Room } from '@/lib/faceoff/workflow'
 import { applyEvent, createGame } from '@/lib/rules/engine'
@@ -23,6 +23,30 @@ describe('saved scorecard results', () => {
     expect(playerOuts(row)).toBe(1)
     expect(row.runs_scored).toBe(0)
     expect(row.base_runners.home).toBe(false)
+  })
+  it('scores a confirmed home run even when an earlier drawing only reached first', () => {
+    const row = savedPlay('HR', { ...emptyBases(), first: true })
+    expect(row.result).toBe('home_run')
+    expect(row.base_runners.home).toBe(true)
+    expect(row.runs_scored).toBe(1)
+  })
+  it.each(['1B', '2B', '3B', 'HR', 'BB', 'HBP'])('puts %s on its awarded base when no path was drawn', code => {
+    const play = scoringPlay(code)!
+    const base = (['first', 'second', 'third', 'home'] as const)[play.base - 1]
+    expect(savedPlay(code).base_runners[base]).toBe(true)
+  })
+  it('brings a short drawing up to the confirmed hit without losing further advances', () => {
+    const first = { ...emptyBases(), first: true }
+    expect(confirmedPlayBases(scoringPlay('2B')!, first).second).toBe(true)
+    expect(first.second).toBe(false)
+    const third = { ...emptyBases(), third: true }
+    expect(savedPlay('1B', third).base_runners).toEqual(third)
+    expect(savedPlay('2B', { ...emptyBases(), home: true }).runs_scored).toBe(1)
+  })
+  it('preserves a retired runner’s path instead of adding an awarded base after the out', () => {
+    const row = savedPlay('HR', { ...emptyBases(), third: true }, { ...emptyBases(), third: true })
+    expect(row.base_runners).toEqual({ ...emptyBases(), third: true })
+    expect(row.runs_scored).toBe(0)
   })
   it.each(['banana', 'DRAWING_SAVED', 'SB', 'CS', 'WP', 'PB', 'BK', 'FOUL', '8'])('rejects %s instead of inventing a ground out or walk', notation => {
     expect(() => savedPlay(notation)).toThrow()

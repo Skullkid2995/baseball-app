@@ -54,7 +54,7 @@ const TEXT = {
   },
 }
 
-export default function LiveGameView() {
+export default function LiveGameView({ gameId }: { gameId?: string }) {
   const { language } = useLanguage()
   const lang = language === 'es' ? 'es' : 'en'
   const L = TEXT[lang]
@@ -90,7 +90,7 @@ export default function LiveGameView() {
   const live = scoped.filter((g) => g.game_status === 'in_progress')
   const today = new Date().toISOString().slice(0, 10)
   const next = scoped.filter((g) => g.game_status === 'scheduled' && g.game_date >= today)[0] ?? scoped.filter((g) => g.game_status === 'scheduled')[0]
-  const current = live.length === 1 ? live[0] : live.find((g) => g.id === chosen) ?? null
+  const current = gameId ? scoped.find(g => g.id === gameId) ?? null : live.length === 1 ? live[0] : live.find((g) => g.id === chosen) ?? null
 
   if (loading || permsLoading) {
     return (
@@ -104,6 +104,8 @@ export default function LiveGameView() {
   if (current) {
     return <TraditionalScorebook game={current} onClose={() => router.push('/games')} />
   }
+
+  if (gameId) return <p role="alert">{lang === 'es' ? 'Este juego no está disponible para tu cuenta.' : 'This game is unavailable for your account.'} <Link href="/live" className="underline">{L.title}</Link></p>
 
   const fmtDate = (iso: string) => {
     const [y, m, d] = iso.split('-').map(Number)

@@ -508,7 +508,7 @@ export default function GamesList() {
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5" title={t.date}>
                       <CalendarDays className="size-4" aria-hidden="true" />
-                      {new Date(game.game_date).toLocaleDateString()}
+                      {new Date(`${game.game_date}T00:00:00`).toLocaleDateString()}
                     </span>
                     {game.game_time && (
                       <span className="inline-flex items-center gap-1.5" title={t.time}>

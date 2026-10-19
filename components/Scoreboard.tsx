@@ -1,4 +1,5 @@
 import type { ActiveRunner } from '@/lib/scorecard/runners'
+import { MlbTeamLogo } from './MlbIdentity'
 
 const BASES = [
   { base: 'first', label: '1B', number: '1', x: 76, y: 50 },
@@ -25,7 +26,7 @@ export default function Scoreboard({ home, away, homeScore, awayScore, inning, h
       <div data-keep-grid className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:gap-6">
         <div className="min-w-0 overflow-hidden rounded-md border border-white/20">
           {[{ name: home, score: homeScore, side: 'home' }, { name: away, score: awayScore, side: 'away' }].map(team => <div key={team.side} className="flex min-w-0 items-stretch border-b border-white/20 bg-gradient-to-r from-zinc-800 to-zinc-900 last:border-b-0">
-            <span aria-hidden="true" className={`flex w-9 shrink-0 items-center justify-center border-r border-white/15 text-xl font-black italic sm:w-14 sm:text-2xl ${team.side === 'home' ? 'bg-blue-900' : 'bg-red-950'}`}>{team.name.trim().slice(0, 1).toUpperCase()}</span>
+            <span className="flex w-11 shrink-0 items-center justify-center border-r border-white/15 bg-white/95 p-1 sm:w-16"><MlbTeamLogo name={team.name} className="size-9 sm:size-12" /></span>
             <p className="min-w-0 flex-1 self-center truncate px-2 py-3 text-sm font-black uppercase tracking-wide sm:px-4 sm:text-xl" title={team.name}>{team.name}</p>
             <p className="flex min-w-10 shrink-0 items-center justify-center bg-zinc-100 px-2 font-mono text-3xl font-black leading-none tabular-nums text-zinc-950 sm:min-w-16 sm:text-4xl">{team.score}</p>
           </div>)}

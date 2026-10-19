@@ -1,7 +1,6 @@
-import Layout from '@/components/Layout'
-import ManagerFaceoff from '@/components/ManagerFaceoff'
+import { redirect } from 'next/navigation'
 
 export default async function FaceoffPage({ params }: { params: Promise<{ gameId: string }> }) {
   const { gameId } = await params
-  return <Layout><ManagerFaceoff gameId={gameId} /></Layout>
+  redirect(`/live/${gameId}`)
 }

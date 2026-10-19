@@ -1,0 +1,262 @@
+[
+  {
+    "id": 542888,
+    "name": "Shawn Armstrong",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 571927,
+    "name": "Steven Matz",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 592155,
+    "name": "Cam Booser",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 595978,
+    "name": "Austin Hedges",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 607259,
+    "name": "Nick Martinez",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 608070,
+    "name": "José Ramírez",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 622761,
+    "name": "Jorge Mateo",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 641329,
+    "name": "Bryan Baker",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 642121,
+    "name": "Cole Sulser",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 642547,
+    "name": "Freddy Peralta",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 643377,
+    "name": "Griffin Jax",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 650490,
+    "name": "Yandy Díaz",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 656492,
+    "name": "Foster Griffin",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 656775,
+    "name": "Cedric Mullins",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 656876,
+    "name": "Drew Rasmussen",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 663743,
+    "name": "Nick Fortes",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 663993,
+    "name": "Nathaniel Lowe",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 666018,
+    "name": "Jonathan Aranda",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 666176,
+    "name": "Jo Adell",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 668723,
+    "name": "Ryan Vilade",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 668909,
+    "name": "Gavin Williams",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 669330,
+    "name": "Tyler Wells",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 670036,
+    "name": "Matt Festa",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 670764,
+    "name": "Taylor Walls",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 671922,
+    "name": "Cade Smith",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 672275,
+    "name": "Patrick Bailey",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 676282,
+    "name": "Joey Cantillo",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 676356,
+    "name": "Jonny DeLuca",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 676440,
+    "name": "Tanner Bibee",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 677587,
+    "name": "Brayan Rocchio",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 677944,
+    "name": "Slade Cecconi",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 680700,
+    "name": "Richie Palacios",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 680757,
+    "name": "Steven Kwan",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 681807,
+    "name": "David Fry",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 681870,
+    "name": "Erik Sabrowski",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 682120,
+    "name": "Tim Herrin",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 682657,
+    "name": "Angel Martínez",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 682982,
+    "name": "Daniel Espino",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 683748,
+    "name": "Victor Mesa Jr.",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 683769,
+    "name": "Hunter Gaddis",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 683953,
+    "name": "Travis Bazzana",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 687330,
+    "name": "Kevin Kelly",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 689414,
+    "name": "Liam Hicks",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 690984,
+    "name": "Petey Halpin",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 691406,
+    "name": "Junior Caminero",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 693855,
+    "name": "Ian Seymour",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 694197,
+    "name": "Angel Genao",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 800048,
+    "name": "Parker Messick",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 800050,
+    "name": "Chase DeLauter",
+    "team": "Cleveland Guardians"
+  },
+  {
+    "id": 802415,
+    "name": "Chandler Simpson",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 810938,
+    "name": "Ben Williamson",
+    "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 811315,
+    "name": "Brody Hopkins",
+    "team": "Tampa Bay Rays"
+  }
+]

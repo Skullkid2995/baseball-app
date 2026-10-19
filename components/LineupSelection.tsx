@@ -6,6 +6,9 @@ import OpponentLineupEntry from './OpponentLineupEntry'
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ClipboardList, Home, Pencil, Plane, Play, Plus, Save, UserPlus, Users, Zap } from 'lucide-react'
 import { Alert, Badge, Button, Card, EmptyState, FormField, Input, LoadingState, Modal, Select } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import ReserveSelection, { type ReserveDraft } from './ReserveSelection'
+import { saveReserves, eligibleReserves } from '@/lib/scorecard/reserves'
+import { MlbPortrait } from './MlbIdentity'
 
 interface Team {
   id: string
@@ -74,6 +77,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null)
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [lineupEntries, setLineupEntries] = useState<LineupEntry[]>([])
+  const [reserveDraft, setReserveDraft] = useState<ReserveDraft | null>(null)
   const [hasDH, setHasDH] = useState(false)
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false)
   const [newPlayerData, setNewPlayerData] = useState({
@@ -185,7 +189,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       
       const { data, error } = await supabase
         .from('games')
-        .select('id, opponent, lineup_template_id, opponent_lineup_template_id, batting_first')
+        .select('id, opponent, team_id, lineup_template_id, opponent_lineup_template_id, batting_first')
         .eq('id', gameId)
         .single()
       
@@ -194,7 +198,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
         console.log('Error with full query, trying basic fields:', error.message)
         const { data: basicData, error: basicError } = await supabase
           .from('games')
-          .select('id, opponent')
+          .select('id, opponent, team_id')
           .eq('id', gameId)
           .single()
         
@@ -258,10 +262,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
       
       // If no team_id or team not found, find team that's NOT the opponent
       // Prefer teams with more players (likely our main team)
-      if (!ourTeam) {
+      if (!ourTeam && !gameData?.team_id) {
         const nonOpponentTeams = (allTeams || []).filter(t => t.name !== gameData?.opponent)
         // Sort by number of players (descending) and take the first one
         ourTeam = nonOpponentTeams.sort((a, b) => (b.players?.length || 0) - (a.players?.length || 0))[0] || null
+      }
+
+      if (!ourTeam) {
+        setError('No se encontró el equipo asignado a este juego. Revisa el equipo local antes de preparar la alineación.')
+        return
       }
       
       // Find opponent team by matching name
@@ -695,6 +704,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
 
   async function saveLineup() {
     if (!selectedTeam) return
+    if (gameId && mode === 'create' && (!reserveDraft?.ready || reserveDraft.side !== (selectedTeam === gameTeams.ourTeam?.id ? 'home' : 'opponent'))) { setError('Espera a que carguen la banca y el bullpen antes de guardar.'); return }
 
     // If in select mode and gameId is provided, just link the game to the team
     if (mode === 'select' && gameId) {
@@ -946,6 +956,11 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
           throw new Error(`Failed to save lineup template players: ${templatePlayersError.message || JSON.stringify(templatePlayersError)}`)
         }
         // If error object is empty or has no meaningful error info, ignore it (save likely succeeded)
+      }
+
+      if (gameId && reserveDraft?.ready) {
+        const selectedRoster = teams.find(t => t.id === selectedTeam)?.players ?? []
+        await saveReserves(supabase, gameId, reserveDraft.side, eligibleReserves(selectedRoster, filledEntries.map(e => e.playerId), reserveDraft.selection))
       }
 
       // Link game to team's lineup template (only if gameId is provided)
@@ -1304,6 +1319,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                             <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-slate-50 px-3 py-2">
                               <div className="flex min-w-0 items-center gap-3">
                                 <OrderChip n={index + 1} />
+                                {player && <MlbPortrait name={`${player.first_name} ${player.last_name}`} team={currentTeam.name} className="size-10" />}
                                 <span className="truncate text-sm font-medium">
                                   {player ? `${player.first_name} ${player.last_name} #${player.jersey_number}` : 'Jugador no encontrado'}
                                 </span>
@@ -1397,6 +1413,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                       </td>
                       {/* Player Selection */}
                       <td className="px-3 py-2">
+                        {(() => { const p = currentTeam.players?.find(p => p.id === lineupEntries[index]?.playerId); return p ? <MlbPortrait key={p.id} name={`${p.first_name} ${p.last_name}`} team={currentTeam.name} className="mb-2 size-10" /> : null })()}
                         {index === 9 && hasDH ? (
                           // 10th row: Show player selection for "who DH is batting for"
                           <Select
@@ -1516,6 +1533,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               )}
             </div>
           </div>
+
+          {gameId && <ReserveSelection key={`${gameId}:${selectedTeam}`} gameId={gameId} side={selectedTeam === gameTeams.ourTeam?.id ? 'home' : 'opponent'} teamName={currentTeam.name} roster={currentTeam.players ?? []} starters={lineupEntries.map(e => e.playerId).filter(Boolean)} onChange={setReserveDraft} />}
 
           {/* Actions */}
           <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
@@ -1717,14 +1736,14 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                   <OptionCard
                     icon={<Home />}
                     title={gameTeams.ourTeam.name}
-                    description={gameInfo.batting_first === 'home' ? 'Nosotros somos locales: bateamos primero.' : 'Marcar a nuestro equipo como local (batea primero).'}
+                    description={gameInfo.batting_first === 'home' ? 'Nuestro equipo es visitante: batea primero.' : 'Nuestro equipo batea primero (visitante).'}
                     selected={gameInfo.batting_first === 'home'}
                     onClick={() => setBattingFirst('home')}
                   />
                   <OptionCard
                     icon={<Plane />}
                     title={gameInfo.opponent || gameTeams.opponentTeam?.name || 'Oponente'}
-                    description={gameInfo.batting_first === 'opponent' ? 'El oponente es local: batea primero.' : 'Marcar al oponente como local (batea primero).'}
+                    description={gameInfo.batting_first === 'opponent' ? 'El oponente es visitante: batea primero.' : 'El oponente batea primero (visitante).'}
                     selected={gameInfo.batting_first === 'opponent'}
                     onClick={() => setBattingFirst('opponent')}
                   />
@@ -1747,7 +1766,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
 
                 <ul className="grid gap-2 sm:grid-cols-3">
                   {[
-                    { ok: done.batting, label: done.batting ? `Local: ${gameInfo.batting_first === 'home' ? gameTeams.ourTeam.name : gameInfo.opponent}` : 'Local/Visitante pendiente', step: 'batting' as PrepStep },
+                    { ok: done.batting, label: done.batting ? `Visitante: ${gameInfo.batting_first === 'home' ? gameTeams.ourTeam.name : gameInfo.opponent}` : 'Local/Visitante pendiente', step: 'batting' as PrepStep },
                     { ok: done.ours, label: done.ours ? `${gameTeams.ourTeam.name}: alineación lista` : `${gameTeams.ourTeam.name}: alineación pendiente`, step: 'ours' as PrepStep },
                     { ok: done.opponent, label: done.opponent ? `${gameInfo.opponent}: alineación lista` : `${gameInfo.opponent}: alineación pendiente`, step: 'opponent' as PrepStep },
                   ].map((item) => (
@@ -1775,7 +1794,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                   <Card className="p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <h5 className="text-sm font-semibold">{gameTeams.ourTeam.name}</h5>
-                      {gameInfo.batting_first === 'home' ? <Badge variant="solid">Local</Badge> : <Badge variant="dark">Visitante</Badge>}
+                      {gameInfo.batting_first === 'home' ? <Badge variant="dark">Visitante</Badge> : <Badge variant="solid">Local</Badge>}
                     </div>
                     {previews.ours.length > 0 ? (
                       <LineupPreviewList rows={previews.ours} />
@@ -1786,7 +1805,7 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
                   <Card className="p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <h5 className="text-sm font-semibold">{gameInfo.opponent}</h5>
-                      {gameInfo.batting_first === 'opponent' ? <Badge variant="solid">Local</Badge> : <Badge variant="dark">Visitante</Badge>}
+                      {gameInfo.batting_first === 'opponent' ? <Badge variant="dark">Visitante</Badge> : <Badge variant="solid">Local</Badge>}
                     </div>
                     {previews.opponent.length > 0 ? (
                       <LineupPreviewList rows={previews.opponent} />

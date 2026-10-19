@@ -6,9 +6,9 @@ import type { Match, Stroke } from '@/lib/handwriting/recognizer'
 import { scoringPlay } from '@/lib/scorecard/plays'
 import { cn } from '@/lib/utils'
 
-export default function HandwritingConfirmation({ matches, ink, value, onConfirm, waiting, language, disabled = false, shared = false }: {
+export default function HandwritingConfirmation({ matches, ink, value, onConfirm, waiting, language, disabled = false, shared = false, needsLocation = false }: {
   matches: Match[]; ink: Stroke[]; value: string; onConfirm: (value: string) => void; waiting: boolean
-  language: 'en' | 'es'; disabled?: boolean; shared?: boolean
+  language: 'en' | 'es'; disabled?: boolean; shared?: boolean; needsLocation?: boolean
 }) {
   const headingId = useId()
   const panelRef = useRef<HTMLElement>(null)
@@ -33,7 +33,7 @@ export default function HandwritingConfirmation({ matches, ink, value, onConfirm
     <h4 id={headingId} className="text-base font-black text-slate-950">{es ? '1 · Confirma el resultado' : '1 · Confirm your result'}</h4>
     <p role="status" className="mt-1 text-sm leading-snug text-slate-700">
       {waiting ? (es ? 'Termina de escribir. Las opciones aparecerán tras una pausa de 2.5 segundos.' : 'Finish writing. Your choices will appear after a 2.5-second pause.')
-        : selected ? (es ? 'Resultado confirmado. Falta guardar la jugada.' : 'Result confirmed. Your play still needs to be saved.')
+        : selected ? (shared ? (es ? 'Resultado elegido. Aún falta enviarlo a validar.' : 'Result selected. It has not been submitted yet.') : (es ? 'Resultado elegido. Aún falta guardar la jugada.' : 'Result selected. It has not been saved yet.'))
         : options.length ? (es ? 'Toca el botón que coincide con tu trazo para poder guardar.' : 'Tap the button that matches your writing to enable Save play.')
         : (es ? 'Escribe la jugada en el campo o elige un resultado de la lista.' : 'Write a play code on the field or choose a result from the list.')}
     </p>
@@ -51,8 +51,8 @@ export default function HandwritingConfirmation({ matches, ink, value, onConfirm
     {selected && !waiting && <div className="mt-3 flex items-start gap-2 rounded-xl bg-white/80 p-3 text-sm text-emerald-950">
       <ArrowDown aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
       <p><strong className="block">{value.toUpperCase()} · {selected[language]}</strong>
-        {shared ? (es ? 'Revisa los corredores y toca «Enviar a validar».' : 'Review the runners, then tap “Submit for validation”.')
-          : (es ? 'Revisa los corredores e impulsadas y toca «Guardar jugada» abajo.' : 'Review runners and RBI, then tap “Save play” below.')}
+        {needsLocation ? (es ? 'Ahora marca hacia dónde fue la pelota. Después revisa los corredores.' : 'Now mark where the ball went. Then review the runners.') : shared ? (es ? 'Revisa los corredores y toca «Enviar a validar».' : 'Review the runners, then tap “Submit for validation”.')
+          : (es ? 'Revisa dónde terminó cada corredor y las carreras impulsadas. Luego toca «Guardar jugada» abajo.' : 'Check where each runner finished and the runs batted in. Then tap “Save play” below.')}
       </p>
     </div>}
   </section>

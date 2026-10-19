@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export interface PaperDraft {
   actions: BoxAction[]; token: string; rbi: number; runnerOut: boolean
   runnerActions: Record<string, BoxAction[]>; reviewed: Record<string, string>
+  hitLocation?: [number, number] | null; hitLocationConfirmed?: boolean
   updatedAt: string
 }
 export interface PaperBox {

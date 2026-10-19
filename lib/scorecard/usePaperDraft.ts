@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { loadPaperDraft, savePaperDraft, paperStorageKey, type PaperBox, type PaperDraft } from './paperDraft'
 
-const contentsOf = ({actions,token,rbi,runnerOut,runnerActions,reviewed}: PaperDraft) => ({actions,token,rbi,runnerOut,runnerActions,reviewed})
+const contentsOf = ({actions,token,rbi,runnerOut,runnerActions,reviewed,hitLocation,hitLocationConfirmed}: PaperDraft) => ({actions,token,rbi,runnerOut,runnerActions,reviewed,hitLocation,hitLocationConfirmed})
 const queues = new Map<string, Promise<void>>()
 export function usePaperDraft(box: PaperBox | undefined, value: Omit<PaperDraft,'updatedAt'>, restore: (draft: PaperDraft) => void) {
   const [ready,setReady] = useState(!box)

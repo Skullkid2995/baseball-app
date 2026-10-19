@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isAuthorizedEmail } from '@/lib/access'
+import { getAccessStatus } from '@/lib/access'
 import BaseballMark from '@/components/BaseballMark'
 import { Alert, Button, Card } from '@/components/ui'
 
@@ -12,58 +12,80 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const searchParams = useSearchParams()
-  const supabase = createClient()
-  const { t } = useLanguage()
-  
-  useEffect(() => {
-    const errorParam = searchParams.get('error')
-    if (errorParam === 'unauthorized') {
-      setError(t.accessDenied)
-    } else if (errorParam === 'auth_failed') {
-      setError(t.authFailed)
-    }
-  }, [searchParams, t])
+  const [supabase] = useState(createClient)
+  const { t, language } = useLanguage()
+  const errorParam = searchParams.get('error')
+  const serviceUnavailable = errorParam === 'service_unavailable'
+  const connectionMessage = language === 'es'
+    ? 'No pudimos conectar con tu cuenta. Revisa tu conexión a internet y vuelve a intentar.'
+    : 'We could not connect to your account. Check your internet connection and try again.'
+  const signInUnavailableMessage = language === 'es'
+    ? 'No se puede iniciar sesión con Google en este momento. Contacta a la persona que administra esta aplicación.'
+    : 'Google sign-in is unavailable right now. Contact the person who manages this app.'
+  const displayedError = error || (serviceUnavailable ? connectionMessage
+    : errorParam === 'unauthorized' ? t.accessDenied
+      : errorParam === 'auth_failed' ? t.authFailed : null)
 
   useEffect(() => {
-    // Check if user is already logged in
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        // Check if email matches
-        if (await isAuthorizedEmail(supabase, session.user.email)) {
-          window.location.href = '/'
-        } else {
-          // User is logged in but email doesn't match
-          supabase.auth.signOut()
-        }
-      }
-    })
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        if (await isAuthorizedEmail(supabase, session.user.email)) {
-          window.location.href = '/'
+    // Do not automatically send a saved session back into a failing route.
+    // The retry button lets the user explicitly check the connection again.
+    if (errorParam) return
+    let active = true
+    let checkPending = false
+    let checkTimer: ReturnType<typeof setTimeout> | undefined
+    const checkSession = async () => {
+      if (checkPending) return
+      checkPending = true
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!session?.user || !active) return
+        const access = await getAccessStatus(supabase, session.user.email)
+        if (!active) return
+        if (access === 'authorized') {
+          window.location.replace('/')
+        } else if (access === 'unavailable') {
+          setError(connectionMessage)
         } else {
           setError(t.accessDenied)
-          supabase.auth.signOut()
+          void supabase.auth.signOut({ scope: 'local' })
         }
+      } catch {
+        if (active) setError(connectionMessage)
+      } finally {
+        checkPending = false
+      }
+    }
+    void checkSession()
+
+    // Defer Supabase calls until the auth listener has released its session
+    // lock; awaiting access queries inside this callback can deadlock sign-in.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') {
+        clearTimeout(checkTimer)
+        checkTimer = setTimeout(() => { void checkSession() }, 0)
       }
     })
 
-    return () => subscription.unsubscribe()
-  }, [])
+    return () => {
+      active = false
+      clearTimeout(checkTimer)
+      subscription.unsubscribe()
+    }
+  }, [connectionMessage, errorParam, supabase, t.accessDenied])
 
   const handleGoogleLogin = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      const { data, error: signInError } = await supabase.auth.signInWithOAuth({
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: { prompt: 'select_account' },
         },
       })
 
@@ -75,7 +97,7 @@ export default function Login() {
         if (errorCode === 'validation_failed' || errorCode === 400 || 
             errorMsg.includes('provider is not enabled') || 
             errorMsg.includes('Unsupported provider')) {
-          setError('Google OAuth is not enabled in Supabase. Please enable it in your Supabase Dashboard under Authentication > Providers > Google. See AUTH_SETUP.md for detailed instructions.')
+          setError(signInUnavailableMessage)
         } else {
           setError(errorMsg || t.authFailed)
         }
@@ -91,7 +113,7 @@ export default function Login() {
       if (errorCode === 'validation_failed' || errorCode === 400 || 
           errorMsg.includes('provider is not enabled') || 
           errorMsg.includes('Unsupported provider')) {
-        setError('Google OAuth is not enabled in Supabase. Please enable it in your Supabase Dashboard under Authentication > Providers > Google. See AUTH_SETUP.md for detailed instructions.')
+        setError(signInUnavailableMessage)
       } else {
         setError(err instanceof Error ? err.message : 'An error occurred')
       }
@@ -114,10 +136,16 @@ export default function Login() {
         </div>
 
         <Card className="p-6">
-          {error && (
+          {displayedError && (
             <Alert variant="error" className="mb-5">
-              {error}
+              {displayedError}
             </Alert>
+          )}
+
+          {serviceUnavailable && (
+            <Button size="lg" className="mb-4 w-full" onClick={() => window.location.assign('/')}>
+              {language === 'es' ? 'Volver a intentar' : 'Try again'}
+            </Button>
           )}
 
           <Button

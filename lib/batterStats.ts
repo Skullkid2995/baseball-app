@@ -12,7 +12,20 @@ export function battingLine(rows: { result: string }[]) {
     if (play.group === 'hit') hits++
     if (!NO_AB.has(play.result)) atBats++
   }
-  return { hits, atBats, label: `${hits}-${atBats}` }
+  return { hits, atBats, label: `${hits}-${atBats}`, avg: atBats ? (hits / atBats).toFixed(3).replace(/^0/, '') : null }
+}
+
+export async function loadBatterSeason(client: SupabaseClient, batterId: string, year: number): Promise<SprayAtBat[]> {
+  const rows: SprayAtBat[] = []
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await client.from('at_bats')
+      .select('id, player_id, result, hit_x, hit_y, field_zone, field_area, games!inner(game_date)')
+      .eq('player_id', batterId).gte('games.game_date', `${year}-01-01`).lt('games.game_date', `${year + 1}-01-01`)
+      .order('id').range(offset, offset + 499)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if (!data || data.length < 500) return rows
+  }
 }
 
 export async function loadBatterHistory(client: SupabaseClient, batterId: string, pitcherId: string, gameId?: string): Promise<SprayAtBat[]> {

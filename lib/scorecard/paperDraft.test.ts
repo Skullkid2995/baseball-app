@@ -2,6 +2,10 @@ import { expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { mergePaperDraft, readPaperDraft, paperStorageKey, savePaperDraft, type PaperDraft } from './paperDraft'
 const draft:PaperDraft={actions:[{type:'tap',point:[50,50]}],token:'H1',rbi:0,runnerOut:false,runnerActions:{},reviewed:{},updatedAt:'2026-09-25'}
+it('restores a confirmed hit location together with the original ink and result', () => {
+  const located = { ...draft, hitLocation: [22, 40] as [number, number], hitLocationConfirmed: true }
+  expect(readPaperDraft(mergePaperDraft({}, 'batter:1', located), 'batter:1')).toEqual(located)
+})
 it('keeps separate appearances and substitutions in the same inning',()=>{
   const first=mergePaperDraft([], 'starter:1',draft)
   const second=mergePaperDraft(first,'substitute:2',{...draft,token:'K'})

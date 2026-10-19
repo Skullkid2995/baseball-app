@@ -134,12 +134,23 @@
 .paper-editor { background: #fffdf5; color: #302e29; }
 .paper-editor header { background: #f1eddf; color: #302e29; padding-top: .7rem; padding-bottom: .7rem; }
 .paper-editor header h3 { font-family: Georgia, serif; font-size: 1.4rem; font-weight: 500; }
-.paper-editor header p, .paper-editor header span { color: #655b43; }
-.paper-editor header button { background: #e6dfcb; }
+.paper-editor header > p, .paper-editor header > div > span { color: #655b43; }
+.paper-editor header > div > button { background: #e6dfcb; }
 .paper-editor footer { background: #fffdf5; border-color: #c8c1ae; }
 .paper-editor section, .paper-editor [class*="shadow"] { box-shadow: none; }
 .paper-editor button { border-radius: 3px; }
 .paper-editor canvas { background-color: #fffdf5; }
+.app-shell { --app-bottom-nav: 0px; }
+.app-shell[data-bottom-nav="true"][data-view="mobile"] { --app-bottom-nav: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 1023px) {
+  .app-shell[data-bottom-nav="true"]:not([data-view="desktop"]) { --app-bottom-nav: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
+}
+.app-content { padding-bottom: calc(var(--app-bottom-nav) + 2rem); }
+.paper-editor .batter-history-panel { color: #0f172a; font-family: var(--font-geist-sans), Arial, sans-serif; }
+.paper-editor .batter-history-panel h4 { font-family: inherit; }
+.batter-history-panel button[aria-pressed="true"] { background: #065f46; color: white; border-color: #065f46; }
+.scorecard-editor:not(.paper-editor) header { max-height: 60dvh; overflow-y: auto; overscroll-behavior: contain; }
+.paper-editor header > div > .min-w-0 > p { color: #655b43; }
 @media print {
   .paper-scorebook button, .paper-editor, .paper-scorebook footer { box-shadow: none !important; }
   .paper-scorebook { border: none; box-shadow: none; padding: 0; }
@@ -147,3 +158,21 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Keep the current inning visible across the scoring sheet, including paper mode. */
+th.scorecard-inning[data-active-inning] {
+  background: #065f46 !important;
+  color: #fff !important;
+  box-shadow: inset 2px 0 #059669, inset -2px 0 #059669;
+}
+td.scorecard-inning[data-active-inning] {
+  background: #ecfdf5;
+  box-shadow: inset 2px 0 #6ee7b7, inset -2px 0 #6ee7b7;
+}
+
+/* Comfortable touch controls and readable instructions during live scoring. */
+.scorecard-editor button { min-height: 3rem; }
+.scorecard-editor .text-xs { font-size: .875rem; line-height: 1.4; }
+.scorecard-editor .text-sm { font-size: 1rem; line-height: 1.5; }
+.scorecard-editor input[type="checkbox"] { width: 1.5rem; height: 1.5rem; }
+.scorecard-editor select { min-height: 3rem; font-size: 1rem; }

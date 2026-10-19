@@ -157,7 +157,7 @@ export default function Layout({ children }: LayoutProps) {
   )
 
   return (
-    <div className="min-h-screen ballpark-background" data-view={mode}>
+    <div className="min-h-screen ballpark-background app-shell" data-view={mode} data-bottom-nav={quickItems.length > 0}>
       {/* Desktop sidebar */}
       <aside
         className={cn(
@@ -194,7 +194,7 @@ export default function Layout({ children }: LayoutProps) {
       )}
 
       {/* Content column */}
-      <div className={cn('flex min-h-screen flex-col', forceMobile ? '' : forceDesktop ? 'pl-64' : 'lg:pl-64')}>
+      <div className={cn('flex min-h-screen min-w-0 flex-col', forceMobile ? '' : forceDesktop ? 'pl-64' : 'lg:pl-64')}>
         <header className="sticky top-0 z-30 flex h-20 items-center gap-3 border-b border-border bg-card/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/70 sm:px-6 lg:px-8">
           <Button
             variant="ghost"
@@ -231,8 +231,8 @@ export default function Layout({ children }: LayoutProps) {
           )}
         </header>
 
-        <main className={cn('flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8', quickItems.length > 0 && (forceMobile ? 'pb-24' : forceDesktop ? '' : 'pb-24 lg:pb-8'))}>
-          <div className={cn('mx-auto w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>
+        <main className="app-content min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <div className={cn('mx-auto min-w-0 w-full', forceMobile ? 'max-w-3xl' : 'max-w-6xl')}>
             {permsLoading && current ? (
               <div className="py-16 text-center text-sm text-muted-foreground">…</div>
             ) : blocked ? (

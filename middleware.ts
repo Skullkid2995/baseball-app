@@ -2,19 +2,30 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { env } from '@/lib/env'
-import { isAuthorizedEmail } from '@/lib/access'
+import { getAccessStatus } from '@/lib/access'
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+  // Recovery and public pages must remain reachable when authentication is down.
+  // The OAuth callback performs its own session exchange and access check.
+  if (pathname === '/login' || pathname === '/auth/callback' || pathname === '/write' || pathname.startsWith('/write/')) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
+  const controller = new AbortController()
 
   const supabase = createServerClient(
     env.supabase.url,
     env.supabase.anonKey,
     {
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, signal: controller.signal }),
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll()
@@ -32,36 +43,43 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refresh session if expired
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Protected routes (everything except /login and /auth/callback)
-  const isLoginPage = request.nextUrl.pathname === '/login'
-  const isAuthCallback = request.nextUrl.pathname.startsWith('/auth/callback')
-  // Public handwriting collection links (/write/<code>): no account needed
-  const isPublicWrite = request.nextUrl.pathname.startsWith('/write')
-
-  if (!isLoginPage && !isAuthCallback && !isPublicWrite) {
-    // If user is not logged in, redirect to login
-    if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-
-    // If user is logged in but email doesn't match, redirect to login
-    if (!(await isAuthorizedEmail(supabase, user.email))) {
-      await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/login?error=unauthorized', request.url))
-    }
+  const redirectToLogin = (error?: string) => {
+    const redirect = NextResponse.redirect(new URL(error ? `/login?error=${error}` : '/login', request.url))
+    // Keep refreshed/deleted session cookies when redirecting as well.
+    response.cookies.getAll().forEach(cookie => redirect.cookies.set(cookie))
+    return redirect
   }
 
-  // If user is already logged in and on login page, redirect to home
-  if (isLoginPage && user && (await isAuthorizedEmail(supabase, user.email))) {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    // One deadline covers session refresh and the access lookup, including SDK
+    // retries. Fail closed, but show a reachable retry page before Vercel's 504.
+    const unavailable = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new Error('Authentication check timed out'))
+      }, 8000)
+    })
+    return await Promise.race([
+      (async () => {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error && error.name !== 'AuthSessionMissingError') {
+          return redirectToLogin('service_unavailable')
+        }
+        if (!user) return redirectToLogin()
 
-  return response
+        const access = await getAccessStatus(supabase, user.email)
+        if (access === 'unavailable') return redirectToLogin('service_unavailable')
+        if (access === 'unauthorized') return redirectToLogin('unauthorized')
+        return response
+      })(),
+      unavailable,
+    ])
+  } catch {
+    return redirectToLogin('service_unavailable')
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export const config = {
@@ -76,4 +94,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
-

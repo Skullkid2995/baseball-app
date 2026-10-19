@@ -216,28 +216,31 @@ export default function ScorecardBox({ actions, onChange, marks, notation, disab
     drawing.current.push(p)
     draw()
   }
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>, cancel = false) => {
     if (e.pointerId !== activePointerId.current) return
     const stroke = drawing.current
     drawing.current = null
     activePointerId.current = null
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* released */ }
     if (!stroke) return
-    onPointerType?.(lastPointerType.current)
-    if (strokeLength(stroke) < TAP_LENGTH) onChange([...actions, { type: 'tap', point: stroke[0] as Pt }])
-    else onChange([...actions, { type: 'stroke', points: stroke }])
+    if (!cancel) {
+      onPointerType?.(lastPointerType.current)
+      if (strokeLength(stroke) < TAP_LENGTH) onChange([...actions, { type: 'tap', point: stroke[0] as Pt }])
+      else onChange([...actions, { type: 'stroke', points: stroke }])
+    }
+    draw()
     onDrawingChange?.(false)
   }
 
   return (
     <canvas
       ref={canvasRef}
-      className={cn('aspect-square w-full touch-none rounded-2xl border-2 border-slate-400 bg-[#fffdf7] shadow-inner', disabled && 'opacity-70', className)}
+      className={cn('aspect-square w-full rounded-2xl border-2 border-slate-400 bg-[#fffdf7] shadow-inner', disabled ? 'touch-pan-y opacity-70' : 'touch-none', className)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onLostPointerCapture={onPointerUp}
+      onPointerCancel={e => onPointerUp(e, true)}
+      onLostPointerCapture={e => onPointerUp(e, true)}
       aria-label="Scorecard box"
     />
   )

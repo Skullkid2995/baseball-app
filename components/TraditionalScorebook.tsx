@@ -14,7 +14,8 @@ import SavedPaperInk from './SavedPaperInk'
 import { ensureStartingPitcher } from '@/lib/scorecard/startingPitcher'
 import ScorecardPlayHistory from './ScorecardPlayHistory'
 import type { SavedRunnerEvent } from '@/lib/scorecard/playHistory'
-import Link from 'next/link'
+import { jerseyLabel, MlbPortrait } from './MlbIdentity'
+import { availableReservePlayers, isPitcher, readReserves, type Reserves } from '@/lib/scorecard/reserves'
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import DiamondCanvas, { type ActiveRunner, type RunnerUpdate } from './DiamondCanvas'
@@ -121,11 +122,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     umpire: ''
   })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [selectedCell, setSelectedCell] = useState<(AtBatCell & { playerName: string }) | null>(null)
   const [showCanvasModal, setShowCanvasModal] = useState(false)
+  function focusPaperEditor() {
+    const editor = paperEditorRef.current
+    editor?.focus({ preventScroll: true })
+    editor?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+  }
   useEffect(()=>{
     if (!paperMode || !showCanvasModal) return
-    const frame=requestAnimationFrame(()=>paperEditorRef.current?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'}))
+    const frame=requestAnimationFrame(focusPaperEditor)
     return ()=>cancelAnimationFrame(frame)
   },[paperMode,showCanvasModal])
   const [isLocked, setIsLocked] = useState(game.game_status === 'completed')
@@ -140,6 +147,17 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const [opponentTeamId, setOpponentTeamId] = useState<string | null>(null)
   const [ourRoster, setOurRoster] = useState<RosterPlayer[]>([])
   const [opponentRoster, setOpponentRoster] = useState<RosterPlayer[]>([])
+  const [reserves, setReserves] = useState<Record<'home' | 'opponent', Reserves | null>>({ home: null, opponent: null })
+  const [reservesLoading, setReservesLoading] = useState(true)
+  const [reservesError, setReservesError] = useState('')
+  const fetchReserves = useCallback(async () => {
+    setReservesLoading(true)
+    const { data, error } = await supabase.from('games').select('roster_reserves').eq('id', game.id).single()
+    if (error) setReservesError(error.message)
+    else { setReserves({ home: readReserves(data.roster_reserves, 'home'), opponent: readReserves(data.roster_reserves, 'opponent') }); setReservesError('') }
+    setReservesLoading(false)
+  }, [game.id])
+  useEffect(() => { void fetchReserves() }, [fetchReserves])
   const [gamePitchers, setGamePitchers] = useState<GamePitcher[]>([])
   const [pitchersLoading, setPitchersLoading] = useState(true)
   const [pitchersError, setPitchersError] = useState('')
@@ -155,6 +173,19 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   const opponentPlayers = useMemo(() => changedLineup(initialOpponentPlayers, changes, 'opponent'), [initialOpponentPlayers, changes])
   const displayedLineup = currentTeamSide === 'home' ? players : opponentPlayers
   const displayedRows = slotRows(atBats, displayedLineup, currentTeamSide)
+  function availableBench(side: 'home' | 'opponent') {
+    const roster = side === 'home' ? ourRoster : opponentRoster, lineup = side === 'home' ? players : opponentPlayers
+    return availableReservePlayers(roster, reserves[side]?.bench ?? null, [...lineup.flatMap(slot => slot.members), ...gamePitchers.map(g => g.pitcher_id)])
+  }
+  function availablePitchers(side: 'home' | 'opponent') {
+    const roster = side === 'home' ? ourRoster : opponentRoster, current = currentPitcher(side)?.id
+    return availableReservePlayers(roster, reserves[side]?.bullpen ?? null, gamePitchers.filter(g => g.team_side === side).map(g => g.pitcher_id), current)
+  }
+  function availablePositionPitchers(side: 'home' | 'opponent') {
+    const roster = side === 'home' ? ourRoster : opponentRoster, lineup = side === 'home' ? players : opponentPlayers
+    const current = currentPitcher(side)?.id
+    return roster.filter(p => !isPitcher(p) && (p.id === current || ((!reserves[side] || reserves[side]!.bench.includes(p.id) || lineup.some(slot => slot.id === p.id)) && !gamePitchers.some(g => g.pitcher_id === p.id) && !lineup.some(slot => slot.id !== p.id && slot.members.includes(p.id)))))
+  }
 
   useEffect(() => {
     supabase.from('scorecard_player_changes').select('*').eq('game_id', game.id).order('sequence').then(({ data, error }) => {
@@ -447,69 +478,23 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   async function fetchAtBats() {
+    setLoadError(false)
     try {
-      const { data, error } = await supabase
-        .from('at_bats')
-        .select(`
-          *,
-          players (
-            first_name,
-            last_name,
-            jersey_number
-          )
-        `)
-        .eq('game_id', game.id)
-        .order('inning', { ascending: true })
-        .order('at_bat_number', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching at-bats:', error)
-        console.error('Error details:', JSON.stringify(error, null, 2))
-        setLoading(false)
-        return
-      } else {
-        setAtBats(data || [])
-        
-        // Always recalculate the score from the saved at-bats, each side on its own
-        const totalRunsScored = (data || []).filter(ab => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
-        const opponentRunsScored = (data || []).filter(ab => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0)
-        
-        // Debug: Log which at-bats have runs_scored
-        const atBatsWithRuns = (data || []).filter(ab => (ab.runs_scored || 0) > 0)
-        console.log(`=== SCORE RECALCULATION ===`)
-        console.log(`Total at-bats: ${data?.length || 0}`)
-        console.log(`At-bats with runs: ${atBatsWithRuns.length}`)
-        atBatsWithRuns.forEach(ab => {
-          console.log(`  - Player: ${ab.players?.first_name} ${ab.players?.last_name}, Inning: ${ab.inning}, Runs: ${ab.runs_scored}`)
-        })
-        console.log(`Calculated total runs: ${totalRunsScored}`)
-        console.log(`Current game score: ${currentGame.our_score}`)
-        console.log(`===========================`)
-        
-        // Always update the game score to match the sum of all at-bats (ensures accuracy)
-        const { data: updatedGame, error: scoreError } = await supabase
-          .from('games')
-          .update({ 
-            our_score: totalRunsScored,
-            opponent_score: opponentRunsScored,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', game.id)
-          .select()
-        
-        if (scoreError) {
-          console.error('Error updating game score:', scoreError)
-        } else if (updatedGame && updatedGame[0]) {
-          setCurrentGame(updatedGame[0])
-          console.log('Game score recalculated and updated to:', totalRunsScored)
-        }
-        
-        setLoading(false)
-      }
-    } catch (err) {
-      console.error('Failed to fetch at-bats:', err)
-      setLoading(false)
-    }
+      const { data, error } = await supabase.from('at_bats')
+        .select('*, players(first_name,last_name,jersey_number)')
+        .eq('game_id', game.id).order('inning', { ascending: true }).order('at_bat_number', { ascending: true })
+      if (error) throw error
+      const rows = data || []
+      setAtBats(rows)
+      // Opening the scorebook is read-only; save operations persist score totals.
+      setCurrentGame(previous => ({ ...previous,
+        our_score: rows.filter(ab => ab.team_side !== 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0),
+        opponent_score: rows.filter(ab => ab.team_side === 'opponent').reduce((sum, ab) => sum + (ab.runs_scored || 0), 0),
+      }))
+    } catch (error) {
+      console.error('Could not load the scorebook:', error)
+      setLoadError(true)
+    } finally { setLoading(false) }
   }
 
   async function fetchGamePitchers() {
@@ -552,6 +537,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   async function pickPitcher(side: 'home' | 'opponent', player: RosterPlayer) {
+    if (reservesLoading || reservesError || ![...availablePitchers(side), ...availablePositionPitchers(side)].some(p => p.id === player.id)) { alert('Revisa los jugadores disponibles para este juego / Check this game’s available players.'); return }
     const sequence = gamePitchers.filter((g) => g.team_side === side).length + 1
     const { error } = await supabase
       .from('game_pitchers')
@@ -571,7 +557,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
 
   /** Open the at-bat dialog and load this batter's history against the pitcher on the mound */
   async function openCell(cell: AtBatCell & { playerName: string }, pitcher?: RosterPlayer | null) {
-    if (!canScoreCell(cell, getCurrentBatter(), isLocked || !!changesError)) return
+    if (showCanvasModal || saveInFlight.current || !canScoreCell(cell, getCurrentBatter(), isLocked || !!changesError)) return
     setViewedAtBat(null)
     setSelectedAtBatId(null)
     setSelectedCell(cell)
@@ -654,7 +640,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function handleCellClick(cell: AtBatCell & { playerName: string }) {
-    if (pitchersLoading || pitchersError || !canScoreCell(cell, getCurrentBatter(), isLocked)) return
+    if (showCanvasModal && paperMode && selectedCell && cell.playerId === selectedCell.playerId && cell.teamSide === selectedCell.teamSide && cell.inning === selectedCell.inning && cell.appearance === selectedCell.appearance) { focusPaperEditor(); return }
+    if (showCanvasModal || saveInFlight.current || pitchersLoading || pitchersError || !canScoreCell(cell, getCurrentBatter(), isLocked)) return
     const side = fieldingSide(currentTeamSide)
     // We must know who is pitching before scoring the current at-bat.
     if (!currentPitcher(side)) {
@@ -666,6 +653,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   function openPlayerChange(kind: ChangeKind, outId?: string, side = kind === 'defensive' || kind === 'position' ? fieldingSide(currentTeamSide) : currentTeamSide) {
+    if (reservesLoading || reservesError) return
     if (isLocked || saveInFlight.current || (showCanvasModal && selectedAtBatId)) return
     if (kind === 'defensive' && side === currentTeamSide && outId && getActiveRunners(null, getCurrentBatter()?.inning || 1, side).some(r => r.playerId === outId)) kind = 'pinch_runner'
     setChangePicker({ side, kind, outId: outId || (kind === 'pinch_hitter' ? selectedCell?.playerId : undefined) })
@@ -674,12 +662,14 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   async function savePlayerChange(outId: string, inId: string, position: string) {
     if (!changePicker || isLocked || saveInFlight.current) throw new Error('This scorecard is locked or saving.')
     if (changesError) throw new Error('Player changes are unavailable: ' + changesError)
+    if (reservesLoading || reservesError) throw new Error('Could not load reserves / No se pudo cargar la banca.')
     const { side, kind } = changePicker
     const lineup = side === 'home' ? players : opponentPlayers
     const outgoing = lineup.find(p => p.id === outId)
     const incoming = (side === 'home' ? ourRoster : opponentRoster).find(p => p.id === inId) || (kind === 'position' ? outgoing : undefined)
     if (!outgoing || !incoming) throw new Error('Select players from this team.')
     if (kind !== 'position' && lineup.some(p => p.members.includes(inId))) throw new Error('Choose an unused player from the bench.')
+    if (kind !== 'position' && !availableBench(side).some(p => p.id === inId)) throw new Error('Choose a player from this game’s selected bench / Elige un jugador de la banca de este juego.')
     const current = nextAtBat(lineup, slotRows(atBats, lineup, side), side)
     if (kind === 'pinch_hitter' && current?.playerId !== outId) throw new Error('Select the current batter.')
     const runner = getActiveRunners(null, current?.inning || 1, side).find(r => r.playerId === outId)
@@ -715,7 +705,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   async function saveScorebook() {
-    if (!confirm('Are you sure you want to save and lock the scorebook? This action cannot be undone.')) {
+    if (showCanvasModal || saveInFlight.current) return
+    if (!confirm(uiLang === 'es' ? '¿El juego ya terminó? Cerrar el juego impedirá anotar más jugadas. Esta acción no se puede deshacer.' : 'Is the game over? Ending the game will prevent any more scoring. This cannot be undone.')) {
       return
     }
 
@@ -727,12 +718,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       
       if (error) {
         console.error('Error updating game status:', error)
-        alert('Error saving scorebook')
+        alert(uiLang === 'es' ? 'No se pudo cerrar el juego. Revisa tu conexión e intenta otra vez.' : 'Could not end the game. Check your connection and try again.')
         return
       }
       
       setIsLocked(true)
-      alert('Scorebook saved and locked! All data is now read-only.')
+      alert(uiLang === 'es' ? 'Juego terminado. El marcador queda disponible para consultar.' : 'Game ended. The scorebook is now available for viewing.')
     } catch (err) {
       console.error('Failed to save scorebook:', err)
       alert('Error saving scorebook')
@@ -846,12 +837,11 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
     
     try {
       // Check if this is an existing at-bat (for this team and inning)
-      const existingAtBat = atBats.find(ab => ab.id === selectedAtBatId)
       let savedBatterId = selectedAtBatId
       
-      if (existingAtBat) {
-        // Update existing at-bat
-        console.log('Updating existing at-bat:', existingAtBat.id)
+      if (savedBatterId) {
+        // Retry the same batter row while the original runners remain in the editor.
+        console.log('Updating existing at-bat:', savedBatterId)
         
         
           const updateData = {
@@ -875,7 +865,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         const { data, error } = await supabase
           .from('at_bats')
           .update(updateData)
-          .eq('id', existingAtBat.id)
+          .eq('id', savedBatterId)
           .select(`
             *,
             players (
@@ -891,12 +881,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             throw new Error(error.message)
           }
         
-        // Update the local state
-        setAtBats(prev => prev.map(ab => 
-          ab.id === existingAtBat.id ? { ...ab, ...updateData } : ab
-        ))
-        
-        console.log('At-bat successfully updated:', data[0])
+console.log('At-bat successfully updated:', data[0])
         
 
       } else {
@@ -947,7 +932,6 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         
         const { data, error } = await supabase.from('at_bats').insert([insertData]).select('*, players(first_name,last_name,jersey_number)').single()
         if (error) throw new Error(error.message)
-        setAtBats(prev => [...prev, data])
         setSelectedAtBatId(data.id)
         savedBatterId = data.id
       }
@@ -976,13 +960,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         const patch = { base_runners: u.base_runners, base_runner_outs: u.base_runner_outs, out_type: u.out_type, runs_scored: u.runs_scored }
         const { error } = await supabase.from('at_bats').update(patch).eq('id', u.atBatId).eq('game_id', game.id)
         if (error) {
-          await fetchAtBats()
-          throw new Error('Batter saved, but a runner update failed. Reopen this play and check the runners: ' + error.message)
+          throw new Error(uiLang === 'es' ? 'Falta guardar un corredor. Reintenta aquí sin cerrar la jugada.' : 'A runner update is still pending. Retry here without closing this play.')
         }
-        setAtBats(prev => prev.map(ab => ab.id === u.atBatId ? { ...ab, ...patch } : ab))
       }
 
       await recalculateScore()
+      await fetchAtBats()
       if (paperMode) {
         const savedInning = await supabase.from('at_bats').select('result,base_runner_outs,team_side').eq('game_id',game.id).eq('inning',selectedCell.inning)
         if (!savedInning.error && (savedInning.data || []).filter(row=>(row.team_side || 'home')===teamSide).reduce((n,row)=>n+playerOuts(row),0)>=3) setCurrentTeamSide(fieldingSide(teamSide))
@@ -1004,11 +987,20 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   }
 
   if (loading || changesLoading) {
-    return <LoadingState label="Loading scorebook..." />
+    return <LoadingState label={uiLang === 'es' ? 'Cargando el libro de anotación…' : 'Loading scorebook…'} />
   }
+
+  if (loadError) return <div role="alert" className="mx-auto max-w-xl space-y-4 rounded-xl border-2 border-amber-400 bg-amber-50 p-6 text-amber-950">
+    <h2 className="text-xl font-bold">{uiLang === 'es' ? 'No se pudo cargar el marcador' : 'Could not load the scorecard'}</h2>
+    <p className="text-base">{uiLang === 'es' ? 'Revisa tu conexión y vuelve a intentar. La anotación está en pausa para evitar duplicar jugadas.' : 'Check your connection and try again. Scoring is paused to prevent duplicate plays.'}</p>
+    <Button size="lg" onClick={() => { setLoading(true); void fetchAtBats() }}>{uiLang === 'es' ? 'Volver a intentar' : 'Try again'}</Button>
+    <Button size="lg" variant="outline" onClick={onClose}>{uiLang === 'es' ? 'Cerrar' : 'Close'}</Button>
+  </div>
 
   const scoreboardBatter = getCurrentBatter()
   const nextBatterPlayer = displayedLineup.find(player => player.id === scoreboardBatter?.playerId)
+  const selectedBatterIndex = displayedLineup.findIndex(player => player.id === selectedCell?.playerId)
+  const onDeckPlayer = selectedBatterIndex >= 0 ? displayedLineup[(selectedBatterIndex + 1) % displayedLineup.length] : undefined
   const scoreboardInning = scoreboardBatter?.inning || 1
   const scoreboardOuts = Math.min(3, atBats.filter(ab => ab.inning === scoreboardInning && (ab.team_side || 'home') === currentTeamSide).reduce((sum, ab) => sum + playerOuts(ab), 0))
   const scoreboardRunners = isLocked || scoreboardOuts >= 3 ? [] : getActiveRunners(null, scoreboardInning, currentTeamSide)
@@ -1017,6 +1009,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         <DiamondCanvas
           key={game.id + ':' + selectedCell.teamSide + ':' + selectedCell.playerId + ':' + selectedCell.inning + ':' + selectedCell.appearance}
           embedded={paperMode}
+          retrySaveOnly={!!selectedAtBatId}
           paperBox={paperMode ? { gameId: game.id, side: selectedCell.teamSide || currentTeamSide, slot: (selectedCell.teamSide === 'opponent' ? opponentPlayers : players).findIndex(p=>p.id===selectedCell.playerId)+1, inning:selectedCell.inning, appearance:selectedCell.appearance, playerId:selectedCell.playerId, session:gamePitchers.find(p=>p.team_side===fieldingSide(selectedCell.teamSide || currentTeamSide))?.id } : undefined}
           onSave={(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates) => {
             return saveAtBat(notation, baseRunners, fieldLocationData, baseRunnerOuts, baseRunnerOutTypes, rbi, runnerUpdates)
@@ -1025,6 +1018,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           matchup={matchup}
           batterHistory={{
             gameId: game.id,
+            gameDate: game.game_date,
+            batterName: selectedCell.playerName,
+            teamName: selectedCell.teamSide === 'opponent' ? game.opponent : homeTeamName,
+            pitcherTeamName: selectedCell.teamSide === 'opponent' ? homeTeamName : game.opponent,
             batterId: selectedCell.playerId,
             pitcherId: currentPitcher(fieldingSide(selectedCell.teamSide || currentTeamSide))?.id ?? null,
             pitcherName: (() => { const p = currentPitcher(fieldingSide(selectedCell.teamSide || currentTeamSide)); return p ? p.first_name + ' ' + p.last_name : '' })(),
@@ -1045,8 +1042,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       ) : null
 
   return (
-    <div className={paperMode ? 'paper-scorebook mx-auto max-w-7xl space-y-4 rounded-sm border border-stone-300 bg-[#faf7ed] p-3 sm:p-5' : 'mx-auto max-w-7xl space-y-6'}>
-      <div className="flex items-center justify-between gap-3 border-b border-stone-400 pb-3">
+    <div className={paperMode ? 'paper-scorebook mx-auto min-w-0 w-full max-w-7xl space-y-4 rounded-sm border border-stone-300 bg-[#faf7ed] p-3 sm:p-5' : 'mx-auto min-w-0 w-full max-w-7xl space-y-6'}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-400 pb-3">
         <div><p className="font-serif text-2xl tracking-wide">{uiLang==='es' ? 'Libro de anotación' : 'Scorebook'}</p><p className="text-xs text-stone-600">{uiLang==='es' ? 'Escribe la jugada. El libro lleva la cuenta.' : 'Write the play. The book keeps the totals.'}</p></div>
         <button type="button" disabled={showCanvasModal} onClick={()=>setPaperMode(!paperMode)} className="min-h-11 border-b border-stone-500 px-3 text-sm disabled:opacity-40">{paperMode ? (uiLang==='es' ? 'Vista guiada' : 'Guided view') : (uiLang==='es' ? 'Vista de papel' : 'Paper view')}</button>
       </div>
@@ -1067,10 +1064,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             onClick={() => setCurrentTeamSide(currentTeamSide === 'home' ? 'opponent' : 'home')}
             className="[&_svg]:size-5"
             disabled={showCanvasModal}
-            title="Voltear Hoja - Cambiar de equipo"
+            title={uiLang === 'es' ? 'Ver el otro equipo' : 'View the other team'}
           >
             <ArrowLeftRight />
-            <span className="text-lg">Voltear Hoja</span>
+            <span className="text-base whitespace-normal">{uiLang === 'es' ? 'Ver equipo: ' : 'View team: '}{currentTeamSide === 'home' ? game.opponent : homeTeamName}</span>
           </Button>
         </div>
 
@@ -1083,9 +1080,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
           const es = uiLang === 'es'
           return (
             <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${p ? 'border-border bg-card' : 'border-amber-300 bg-amber-50'}`}>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
-                {p?.jersey_number ?? 'P'}
-              </span>
+              {p && <MlbPortrait key={p.id} name={`${p.first_name} ${p.last_name}`} team={teamName} className="size-14" />}
+              {(!p || jerseyLabel(p.jersey_number, teamName) !== null) && <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">{p ? jerseyLabel(p.jersey_number, teamName) : 'P'}</span>}
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   {es ? 'Pitcher en la loma' : 'Pitcher on the mound'} · {teamName}
@@ -1101,7 +1097,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                 )}
               </div>
               {!isLocked && (
-                <Button variant={p ? 'outline' : 'warning'} size="sm" disabled={pitchersLoading || !!pitchersError} onClick={() => setPitcherPicker({ side, reason: p ? 'change' : 'start' })}>
+                  <Button variant={p ? 'outline' : 'warning'} size="sm" disabled={showCanvasModal || pitchersLoading || !!pitchersError || reservesLoading || !!reservesError} onClick={() => setPitcherPicker({ side, reason: p ? 'change' : 'start' })}>
                   {p ? (es ? 'Cambio de pitcher' : 'Pitching change') : es ? 'Elegir pitcher' : 'Choose pitcher'}
                 </Button>
               )}
@@ -1161,25 +1157,33 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         <Button variant="outline" onClick={() => openPlayerChange('position')}>{uiLang === 'es' ? 'Cambiar posición defensiva' : 'Change fielding position'}</Button>
       </div>}
       {changesError && <p role="alert" className="text-sm text-amber-800">{uiLang === 'es' ? 'Cambios de jugadores no disponibles: ' : 'Player changes unavailable: '}{changesError}</p>}
+      {paperMode && scoringEditor && <div ref={paperEditorRef} tabIndex={-1} className="min-w-0 scroll-mt-24 border-y-2 border-stone-400 outline-none">{scoringEditor}</div>}
+      {paperMode && scoringEditor && onDeckPlayer && <div className="rounded border border-stone-300 p-3 text-sm">
+        <p className="font-bold">{uiLang === 'es' ? 'En espera (siguiente bateador): ' : 'On deck (up next): '}{onDeckPlayer.first_name} {onDeckPlayer.last_name}</p>
+        <p>{uiLang === 'es' ? 'Representa a ' : 'Playing for '}{currentTeamSide === 'home' ? homeTeamName : game.opponent} · {uiLang === 'es' ? 'Sigue en el orden al bate de este equipo después del turno que estás anotando.' : 'Next in this team’s batting order after the appearance you are scoring.'}</p>
+      </div>}
       {/* Scorebook Grid */}
       {!isLocked && scoreboardBatter && nextBatterPlayer && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-emerald-500 bg-emerald-50 px-3 py-2 text-emerald-950">
-        <p className="text-sm"><span className="font-bold">{uiLang === 'es' ? 'Siguiente al bate: ' : 'Next to bat: '}{nextBatterPlayer.first_name} {nextBatterPlayer.last_name}</span> · {uiLang === 'es' ? 'Entrada' : 'Inning'} {scoreboardBatter.inning} · {uiLang === 'es' ? 'Turno' : 'Appearance'} {scoreboardBatter.appearance}
-          <span className="block text-xs">{uiLang === 'es' ? 'Toca la casilla marcada para escribir.' : 'Tap the marked box to write.'}</span>
+        <p className="text-sm"><span className="font-bold">{uiLang === 'es' ? 'Turno por anotar: ' : 'At-bat to score: '}{nextBatterPlayer.first_name} {nextBatterPlayer.last_name}</span> · {uiLang === 'es' ? 'Entrada' : 'Inning'} {scoreboardBatter.inning} · {uiLang === 'es' ? 'Turno' : 'Appearance'} {scoreboardBatter.appearance}
+          <span className="block">{uiLang === 'es' ? 'Representa a ' : 'Playing for '}{currentTeamSide === 'home' ? homeTeamName : game.opponent}</span><span className="block text-xs">{uiLang === 'es' ? 'Toca la casilla marcada para escribir.' : 'Tap the marked box to write.'}</span>
         </p>
-        <button type="button" onClick={guideToNextBatter} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-bold text-white">{uiLang === 'es' ? 'Mostrar siguiente ↓' : 'Show next ↓'}</button>
+        <button type="button" onClick={guideToNextBatter} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-bold text-white">{uiLang === 'es' ? 'Mostrar turno actual ↓' : 'Show current at-bat ↓'}</button>
       </div>}
+      {reservesError && <p role="alert" className="text-sm text-amber-800">{uiLang === 'es' ? 'No se pudo cargar la banca y el bullpen; los cambios están bloqueados.' : 'Could not load bench and bullpen; substitutions are unavailable.'} <button type="button" className="min-h-11 underline" onClick={() => void fetchReserves()}>{uiLang === 'es' ? 'Reintentar' : 'Retry'}</button></p>}
       <p className="text-xs text-slate-600">{uiLang === 'es' ? 'Toca un turno guardado para verlo sin editar. SB = robo · CS = out robando · ADV = avance · * detalle no registrado.' : 'Tap a saved at-bat to view without editing. SB = steal · CS = caught stealing · ADV = advance · * detail not recorded.'}</p>
       {historyError && <p role="alert" className="text-sm text-amber-800">{uiLang === 'es' ? 'No se pudo cargar el historial de corredores; se muestra el resultado guardado.' : 'Runner history could not be loaded; showing saved results.'}</p>}
-      <div className="overflow-x-auto rounded-xl border border-border bg-card scrollbar-thin">
+      <p id="inning-swipe-help" className="text-xs text-slate-600">{uiLang === 'es' ? 'Desliza las entradas a izquierda o derecha para ver resultados anteriores. Los nombres de los bateadores permanecen fijos.' : 'Swipe the innings left or right to see previous results. Batter names stay fixed.'}</p>
+      <div role="region" aria-label={uiLang === 'es' ? 'Resultados por entrada' : 'Results by inning'} aria-describedby="inning-swipe-help" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-border bg-card scrollbar-thin">
         <table className="w-full border-separate border-spacing-0 text-xs">
           <thead>
             <tr className="bg-slate-50 text-xs uppercase tracking-wide text-muted-foreground">
               <th className="sticky left-0 z-20 w-8 min-w-8 max-w-8 bg-slate-50 border-r border-border px-2 py-2 font-semibold">#</th>
-              <th className="sticky left-8 z-20 bg-slate-50 shadow-[2px_0_3px_#00000015] border-r border-border px-2 py-2 text-left font-semibold whitespace-nowrap">Batter</th>
+              <th className="sticky left-8 z-20 bg-slate-50 shadow-[2px_0_3px_#00000015] border-r border-border px-2 py-2 text-left font-semibold whitespace-nowrap">{uiLang === 'es' ? 'Bateador' : 'Batter'}</th>
               <th className="w-6 border-r border-border px-1 py-2"></th>
               {getInningColumns().map((col, i) => (
-                <th key={`inning-${i}`} className="w-16 border-r border-border px-1 py-2 text-center font-semibold tabular-nums">
+                <th key={`inning-${i}`} scope="col" data-active-inning={!isLocked && !!scoreboardBatter && col.inning === scoreboardInning ? true : undefined} className="scorecard-inning w-16 border-r border-border px-1 py-2 text-center font-semibold tabular-nums">
                   {col.inning}
+                  {!isLocked && !!scoreboardBatter && col.inning === scoreboardInning && <span className="block text-[10px] font-bold">{uiLang === 'es' ? 'ACTUAL' : 'ACTIVE'}</span>}
                 </th>
               ))}
               <th className="w-8 border-r border-border px-1 py-2 text-center font-semibold">H</th>
@@ -1199,12 +1203,12 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                 <Fragment key={rowIndex}><tr className="h-12 border-t border-border hover:bg-slate-50/60">
                   {/* Jersey Number */}
                   <td className="sticky left-0 z-10 w-8 min-w-8 max-w-8 bg-white border-r border-b border-border px-2 py-1 text-center font-medium tabular-nums text-muted-foreground">
-                    {player ? player.jersey_number : ''}
+                    {player ? jerseyLabel(player.jersey_number, currentTeamSide === 'home' ? homeTeamName : game.opponent) : ''}
                   </td>
                   
                   {/* Player Name */}
                   <td className="sticky left-8 z-10 max-w-[42vw] bg-white shadow-[2px_0_3px_#00000015] border-r border-b border-border px-2 py-1 font-medium">
-                    {player && <button type="button" disabled={isLocked} onClick={() => openPlayerChange('defensive', player.id, currentTeamSide)} className="min-h-11 max-w-[40vw] break-words text-left underline decoration-dotted underline-offset-4">{player.first_name} {player.last_name} · {player.positions[0]}</button>}
+                    {player && <button type="button" disabled={isLocked} onClick={() => openPlayerChange('defensive', player.id, currentTeamSide)} className="flex min-h-11 max-w-[40vw] items-center gap-2 break-words text-left underline decoration-dotted underline-offset-4"><MlbPortrait key={player.id} name={`${player.first_name} ${player.last_name}`} team={currentTeamSide === 'home' ? homeTeamName : game.opponent} className="size-9 sm:size-10" /><span>{player.first_name} {player.last_name} · {player.positions[0]}</span></button>}
                     {player && player.members.length > 1 && <div className="text-[10px] text-slate-500">{player.members.slice(0, -1).map(id => [...initialPlayers, ...initialOpponentPlayers, ...ourRoster, ...opponentRoster].find(p => p.id === id)?.last_name).join(' → ')}</div>}
                   </td>
                   
@@ -1220,20 +1224,21 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     const atBat = player ? getAtBatForPlayerNth(player.id, col.inning, col.appearance) : null
                     const cell = player ? { playerId: player.id, playerName: `${player.first_name} ${player.last_name}`, inning: col.inning, appearance: col.appearance, teamSide: currentTeamSide } : null
                     const isCurrentBatter = !!cell && !atBat && canScoreCell(cell, scoreboardBatter, isLocked || !!changesError || pitchersLoading || !!pitchersError)
+                    const isOpenCell = paperMode && !!cell && selectedCell?.playerId === cell.playerId && selectedCell?.teamSide === cell.teamSide && selectedCell?.inning === cell.inning && selectedCell?.appearance === cell.appearance
 
                     return (
-                      <td key={inningIndex} className={`relative border-r border-border px-1 py-1 ${isCurrentBatter ? 'bg-emerald-50' : 'bg-slate-100/80'}`}>
+                      <td key={inningIndex} data-active-inning={!isLocked && !!scoreboardBatter && col.inning === scoreboardInning ? true : undefined} className={`scorecard-inning relative border-r border-border px-1 py-1 ${isCurrentBatter ? 'bg-emerald-50' : 'bg-slate-100/80'}`}>
                         <button
                           type="button"
                           ref={isCurrentBatter ? nextBatterButton : undefined}
-                          disabled={!isCurrentBatter && !atBat}
+                          disabled={(showCanvasModal && !isOpenCell) || (!isCurrentBatter && !atBat)}
                           aria-current={isCurrentBatter ? 'step' : undefined}
                           aria-label={`${cell?.playerName || (uiLang === 'es' ? 'Sin jugador' : 'Empty lineup spot')} · ${uiLang === 'es' ? 'Entrada' : 'Inning'} ${col.inning} · ${uiLang === 'es' ? 'Turno' : 'Appearance'} ${col.appearance} · ${isCurrentBatter ? (uiLang === 'es' ? 'Anotar turno actual' : 'Score current at-bat') : (atBat ? (uiLang === 'es' ? 'Ver turno guardado · Solo lectura' : 'View saved at-bat · Read only') : (uiLang === 'es' ? 'Bloqueado' : 'Locked'))}`}
                           className={`flex flex-col min-h-11 min-w-11 w-full items-center justify-center rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${isCurrentBatter ? 'cursor-pointer bg-emerald-100 ring-2 ring-inset ring-emerald-500 hover:bg-emerald-200 active:bg-emerald-300' : atBat ? 'cursor-pointer hover:bg-slate-200' : 'cursor-not-allowed'}`}
                           onClick={() => { if (atBat) setViewedAtBat(atBats.find(row => row.id === atBat.id) || atBat); else if (isCurrentBatter && cell) handleCellClick(cell) }}
                         >
                           {atBat && player && atBat.player_id !== player.id && <span className="sr-only">{atBat.players?.first_name} {atBat.players?.last_name}</span>}
-                          {isCurrentBatter && <span className="whitespace-nowrap px-1 text-[10px] font-black text-emerald-950">↓ {uiLang === 'es' ? 'SIGUIENTE' : 'NEXT'}</span>}
+                          {isCurrentBatter && <span className="whitespace-nowrap px-1 text-[10px] font-black text-emerald-950">↓ {uiLang === 'es' ? 'ANOTAR AQUÍ' : 'SCORE HERE'}</span>}
                           <>{atBat ? <ScorecardPlayHistory play={atBat} events={historyByAtBat.get(atBat.id) || []} /> : <ScorebookDiamond current={isCurrentBatter} />}</>
                         </button>
                       </td>
@@ -1257,7 +1262,6 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
                     {stats.errors}
                   </td>
                 </tr>
-                {paperMode && selectedCell && showCanvasModal && player?.id===selectedCell.playerId && currentTeamSide===(selectedCell.teamSide || 'home') && <tr><td colSpan={getInningColumns().length+8} className="border-y-2 border-stone-400 p-0"><div ref={paperEditorRef} className="max-w-[calc(100vw-3rem)] scroll-mt-24 text-left">{scoringEditor}</div></td></tr>}
                 {paperMode && viewedAtBat && player?.members.includes(viewedAtBat.player_id) && (viewedAtBat.team_side || 'home')===currentTeamSide && <tr><td colSpan={getInningColumns().length+8} className="border-y border-stone-400 bg-[#fffdf5] p-4 text-left"><div className="max-w-sm"><div className="flex items-center justify-between"><p className="font-serif text-lg">{viewedAtBat.players?.first_name} {viewedAtBat.players?.last_name} · {uiLang==='es' ? 'Solo lectura' : 'View only'}</p><button type="button" className="min-h-11 px-3 underline" onClick={()=>setViewedAtBat(null)}>{uiLang==='es' ? 'Cerrar' : 'Close'}</button></div><ScorecardPlayHistory play={viewedAtBat} events={historyByAtBat.get(viewedAtBat.id) || []} large /><SavedPaperInk box={{gameId:game.id,side:currentTeamSide,slot:rowIndex+1,inning:viewedAtBat.inning,appearance:viewedAtBat.at_bat_number || 1,playerId:viewedAtBat.player_id,session:gamePitchers.find(p=>p.team_side===fieldingSide(currentTeamSide))?.id}} language={uiLang} /><p className="text-xs">{uiLang==='es' ? '* Detalle histórico no registrado.' : '* Historical detail not recorded.'}</p></div></td></tr>}
                 </Fragment>
               )
@@ -1287,18 +1291,20 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
             <Button
               variant="success"
               onClick={saveScorebook}
+              disabled={showCanvasModal}
               className="w-full sm:w-auto"
             >
               <Save />
-              {uiLang==='es' ? 'Finalizar y cerrar el juego' : 'Finish and lock game'}
+              {uiLang==='es' ? 'Terminar el juego y cerrar anotación' : 'End game and stop scoring'}
             </Button>
           )}
           <Button
             variant="outline"
             onClick={onClose}
+            disabled={showCanvasModal}
             className="w-full sm:w-auto"
           >
-            Close Scorebook
+            {uiLang === 'es' ? 'Salir del libro de anotación' : 'Close scorebook'}
           </Button>
         </div>
       </details>
@@ -1307,7 +1313,8 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       {pitcherPicker && (
         <PitcherPicker
           teamName={pitcherPicker.side === 'home' ? homeTeamName : game.opponent}
-          roster={pitcherPicker.side === 'home' ? ourRoster : opponentRoster}
+          roster={availablePitchers(pitcherPicker.side)}
+          positionPlayers={availablePositionPitchers(pitcherPicker.side)}
           currentPitcherId={currentPitcher(pitcherPicker.side)?.id ?? null}
           inning={currentInningFor(pitcherPicker.side)}
           reason={pitcherPicker.reason}
@@ -1319,12 +1326,6 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
         />
       )}
 
-      <div className="my-4">
-        <Link className="inline-block rounded-lg border border-border px-4 py-3 font-semibold" href={`/live/${game.id}/faceoff`}>
-          {uiLang === 'es' ? 'Abrir scorecard de dos mánagers' : 'Open two-manager scorecard'}
-        </Link>
-      </div>
-
       {!paperMode && viewedAtBat && <Modal title={uiLang === 'es' ? 'Turno guardado · Solo lectura' : 'Saved at-bat · View only'} onClose={() => setViewedAtBat(null)} size="sm">
         <p className="mb-3 font-semibold">{viewedAtBat.players?.first_name} {viewedAtBat.players?.last_name} · {uiLang === 'es' ? 'Entrada' : 'Inning'} {viewedAtBat.inning} · {uiLang === 'es' ? 'Turno' : 'Appearance'} {viewedAtBat.at_bat_number}</p>
         <ScorecardPlayHistory play={viewedAtBat} events={historyByAtBat.get(viewedAtBat.id) || []} large />
@@ -1335,9 +1336,10 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
       {!paperMode && scoringEditor}
 
       {changePicker && <PlayerChangeModal
+        teamName={changePicker.side === 'home' ? homeTeamName : game.opponent}
         kind={changePicker.kind} language={uiLang} initialOutId={changePicker.outId}
         lineup={(changePicker.side === 'home' ? players : opponentPlayers).filter(p => changePicker.kind === 'pinch_hitter' ? p.id === getCurrentBatter()?.playerId : changePicker.kind === 'pinch_runner' ? getActiveRunners(null, getCurrentBatter()?.inning || 1, changePicker.side).some(r => r.playerId === p.id) : true)}
-        roster={(changePicker.side === 'home' ? ourRoster : opponentRoster).filter(p => !(changePicker.side === 'home' ? players : opponentPlayers).some(slot => slot.members.includes(p.id)))}
+        roster={availableBench(changePicker.side)}
         onSave={savePlayerChange} onClose={() => setChangePicker(null)}
       />}
       {/* Opponent Lineup Entry Modal */}

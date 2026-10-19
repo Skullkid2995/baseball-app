@@ -118,8 +118,8 @@ function teamSortName(player: Player): string {
 }
 
 function compareJersey(a: Player, b: Player): number {
-  const ja = a.jersey_number && a.jersey_number > 0 ? a.jersey_number : Number.POSITIVE_INFINITY
-  const jb = b.jersey_number && b.jersey_number > 0 ? b.jersey_number : Number.POSITIVE_INFINITY
+  const ja = a.jersey_number !== null && a.jersey_number >= 0 ? a.jersey_number : Number.POSITIVE_INFINITY
+  const jb = b.jersey_number !== null && b.jersey_number >= 0 ? b.jersey_number : Number.POSITIVE_INFINITY
   return ja - jb
 }
 
@@ -410,7 +410,7 @@ export default function PlayersView() {
       }
       if (positionFilter && !p.positions.some((label) => positionCode(label) === positionFilter)) return false
       if (q) {
-        const jersey = p.jersey_number && p.jersey_number > 0 ? String(p.jersey_number) : ''
+        const jersey = p.jersey_number !== null && p.jersey_number >= 0 ? String(p.jersey_number) : ''
         const haystack = `${p.first_name} ${p.last_name}`.toLowerCase()
         const matchesName = haystack.includes(q)
         const matchesJersey = jersey !== '' && (jersey === q || (q.startsWith('#') && jersey === q.slice(1)))
@@ -598,7 +598,7 @@ export default function PlayersView() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="truncate font-medium">{fullName(player)}</span>
-                            {player.jersey_number && player.jersey_number > 0 ? (
+                            {player.jersey_number !== null && player.jersey_number >= 0 ? (
                               <span className="text-xs font-semibold tabular-nums text-muted-foreground">
                                 #{player.jersey_number}
                               </span>
@@ -641,7 +641,7 @@ export default function PlayersView() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="truncate font-medium">{fullName(player)}</span>
-                            {player.jersey_number && player.jersey_number > 0 ? (
+                            {player.jersey_number !== null && player.jersey_number >= 0 ? (
                               <span className="text-xs font-semibold tabular-nums text-muted-foreground">
                                 #{player.jersey_number}
                               </span>
@@ -774,7 +774,7 @@ export default function PlayersView() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                   <span className="text-lg font-semibold tracking-tight">{fullName(selected)}</span>
-                  {selected.jersey_number && selected.jersey_number > 0 ? (
+                  {selected.jersey_number !== null && selected.jersey_number >= 0 ? (
                     <span className="text-sm font-semibold tabular-nums text-muted-foreground">#{selected.jersey_number}</span>
                   ) : null}
                   {renderStatus(selected)}
@@ -812,7 +812,7 @@ export default function PlayersView() {
                   )}
                 </DetailItem>
                 <DetailItem label={L.jersey}>
-                  {selected.jersey_number && selected.jersey_number > 0 ? `#${selected.jersey_number}` : L.notProvided}
+                  {selected.jersey_number !== null && selected.jersey_number >= 0 ? `#${selected.jersey_number}` : L.notProvided}
                 </DetailItem>
                 <DetailItem label={L.dateOfBirth}>
                   {formatDate(selected.date_of_birth)}

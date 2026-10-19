@@ -67,6 +67,16 @@ export function playBases(play: ScoringPlay): BaseRunners {
   return bases
 }
 
+/** A confirmed hit/walk reaches its awarded base, even when earlier ink stops short. */
+export function confirmedPlayBases(play: ScoringPlay, marked = emptyBases()): BaseRunners {
+  if (play.outs) return emptyBases()
+  const baseNames = ['first', 'second', 'third', 'home'] as const
+  const reached = baseNames.reduce((furthest, base, index) => marked[base] ? index + 1 : furthest, 0)
+  const bases = { ...marked }
+  if (reached < play.base) bases[baseNames[play.base - 1]] = true
+  return bases
+}
+
 export function isBatterOut(result: string) {
   return ['strikeout', 'strikeout_looking', 'ground_out', 'fly_out', 'line_out', 'pop_out', 'sacrifice_fly', 'sacrifice_bunt', 'double_play', 'triple_play'].includes(result)
 }
@@ -80,10 +90,11 @@ export function savedPlay(raw: string, bases = emptyBases(), outs = emptyBases()
   if (!play || play.sharedOnly) throw new Error('Choose a batting result. Runner plays and foul balls do not finish an at-bat.')
   const markedOut = Object.values(outs).some(Boolean)
   const batterOut = play.outs > 0
+  const confirmedBases = markedOut ? bases : confirmedPlayBases(play, bases)
   return {
     result: play.result,
-    base_runners: batterOut ? emptyBases() : { ...bases, home: markedOut ? false : bases.home },
+    base_runners: batterOut ? emptyBases() : { ...confirmedBases, home: markedOut ? false : confirmedBases.home },
     base_runner_outs: batterOut ? { ...emptyBases(), first: true } : outs,
-    runs_scored: !batterOut && !markedOut && bases.home ? 1 : 0,
+    runs_scored: !batterOut && !markedOut && confirmedBases.home ? 1 : 0,
   }
 }
