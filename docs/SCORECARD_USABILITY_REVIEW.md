@@ -73,3 +73,17 @@ Initialized this practice game with Tampa Bay's five bench players and eleven bu
 Validation: 201 tests passed and TypeScript passed. Signed-in browser checks verified twelve photographed Tampa Bay pitcher entries (eleven available plus the current pitcher), the five selected bench players, the complete nine-player replacement list, and correct official jersey numbers. No actual substitution or scoring play was submitted during verification.
 
 Pitching changes default to a Pitchers list and provide a separate Position players option, each with its own search and official portraits. The latter offers active fielders and the selected bench, excluding removed/previously used pitchers, and reminds the scorer to review defensive positions and DH implications. Verified the default selected filter and all fourteen available Tampa Bay position players. An isolated preparation fixture verified selecting bench/bullpen roles and excluding a player updates the parent draft while starters remain excluded, without writing a live lineup.
+
+## World Series replacement — October 23, 2026
+
+At the owner's request, replaced the unused October 19 Cleveland practice game with Brewers–Rays World Series Game 1. Confirmed the old game had zero at-bats and a 0–0 score, backed up its rows locally, then deleted only that game and its isolated faceoff room after verifying its replacement. The unrelated Dodgers–Union game and existing Cleveland roster were retained.
+
+MLB's schedule lists Game 1 in Milwaukee on October 23 at 17:00 America/Tijuana, followed by Games 2–7 on October 24, 26, 27, 28, 30 and 31 at 17:00. The latter six were created as scheduled with both lineup-template links null; Games 5–7 are explicitly marked as conditional. Home/visitor teams and venues follow the official schedule.
+
+New Game 1 ID: `b07ad12b-8afe-4e3e-a163-d4ab422d2dd9`. Ready for scoring at 0–0 with Nick Martinez for Tampa Bay and Jacob Misiorowski for Milwaukee. Official boxscore batting orders were empty when checked, so the starting nines use MLB's projected Game 1 preview and are labeled projected in the app. Both DH slots reference their own starting pitcher. Milwaukee has four bench players and twelve bullpen pitchers; Tampa Bay has five and eleven.
+
+Imported Milwaukee's 26 active players and refreshed Tampa Bay's October 23 roster, including Garrett Cleavinger in place of Brody Hopkins. Added official photos, jersey numbers, birth dates, handedness, height, weight and debut dates, plus the Brewers team logo and MLB statistics identities. Prior roster members are retained as inactive rather than deleted. Lineup preparation and reserve selection now exclude inactive players while preserving a recorded current pitcher for historical context.
+
+The narrowly scoped `scripts/prepare-2026-world-series.mjs` defaults to dry-run, requires `--apply` for writes, validates official fixtures and lineup identities, refuses to remove a scored old game, and keeps local backups under ignored `tmp/`. Source endpoints: MLB Stats API schedule, game boxscore, active rosters and player profiles; projected order: `https://www.mlb.com/brewers/news/rays-brewers-world-series-game-1-starting-lineups-and-pitching-matchup`.
+
+Verification: 202 tests and TypeScript passed. Database readback confirmed both starting nines, DH pitcher links, reserve counts, 0–0, and null future lineup links. Signed-in production review confirmed Tampa Bay bats first with Yandy Díaz against Jacob Misiorowski; no play was recorded during verification.

@@ -24,6 +24,7 @@ interface Player {
   last_name: string
   jersey_number: number
   positions: string[]
+  is_active?: boolean | null
 }
 
 interface LineupEntry {
@@ -240,7 +241,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
             first_name,
             last_name,
             jersey_number,
-            positions
+            positions,
+            is_active
           )
         `)
         .order('name')
@@ -324,7 +326,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
             first_name,
             last_name,
             jersey_number,
-            positions
+            positions,
+            is_active
           )
         `)
         .order('name')
@@ -343,7 +346,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               first_name,
               last_name,
               jersey_number,
-              positions
+              positions,
+              is_active
             )
           `)
           .order('name')
@@ -515,14 +519,15 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
     if (!selectedTeam) return []
     const team = teams.find(t => t.id === selectedTeam)
     if (!team?.players) return []
+    const activePlayers = team.players.filter(player => player.is_active !== false)
     
     // For the 10th row (DH batting for), show all players including those already in lineup
     if (rowIndex === 9) {
-      return team.players
+      return activePlayers
     }
     
     const usedPlayerIds = lineupEntries.map(entry => entry.playerId).filter(id => id !== '')
-    return team.players.filter(player => !usedPlayerIds.includes(player.id))
+    return activePlayers.filter(player => !usedPlayerIds.includes(player.id))
   }
 
   function getAvailablePositions(currentIndex: number) {
@@ -578,7 +583,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
             first_name,
             last_name,
             jersey_number,
-            positions
+            positions,
+            is_active
           )
         `)
         .eq('id', selectedTeam)
@@ -1036,7 +1042,8 @@ export default function LineupSelection({ teamId, gameId, onClose, onStartScorin
               first_name,
               last_name,
               jersey_number,
-              positions
+              positions,
+              is_active
             )
           `)
           .eq('id', actualTeamId)

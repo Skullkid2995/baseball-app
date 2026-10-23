@@ -13,6 +13,7 @@ export interface RosterPlayer {
   last_name: string
   jersey_number: number | null
   positions?: string[] | null
+  is_active?: boolean | null
 }
 
 interface PitcherPickerProps {

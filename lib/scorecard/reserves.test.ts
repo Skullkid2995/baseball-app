@@ -15,6 +15,13 @@ it('distinguishes legacy games from deliberately selected empty reserves', () =>
   expect(readReserves({ home: { bench: [], bullpen: [] } }, 'home')).toEqual({ bench: [], bullpen: [] })
   expect(readReserves({ home: { bench: [2], bullpen: [] } }, 'home')).toBeNull()
 })
+it('keeps inactive roster members out of future lineups and reserves while retaining the recorded current pitcher', () => {
+  const players = [{ id: 'active', positions: ['P'], is_active: true }, { id: 'old-roster', positions: ['P'], is_active: false }]
+  expect(eligibleReserves(players, [], null)).toEqual({ bench: [], bullpen: ['active'] })
+  expect(eligibleReserves(players, [], { bench: [], bullpen: ['active', 'old-roster'] }).bullpen).toEqual(['active'])
+  expect(availableReservePlayers(players, null, []).map(p => p.id)).toEqual(['active'])
+  expect(availableReservePlayers(players, [], [], 'old-roster').map(p => p.id)).toEqual(['old-roster'])
+})
 it('only offers selected unused reserves, while retaining the current pitcher for context', () => {
   expect(availableReservePlayers(roster, ['bench'], ['starter', 'starting-pitcher']).map(p => p.id)).toEqual(['bench'])
   expect(availableReservePlayers(roster, [], ['starting-pitcher'], 'starting-pitcher').map(p => p.id)).toEqual(['starting-pitcher'])

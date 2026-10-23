@@ -15,9 +15,24 @@
     "team": "Tampa Bay Rays"
   },
   {
+    "id": 592885,
+    "name": "Christian Yelich",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 595978,
     "name": "Austin Hedges",
     "team": "Cleveland Guardians"
+  },
+  {
+    "id": 596142,
+    "name": "Gary Sánchez",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 605540,
+    "name": "Brandon Woodruff",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 607259,
@@ -30,6 +45,11 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 622608,
+    "name": "Antonio Senzatela",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 622761,
     "name": "Jorge Mateo",
     "team": "Tampa Bay Rays"
@@ -38,6 +58,11 @@
     "id": 641329,
     "name": "Bryan Baker",
     "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 641343,
+    "name": "Jake Bauers",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 642121,
@@ -65,6 +90,11 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 656730,
+    "name": "Trevor Megill",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 656775,
     "name": "Cedric Mullins",
     "team": "Tampa Bay Rays"
@@ -73,6 +103,11 @@
     "id": 656876,
     "name": "Drew Rasmussen",
     "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 661388,
+    "name": "William Contreras",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 663743,
@@ -85,9 +120,19 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 664076,
+    "name": "Garrett Cleavinger",
+    "team": "Tampa Bay Rays"
+  },
+  {
     "id": 666018,
     "name": "Jonathan Aranda",
     "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 666152,
+    "name": "David Hamilton",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 666176,
@@ -103,6 +148,31 @@
     "id": 668909,
     "name": "Gavin Williams",
     "team": "Cleveland Guardians"
+  },
+  {
+    "id": 668930,
+    "name": "Brice Turang",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 668941,
+    "name": "JoJo Romero",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 669003,
+    "name": "Garrett Mitchell",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 669084,
+    "name": "DL Hall",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 669160,
+    "name": "Dustin May",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 669330,
@@ -130,6 +200,11 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 675660,
+    "name": "Shane Drohan",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 676282,
     "name": "Joey Cantillo",
     "team": "Cleveland Guardians"
@@ -143,6 +218,11 @@
     "id": 676440,
     "name": "Tanner Bibee",
     "team": "Cleveland Guardians"
+  },
+  {
+    "id": 676879,
+    "name": "Aaron Ashby",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 677587,
@@ -185,9 +265,19 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 682842,
+    "name": "Abner Uribe",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 682982,
     "name": "Daniel Espino",
     "team": "Cleveland Guardians"
+  },
+  {
+    "id": 683734,
+    "name": "Andrew Vaughn",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 683748,
@@ -205,9 +295,24 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 686217,
+    "name": "Sal Frelick",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 687330,
     "name": "Kevin Kelly",
     "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 687401,
+    "name": "Joey Ortiz",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 688107,
+    "name": "Robert Gasser",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 689414,
@@ -220,6 +325,11 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 690986,
+    "name": "Kyle Harrison",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 691406,
     "name": "Junior Caminero",
     "team": "Tampa Bay Rays"
@@ -230,9 +340,24 @@
     "team": "Tampa Bay Rays"
   },
   {
+    "id": 694192,
+    "name": "Jackson Chourio",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 694197,
     "name": "Angel Genao",
     "team": "Cleveland Guardians"
+  },
+  {
+    "id": 694819,
+    "name": "Jacob Misiorowski",
+    "team": "Milwaukee Brewers"
+  },
+  {
+    "id": 701656,
+    "name": "Logan Henderson",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 800048,
@@ -245,9 +370,19 @@
     "team": "Cleveland Guardians"
   },
   {
+    "id": 800325,
+    "name": "Luis Lara",
+    "team": "Milwaukee Brewers"
+  },
+  {
     "id": 802415,
     "name": "Chandler Simpson",
     "team": "Tampa Bay Rays"
+  },
+  {
+    "id": 806198,
+    "name": "Cooper Pratt",
+    "team": "Milwaukee Brewers"
   },
   {
     "id": 810938,

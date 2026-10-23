@@ -184,7 +184,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   function availablePositionPitchers(side: 'home' | 'opponent') {
     const roster = side === 'home' ? ourRoster : opponentRoster, lineup = side === 'home' ? players : opponentPlayers
     const current = currentPitcher(side)?.id
-    return roster.filter(p => !isPitcher(p) && (p.id === current || ((!reserves[side] || reserves[side]!.bench.includes(p.id) || lineup.some(slot => slot.id === p.id)) && !gamePitchers.some(g => g.pitcher_id === p.id) && !lineup.some(slot => slot.id !== p.id && slot.members.includes(p.id)))))
+    return roster.filter(p => !isPitcher(p) && (p.id === current || (p.is_active !== false && (!reserves[side] || reserves[side]!.bench.includes(p.id) || lineup.some(slot => slot.id === p.id)) && !gamePitchers.some(g => g.pitcher_id === p.id) && !lineup.some(slot => slot.id !== p.id && slot.members.includes(p.id)))))
   }
 
   useEffect(() => {
@@ -510,7 +510,7 @@ export default function TraditionalScorebook({ game, onClose }: { game: Game, on
   async function loadRoster(teamId: string, set: (rows: RosterPlayer[]) => void) {
     const { data } = await supabase
       .from('players')
-      .select('id, first_name, last_name, jersey_number, positions')
+      .select('id, first_name, last_name, jersey_number, positions, is_active')
       .eq('team_id', teamId)
       .order('jersey_number')
     set((data as RosterPlayer[]) ?? [])

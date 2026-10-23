@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { mlbPlayer } from '@/lib/mlb/stats'
 
-const teams = [{ id: 114, name: 'Cleveland Guardians', color: '#b52232' }, { id: 139, name: 'Tampa Bay Rays', color: '#092c5c' }]
+const teams = [{ id: 114, name: 'Cleveland Guardians', color: '#b52232' }, { id: 139, name: 'Tampa Bay Rays', color: '#092c5c' }, { id: 158, name: 'Milwaukee Brewers', color: '#12284b' }]
 export function mlbTeam(name: string) { return teams.find(t => t.name.toLowerCase() === name.replace(/\s*·\s*PRUEBA\s*$/i, '').trim().toLowerCase()) }
 /** Zero is a legitimate jersey number; null means unconfirmed. */
 export function jerseyLabel(number: number | null | undefined, team: string): string | null {
